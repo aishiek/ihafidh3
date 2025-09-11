@@ -1,0 +1,851 @@
+import React, { useState, useMemo } from 'react';
+import { StyleSheet, Text, View, TextInput, Pressable, Alert, ScrollView, Linking } from 'react-native';
+import { Stack } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { User, MessageSquare, Globe, Calendar, Bell, Moon } from 'lucide-react-native';
+import { Music } from 'lucide-react-native';
+import { useThemeStore } from '@/store/themeStore';
+import { useThemeColor } from '@/utils/useThemeColor';
+import { useSettingsStore } from '@/store/settingsStore';
+import { TRANSLATION_LANGUAGES } from '@/constants/translationLanguages';
+import { RECITERS } from '@/constants/reciters';
+import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
+import { useFastingContext } from '@/components/fasting/context/FastingCalendarContext';
+import { router } from 'expo-router';
+
+const USER_NAME_KEY = 'user_name';
+
+export default function SettingsScreen() {
+  const { theme, colorScheme, setColorScheme } = useThemeStore();
+  const { primary } = useThemeColor();
+  const { userName, translationLanguage, reciterIdentifier, showTranslation, showTransliteration, fontSizeArabic, fontSizeTransliteration, fontSizeTranslation, arabicFont, setUserName, setTranslationLanguage, setReciterIdentifier, setShowTranslation, setShowTransliteration, setFontSizeArabic, setFontSizeTransliteration, setFontSizeTranslation, setArabicFont } = useSettingsStore();
+  
+  // Mixed state management integration
+  const unifiedTheme = useUnifiedTheme();
+  const fastingContext = useFastingContext();
+  const [localName, setLocalName] = useState(userName || '');
+  const [selectedTranslation, setSelectedTranslation] = useState(translationLanguage || 'en.asad');
+  const [selectedReciter, setSelectedReciter] = useState(reciterIdentifier || 'ar.alafasy');
+  const [localShowTranslation, setLocalShowTranslation] = useState(showTranslation ?? true);
+  const [localShowTransliteration, setLocalShowTransliteration] = useState(showTransliteration ?? false);
+  const [localArabicFont, setLocalArabicFont] = useState(arabicFont || 'default');
+
+  // Track if any changes have been made
+  const hasChanges = useMemo(() => {
+    return (
+      localName !== userName ||
+      selectedTranslation !== translationLanguage ||
+      selectedReciter !== reciterIdentifier ||
+      localShowTranslation !== showTranslation ||
+      localShowTransliteration !== showTransliteration ||
+      localArabicFont !== arabicFont
+    );
+  }, [
+    localName, userName,
+    selectedTranslation, translationLanguage,
+    selectedReciter, reciterIdentifier,
+    localShowTranslation, showTranslation,
+    localShowTransliteration, showTransliteration,
+    localArabicFont, arabicFont
+  ]);
+
+  const saveUserData = async () => {
+    try {
+      const trimmedName = localName.trim();
+      
+      console.log('Saving user data - name before:', userName);
+      
+      // Update both Zustand store and AsyncStorage
+      setUserName(trimmedName);
+      setTranslationLanguage(selectedTranslation);
+      setReciterIdentifier(selectedReciter);
+      setShowTranslation(localShowTranslation);
+      setShowTransliteration(localShowTransliteration);
+      setArabicFont(localArabicFont);
+      await AsyncStorage.setItem(USER_NAME_KEY, trimmedName);
+      
+      console.log('Saving user data - name after:', trimmedName);
+      
+      Alert.alert(
+        'Settings Saved',
+        'Your personal information and preferences have been saved successfully.',
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      console.error('Error saving user data:', error);
+      Alert.alert(
+        'Error',
+        'Failed to save settings. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const sendFeedback = () => {
+    const emailSubject = 'iHafidh App Feedback';
+    const emailBody = 'Hello iHafidh Team,\n\nI would like to share my feedback:\n\n';
+    const mailtoUrl = `mailto:iHafidhapp@gmail.com?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+    
+    Linking.canOpenURL(mailtoUrl)
+      .then((supported) => {
+        if (supported) {
+          return Linking.openURL(mailtoUrl);
+        } else {
+          // Fallback: show the email address
+          Alert.alert(
+            'Send Feedback',
+            'Please send your feedback and suggestions to:\n\niHafidhapp@gmail.com',
+            [
+              { text: 'Copy Email', onPress: () => {
+                // Note: Clipboard would need to be imported for this to work
+                Alert.alert('Email Address', 'iHafidhapp@gmail.com');
+              }},
+              { text: 'OK' }
+            ]
+          );
+        }
+      })
+      .catch((err) => {
+        console.error('Error opening email:', err);
+        Alert.alert(
+          'Send Feedback',
+          'Please send your feedback and suggestions to:\n\niHafidhapp@gmail.com',
+          [{ text: 'OK' }]
+        );
+      });
+  };
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    scrollContainer: {
+      padding: 16,
+    },
+    section: {
+      backgroundColor: theme.card,
+      borderRadius: 12,
+      padding: 12,
+      marginBottom: 12,
+    },
+    sectionTitle: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: theme.text,
+      marginBottom: 8,
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    sectionIcon: {
+      marginRight: 8,
+    },
+    inputLabel: {
+      fontSize: 14,
+      color: theme.inactive,
+      marginBottom: 8,
+    },
+    input: {
+      borderWidth: 1,
+      borderColor: theme.inactive,
+      borderRadius: 8,
+      padding: 12,
+      fontSize: 16,
+      color: theme.text,
+      marginBottom: 12,
+    },
+    saveButton: {
+      backgroundColor: theme.primary,
+      borderRadius: 8,
+      paddingVertical: 14,
+      paddingHorizontal: 24,
+      alignItems: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    saveButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    feedbackButton: {
+      backgroundColor: theme.primary,
+      borderRadius: 8,
+      padding: 16,
+      alignItems: 'center',
+      marginBottom: 12,
+    },
+    feedbackButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    feedbackText: {
+      fontSize: 14,
+      color: theme.inactive,
+      textAlign: 'center',
+      marginBottom: 16,
+      lineHeight: 20,
+    },
+    pickerContainer: {
+      marginBottom: 12,
+    },
+    pickerScrollContent: {
+      paddingHorizontal: 4,
+    },
+    languageOption: {
+      backgroundColor: theme.card,
+      borderWidth: 1,
+      borderColor: theme.inactive,
+      borderRadius: 8,
+      padding: 12,
+      marginHorizontal: 4,
+      minWidth: 120,
+      alignItems: 'center',
+    },
+    reciterOption: {
+      backgroundColor: theme.card,
+      borderWidth: 1,
+      borderColor: theme.inactive,
+      borderRadius: 8,
+      padding: 12,
+      marginHorizontal: 4,
+      minWidth: 160,
+      alignItems: 'center',
+    },
+    languageOptionSelected: {
+      backgroundColor: theme.primary,
+      borderColor: theme.primary,
+    },
+    reciterOptionSelected: {
+      backgroundColor: theme.primary,
+      borderColor: theme.primary,
+    },
+    languageOptionText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: '#FFFFFF',
+      textAlign: 'center',
+    },
+    reciterOptionText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: '#FFFFFF',
+      textAlign: 'center',
+    },
+    languageOptionTextSelected: {
+      color: '#FFFFFF',
+    },
+    reciterOptionTextSelected: {
+      color: '#FFFFFF',
+    },
+    languageOptionSubtext: {
+      fontSize: 10,
+      color: theme.inactive,
+      textAlign: 'center',
+      marginTop: 2,
+    },
+    languageOptionSubtextSelected: {
+      color: '#FFFFFF',
+      opacity: 0.8,
+    },
+    displayOption: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 6,
+      marginBottom: 4,
+    },
+    displayOptionText: {
+      fontSize: 16,
+    },
+    displayOptionTick: {
+      fontSize: 16,
+    },
+    saveButtonContainer: {
+      marginTop: 16,
+      marginBottom: 8,
+      alignItems: 'center',
+      backgroundColor: theme.card,
+      borderRadius: 12,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: theme.primary,
+      borderStyle: 'dashed',
+    },
+    saveButtonHint: {
+      fontSize: 12,
+      color: theme.inactive,
+      marginTop: 4,
+    },
+    noChangesContainer: {
+      marginTop: 16,
+      marginBottom: 8,
+      alignItems: 'center',
+      backgroundColor: theme.card,
+      borderRadius: 12,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: theme.inactive,
+      borderStyle: 'dashed',
+    },
+    noChangesText: {
+      fontSize: 14,
+      color: theme.inactive,
+      textAlign: 'center',
+      marginTop: 4,
+    },
+    changeIndicator: {
+      fontSize: 11,
+      color: theme.primary,
+      marginTop: 4,
+      marginBottom: 8,
+      fontStyle: 'italic',
+      opacity: 0.8,
+    },
+    toggleSwitch: {
+      width: 36,
+      height: 20,
+      borderRadius: 10,
+      padding: 2,
+      justifyContent: 'center',
+    },
+    toggleThumb: {
+      width: 16,
+      height: 16,
+      borderRadius: 8,
+    },
+  });
+
+  function getDisplayLanguage(langCode: string): string {
+    const map: Record<string, string> = {
+      en: 'English',
+      ta: 'Tamil',
+      ur: 'Urdu',
+      bn: 'Bengali',
+      zh: 'Chinese',
+      ml: 'Malayalam',
+      de: 'German',
+      es: 'Spanish',
+      fr: 'French',
+      hi: 'Hindi',
+      id: 'Indonesian',
+      ru: 'Russian',
+      tr: 'Turkish',
+      ms: 'Malay',
+    };
+    return map[langCode] || langCode.toUpperCase();
+  }
+
+  return (
+    <View style={styles.container}>
+      {/* Floating slim save bar */}
+      {hasChanges && (
+        <View style={{ position: 'absolute', left: 12, right: 12, bottom: 12, zIndex: 10 }}>
+          <Pressable onPress={saveUserData} style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: theme.primary,
+            borderRadius: 24,
+            paddingVertical: 10,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.2,
+            shadowRadius: 4,
+            elevation: 3,
+          }}>
+            <Text style={{ color: '#fff', fontWeight: '700' }}>Save changes</Text>
+          </Pressable>
+        </View>
+      )}
+
+      <Stack.Screen
+        options={{
+          title: 'Settings',
+          headerStyle: { backgroundColor: theme.background },
+          headerTintColor: theme.text,
+          headerTitleStyle: { fontWeight: 'bold' },
+        }}
+      />
+
+      <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+        {/* Personal Information Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionTitle}>
+            <User size={20} color={theme.primary} style={styles.sectionIcon} />
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Personal Information</Text>
+          </View>
+          
+          <Text style={styles.inputLabel}>Name</Text>
+          <TextInput
+            style={styles.input}
+            value={localName}
+            onChangeText={setLocalName}
+            placeholder="Enter your name"
+            placeholderTextColor={theme.inactive}
+          />
+        </View>
+
+        {/* Reading Settings */}
+        <View style={styles.section}>
+          <View style={styles.sectionTitle}>
+            <Music size={20} color={theme.primary} style={styles.sectionIcon} />
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Reading Settings</Text>
+          </View>
+
+          <Text style={styles.inputLabel}>Reciter</Text>
+          <View style={styles.pickerContainer}>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.pickerScrollContent}
+            >
+              {RECITERS.map((r) => (
+                <Pressable
+                  key={r.identifier}
+                  style={[
+                    styles.reciterOption,
+                    selectedReciter === r.identifier && styles.reciterOptionSelected
+                  ]}
+                  onPress={() => setSelectedReciter(r.identifier)}
+                >
+                  <Text style={[
+                    styles.reciterOptionText,
+                    selectedReciter === r.identifier && styles.reciterOptionTextSelected
+                  ]}>
+                    {r.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+
+          <Text style={styles.inputLabel}>Translation Language</Text>
+          <View style={styles.pickerContainer}>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.pickerScrollContent}
+            >
+              {TRANSLATION_LANGUAGES.map((lang) => (
+                <Pressable
+                  key={lang.identifier}
+                  style={[
+                    styles.languageOption,
+                    selectedTranslation === lang.identifier && styles.languageOptionSelected
+                  ]}
+                  onPress={() => setSelectedTranslation(lang.identifier)}
+                >
+                  <Text style={[
+                    styles.languageOptionText,
+                    selectedTranslation === lang.identifier && styles.languageOptionTextSelected
+                  ]}>
+                    {getDisplayLanguage(lang.language)}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+
+        {/* Display Options */}
+        <View style={styles.section}>
+          <View style={styles.sectionTitle}>
+            <Globe size={20} color={theme.primary} style={styles.sectionIcon} />
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Display Options</Text>
+          </View>
+          <Pressable
+            onPress={() => setLocalShowTranslation(!localShowTranslation)}
+            style={styles.displayOption}
+          >
+            <Text style={[styles.displayOptionText, { color: theme.text }]}>Show Translation</Text>
+            <View style={[
+              styles.toggleSwitch,
+              { backgroundColor: localShowTranslation ? theme.primary : theme.inactive }
+            ]}>
+              <View style={[
+                styles.toggleThumb,
+                { 
+                  transform: [{ translateX: localShowTranslation ? 16 : 0 }],
+                  backgroundColor: '#FFFFFF'
+                }
+              ]} />
+            </View>
+          </Pressable>
+          
+          <Pressable
+            onPress={() => setLocalShowTransliteration(!localShowTransliteration)}
+            style={styles.displayOption}
+          >
+            <Text style={[styles.displayOptionText, { color: theme.text }]}>Show Transliteration</Text>
+            <View style={[
+              styles.toggleSwitch,
+              { backgroundColor: localShowTransliteration ? theme.primary : theme.inactive }
+            ]}>
+              <View style={[
+                styles.toggleThumb,
+                { 
+                  transform: [{ translateX: localShowTransliteration ? 16 : 0 }],
+                  backgroundColor: '#FFFFFF'
+                }
+              ]} />
+            </View>
+          </Pressable>
+          
+          {/* Theme Colors */}
+          <View style={{ marginTop: 16 }}>
+            <Text style={[styles.inputLabel, { marginBottom: 12 }]}>Theme Color</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              {[
+                { value: 'blue', color: '#2196F3', label: 'Blue' },
+                { value: 'green', color: '#4CAF50', label: 'Green' },
+                { value: 'purple', color: '#9C27B0', label: 'Purple' },
+                { value: 'orange', color: '#FF9800', label: 'Orange' }
+              ].map((themeColor) => (
+                <Pressable
+                  key={themeColor.value}
+                  onPress={() => setColorScheme(themeColor.value as any)}
+                  style={{
+                    alignItems: 'center',
+                    flex: 1,
+                    marginHorizontal: 2,
+                  }}
+                >
+                  <View style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: themeColor.color,
+                    borderWidth: 3,
+                    borderColor: colorScheme === themeColor.value ? '#FFFFFF' : 'transparent',
+                    marginBottom: 4,
+                    shadowColor: colorScheme === themeColor.value ? themeColor.color : 'transparent',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 4,
+                    elevation: colorScheme === themeColor.value ? 4 : 0,
+                  }} />
+                  <Text style={{
+                    color: theme.text,
+                    fontSize: 11,
+                    fontWeight: colorScheme === themeColor.value ? 'bold' : 'normal'
+                  }}>
+                    {themeColor.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        </View>
+
+        {/* Arabic Font Selection */}
+        <View style={styles.section}>
+          <View style={styles.sectionTitle}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Arabic Font</Text>
+          </View>
+          
+          <Text style={{ color: theme.text, marginBottom: 12 }}>
+            Choose the font for Arabic text display
+          </Text>
+          
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+            {[
+              { value: 'default', label: 'System Default' },
+              { value: 'scheherazade', label: 'Scheherazade New' },
+              { value: 'scheherazade-bold', label: 'Scheherazade Bold' },
+              { value: 'tajweed', label: 'Tajweed Colors' },
+              { value: 'indo-pak', label: 'Indo-Pak (Noore Huda)' }
+            ].map((font) => (
+              <Pressable 
+                key={font.value} 
+                onPress={() => { setLocalArabicFont(font.value as any); setArabicFont(font.value as any); }} 
+                style={{ 
+                  alignItems: 'center', 
+                  width: '48%',
+                  padding: 12,
+                  marginBottom: 8,
+                  borderRadius: 8,
+                  backgroundColor: localArabicFont === font.value ? theme.primary : 'transparent',
+                  borderWidth: 1,
+                  borderColor: localArabicFont === font.value ? theme.primary : theme.inactive
+                }}
+              >
+                <Text style={{ 
+                  color: localArabicFont === font.value ? '#FFFFFF' : theme.text,
+                  fontSize: 12,
+                  textAlign: 'center',
+                  fontWeight: localArabicFont === font.value ? 'bold' : 'normal'
+                }}>
+                  {font.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          
+          {/* Tajweed Color Legend - Show only when Tajweed is selected */}
+          {localArabicFont === 'tajweed' && (
+            <View style={{ marginTop: 16, padding: 12, backgroundColor: theme.card, borderRadius: 8 }}>
+              <Text style={{ color: theme.text, fontSize: 14, fontWeight: 'bold', marginBottom: 8 }}>
+                Tajweed Color Guide (using rn-tajweed-verse library):
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
+                  <View style={{ width: 12, height: 12, backgroundColor: '#FF7E1E', borderRadius: 2, marginRight: 6 }} />
+                  <Text style={{ color: theme.text, fontSize: 12 }}>Ghunnah</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
+                  <View style={{ width: 12, height: 12, backgroundColor: '#DD0008', borderRadius: 2, marginRight: 6 }} />
+                  <Text style={{ color: theme.text, fontSize: 12 }}>Qalqalah</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
+                  <View style={{ width: 12, height: 12, backgroundColor: '#A1A1A1', borderRadius: 2, marginRight: 6 }} />
+                  <Text style={{ color: theme.text, fontSize: 12 }}>Noon/Meem Mushaddad</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
+                  <View style={{ width: 12, height: 12, backgroundColor: '#58B800', borderRadius: 2, marginRight: 6 }} />
+                  <Text style={{ color: theme.text, fontSize: 12 }}>Idgham</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
+                  <View style={{ width: 12, height: 12, backgroundColor: '#FFD700', borderRadius: 2, marginRight: 6 }} />
+                  <Text style={{ color: theme.text, fontSize: 12 }}>Madd</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
+                  <View style={{ width: 12, height: 12, backgroundColor: '#26BFFD', borderRadius: 2, marginRight: 6 }} />
+                  <Text style={{ color: theme.text, fontSize: 12 }}>Iqlab</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
+                  <View style={{ width: 12, height: 12, backgroundColor: '#9400A8', borderRadius: 2, marginRight: 6 }} />
+                  <Text style={{ color: theme.text, fontSize: 12 }}>Ikhfa</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
+                  <View style={{ width: 12, height: 12, backgroundColor: '#169777', borderRadius: 2, marginRight: 6 }} />
+                  <Text style={{ color: theme.text, fontSize: 12 }}>Idgham with Ghunnah</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
+                  <View style={{ width: 12, height: 12, backgroundColor: '#D500B7', borderRadius: 2, marginRight: 6 }} />
+                  <Text style={{ color: theme.text, fontSize: 12 }}>Ikhfa Shafawi</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
+                  <View style={{ width: 12, height: 12, backgroundColor: '#AAAAAA', borderRadius: 2, marginRight: 6 }} />
+                  <Text style={{ color: theme.text, fontSize: 12 }}>Silent Letters</Text>
+                </View>
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* Save Changes - Slim floating bar */}
+        {hasChanges && (
+          <View style={{ height: 72 }} />
+        )}
+
+        {/* Font Size Sliders - independent, immediate apply */}
+        <View style={styles.section}>
+          <View style={styles.sectionTitle}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Font Sizes</Text>
+          </View>
+
+          {/* Arabic Text Slider (20,24,28,30) */}
+          <View style={{ marginBottom: 12 }}>
+            <Text style={{ color: theme.text, marginBottom: 6 }}>Arabic Text</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              {[20, 24, 28, 30].map((size) => (
+                <Pressable key={size} onPress={() => setFontSizeArabic(size)} style={{ alignItems: 'center', flex: 1 }}>
+                  <View style={{ height: 2, backgroundColor: theme.inactive, width: '100%' }} />
+                  <View style={{ width: 10, height: 10, borderRadius: 5, marginTop: 6, backgroundColor: fontSizeArabic === size ? theme.primary : theme.inactive, alignSelf: 'center' }} />
+                  <Text style={{ color: '#FFFFFF', fontSize: 10, marginTop: 2 }}>{size}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          {/* Transliteration Text Slider (12,14,16,18) */}
+          <View style={{ marginBottom: 12 }}>
+            <Text style={{ color: theme.text, marginBottom: 6 }}>Transliteration Text</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              {[12, 14, 16, 18].map((size) => (
+                <Pressable key={size} onPress={() => setFontSizeTransliteration(size)} style={{ alignItems: 'center', flex: 1 }}>
+                  <View style={{ height: 2, backgroundColor: theme.inactive, width: '100%' }} />
+                  <View style={{ width: 10, height: 10, borderRadius: 5, marginTop: 6, backgroundColor: fontSizeTransliteration === size ? theme.primary : theme.inactive, alignSelf: 'center' }} />
+                  <Text style={{ color: '#FFFFFF', fontSize: 10, marginTop: 2 }}>{size}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          {/* Translation Text Slider (14,16,18,20) */}
+          <View style={{ marginBottom: 12 }}>
+            <Text style={{ color: theme.text, marginBottom: 6 }}>Translation Text</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              {[14, 16, 18, 20].map((size) => (
+                <Pressable key={size} onPress={() => setFontSizeTranslation(size)} style={{ alignItems: 'center', flex: 1 }}>
+                  <View style={{ height: 2, backgroundColor: theme.inactive, width: '100%' }} />
+                  <View style={{ width: 10, height: 10, borderRadius: 5, marginTop: 6, backgroundColor: fontSizeTranslation === size ? theme.primary : theme.inactive, alignSelf: 'center' }} />
+                  <Text style={{ color: '#FFFFFF', fontSize: 10, marginTop: 2 }}>{size}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        </View>
+
+        {/* FastingCalendar Settings Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionTitle}>
+            <Calendar size={20} color={theme.primary} style={styles.sectionIcon} />
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Fasting Calendar</Text>
+          </View>
+          
+          <Text style={[styles.feedbackText, { marginBottom: 16 }]}>
+            Manage your Islamic fasting calendar notifications and settings. 
+            {fastingContext ? ' ✅ Connected with mixed state management.' : ' Available when FastingCalendar is active.'}
+          </Text>
+
+          {/* Fasting Notifications Status */}
+          <View style={styles.displayOption}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Bell size={16} color={theme.textSecondary} style={{ marginRight: 8 }} />
+              <Text style={[styles.displayOptionText, { color: theme.text }]}>
+                Fasting Notifications
+              </Text>
+            </View>
+            <View style={[
+              styles.toggleSwitch,
+              { 
+                backgroundColor: fastingContext?.state.settings.notifications.enabled 
+                  ? theme.primary 
+                  : theme.inactive 
+              }
+            ]}>
+              <View style={[
+                styles.toggleThumb,
+                { 
+                  transform: [{ 
+                    translateX: fastingContext?.state.settings.notifications.enabled ? 16 : 0 
+                  }],
+                  backgroundColor: '#FFFFFF'
+                }
+              ]} />
+            </View>
+          </View>
+
+          {/* Location Display */}
+          {fastingContext && (
+            <View style={styles.displayOption}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Globe size={16} color={theme.textSecondary} style={{ marginRight: 8 }} />
+                <Text style={[styles.displayOptionText, { color: theme.text }]}>
+                  Location
+                </Text>
+              </View>
+              <Text style={[styles.displayOptionText, { color: theme.textSecondary, fontSize: 12 }]}>
+                {fastingContext.state.settings.location.city}, {fastingContext.state.settings.location.country}
+              </Text>
+            </View>
+          )}
+
+          {/* Theme Sync Status */}
+          <View style={styles.displayOption}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Moon size={16} color={theme.textSecondary} style={{ marginRight: 8 }} />
+              <Text style={[styles.displayOptionText, { color: theme.text }]}>
+                Theme Sync
+              </Text>
+            </View>
+            <Text style={[styles.displayOptionText, { 
+              color: fastingContext ? theme.success : theme.textSecondary, 
+              fontSize: 12,
+              fontWeight: '600'
+            }]}>
+              {fastingContext ? 'Active' : 'Inactive'}
+            </Text>
+          </View>
+
+          {/* Navigation to Fasting Settings */}
+          <Pressable 
+            style={[styles.feedbackButton, { 
+              backgroundColor: fastingContext ? theme.primary : theme.inactive,
+              marginTop: 16 
+            }]}
+            onPress={() => {
+              if (fastingContext) {
+                router.push('/fasting/settings');
+              } else {
+                Alert.alert(
+                  'FastingCalendar Not Available',
+                  'Open the Fasting Calendar from the menu to access these settings.',
+                  [
+                    { text: 'Open Calendar', onPress: () => router.push('/fasting/calendar') },
+                    { text: 'Cancel', style: 'cancel' }
+                  ]
+                );
+              }
+            }}
+            disabled={!fastingContext}
+          >
+            <Text style={styles.feedbackButtonText}>
+              {fastingContext ? 'Manage Fasting Settings' : 'Open Fasting Calendar First'}
+            </Text>
+          </Pressable>
+
+          {/* Mixed State Management Info */}
+          <View style={{
+            backgroundColor: theme.card,
+            padding: 12,
+            borderRadius: 8,
+            marginTop: 16,
+            borderLeftWidth: 4,
+            borderLeftColor: fastingContext ? theme.primary : theme.textSecondary
+          }}>
+            <Text style={{ 
+              color: theme.text, 
+              fontSize: 12, 
+              fontWeight: '600',
+              marginBottom: 4 
+            }}>
+              🔄 Mixed State Management
+            </Text>
+            <Text style={{ color: theme.textSecondary, fontSize: 11, lineHeight: 14 }}>
+              {fastingContext 
+                ? 'FastingCalendar uses Context API while iHafidh2 uses Zustand. Themes are automatically synchronized between both systems.'
+                : 'FastingCalendar will use Context API alongside iHafidh2\'s Zustand state management when active.'
+              }
+            </Text>
+            <Text style={{ 
+              color: theme.textSecondary, 
+              fontSize: 10, 
+              marginTop: 4,
+              fontStyle: 'italic' 
+            }}>
+              State Sources: Zustand {fastingContext ? '+ Context' : 'only'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Feedback Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionTitle}>
+            <MessageSquare size={20} color={theme.primary} style={styles.sectionIcon} />
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Feedback & Support</Text>
+          </View>
+          
+          <Text style={styles.feedbackText}>
+            We value your feedback! Help us improve iHafidh by sharing your thoughts, suggestions, or reporting any issues.
+          </Text>
+          
+          <Pressable style={styles.feedbackButton} onPress={sendFeedback}>
+            <Text style={styles.feedbackButtonText}>Send Feedback</Text>
+          </Pressable>
+          
+          <Text style={styles.feedbackText}>
+            Please send your feedback and suggestions to:
+            {'\n'}iHafidhapp@gmail.com
+          </Text>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}

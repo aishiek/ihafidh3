@@ -1,0 +1,79 @@
+{
+  "expo": {
+    "name": "iHafidh",
+    "slug": "ihafidh",
+    "version": "1.1.4",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "icon": "./assets/images/icon.png",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#1a1a1a"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "plugins": [
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/ScheherazadeNew-Regular.ttf",
+            "./assets/fonts/ScheherazadeNew-Bold.ttf",
+            "./assets/fonts/noorehuda Regular.ttf"
+          ]
+        }
+      ],
+      "expo-router",
+      "expo-sqlite",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0",
+            "hermesEnabled": false
+          },
+          "ios": {
+            "useFrameworks": "static",
+            "hermesEnabled": true
+          }
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ihafidh",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "This app needs access to your location to determine the Qibla direction to Mecca."
+      }
+    },
+    "android": {
+      "package": "com.ihafidh",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#1a1a1a"
+      }
+    },
+    "web": {
+      "favicon": "./assets/images/favicon.png",
+      "output": "static"
+    },
+    "scheme": "ihafidh",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e413fa80-10eb-4452-ab9f-b195e2b526b2"
+      }
+    },
+    "developmentClient": {
+      "silentLaunch": true
+    }
+  }
+}
