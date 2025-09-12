@@ -10,6 +10,7 @@ import { surahsData } from '@/data/surahs';
 import { calculateOverallJuzStats, calculateJuzProgress } from '@/utils/juzCalculator';
 // Remove unused import - now using calculateJuzProgress from juzCalculator
 import CircularProgress from '@/components/CircularProgress';
+import { useQuranStore } from '@/store/quranStore';
 
 interface ProgressTrackerData {
   memorizedVerses: string[];
@@ -441,7 +442,8 @@ export default function StatsScreen() {
                     style={[styles.modalButton, { backgroundColor: '#2196F3' }]}
                     onPress={() => {
                       setSelectedItem(null);
-                      router.push(`/surah/${selectedItem.id}`);
+                      useQuranStore.getState().setLastViewedSurahId(selectedItem.id);
+                      router.push('/(tabs)/read');
                     }}
                   >
                     <Text style={[styles.modalButtonText, { color: '#ffffff' }]}>Open Surah</Text>

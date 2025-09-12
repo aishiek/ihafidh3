@@ -1113,7 +1113,9 @@ const getTextColor = (status: string) => {
             }))}
             onItemPress={(item) => {
               const surahId = parseInt(item.key);
-              router.push(`/surah/${surahId}`);
+              // Set last viewed surah so Read tab opens it in-place
+              useQuranStore.getState().setLastViewedSurahId(surahId);
+              router.push('/(tabs)/read');
             }}
           />
 

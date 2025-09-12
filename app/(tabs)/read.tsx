@@ -80,6 +80,7 @@ export default function ReadScreen() {
     markVerseAsRevised
   } = useProgressStore();
   const { clearError, setLastViewedSurahId, getLastViewedSurahId } = useQuranStore();
+  const lastViewedSurahId = useQuranStore(state => state.lastViewedSurahId);
   const { autoPlayAudio, translationLanguage, arabicFont, fontSizeArabic } = useSettingsStore();
 
   const surahListRef = useRef<FlatList>(null);
@@ -329,16 +330,23 @@ export default function ReadScreen() {
   }, [selectedSurah, currentPage, isLoadingMore, hasMoreVerses, verses.length, totalVersesInSurah, translationLanguage]);
 
   const handleSurahPress = (surah: any) => {
-    router.push(`/surah/${surah.id}`);
+    // In-place navigation: select surah and load verses without leaving tab context
+    setSelectedSurah(surah);
+    setLastViewedSurahId(surah.id);
+    loadInitialVerses(surah);
   };
 
   // Prevent double-tap and race conditions on back
   const isNavigatingBack = useRef(false);
+  // Suppress auto-open after returning to list (so we can keep scroll position)
+  const suppressNextAutoOpen = useRef(false);
 
   const handleBackToSurahs = useCallback(() => {
     if (isNavigatingBack.current) return; // Prevent double-tap
     isNavigatingBack.current = true;
     if (selectedSurah) {
+      // Keep lastViewedSurahId so list can scroll to it, but suppress auto-open once
+      suppressNextAutoOpen.current = true;
       setSelectedSurah(null);
       setVerses([]);
       setLoadingError(null);
@@ -693,32 +701,31 @@ export default function ReadScreen() {
   }, []);
 
   useEffect(() => {
-    if (!selectedSurah && surahListRef.current) {
-      const lastId = getLastViewedSurahId();
-      if (lastId) {
-        const index = filteredSurahs.findIndex(s => s.id === lastId);
-        if (index >= 0) {
-          setTimeout(() => {
-            surahListRef.current?.scrollToIndex({ index, animated: true });
-          }, 300);
-        }
+    if (!selectedSurah && surahListRef.current && lastViewedSurahId) {
+      const index = filteredSurahs.findIndex(s => s.id === lastViewedSurahId);
+      if (index >= 0) {
+        setTimeout(() => {
+          surahListRef.current?.scrollToIndex({ index, animated: true });
+        }, 300);
       }
     }
-  }, [selectedSurah, filteredSurahs, getLastViewedSurahId]);
+  }, [selectedSurah, filteredSurahs, lastViewedSurahId]);
     
     // On mount, if lastViewedSurahId is set, open that surah directly
   useEffect(() => {
-    const lastId = getLastViewedSurahId();
-    if (lastId && !selectedSurah) {
-      const surah = surahsData.find(s => s.id === lastId);
+    if (lastViewedSurahId && !selectedSurah) {
+      if (suppressNextAutoOpen.current) {
+        // Skip one auto-open cycle after back navigation
+        suppressNextAutoOpen.current = false;
+        return;
+      }
+      const surah = surahsData.find(s => s.id === lastViewedSurahId);
       if (surah) {
         setSelectedSurah(surah);
         loadInitialVerses(surah);
       }
     }
-    // Optionally, clear lastViewedSurahId after use
-    // setLastViewedSurahId(null);
-  }, []);
+  }, [lastViewedSurahId, selectedSurah, loadInitialVerses]);
 
   // Reload verses when translation language changes
   useEffect(() => {
