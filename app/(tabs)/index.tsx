@@ -21,7 +21,6 @@ import {
   RotateCcw,
   CheckCircle,
   XCircle,
-  Menu,
   X,
   Calendar,
   Moon,
@@ -769,39 +768,45 @@ const getTextColor = (status: string) => {
   const ProgressCard = ({ 
     title, 
     data,
-    size = 80 
+    size
   }: { 
     title: string; 
     data: ProgressData;
     size?: number;
-  }) => (
-    <View style={styles.progressCard}>
-      <Text style={styles.progressCardTitle}>{title}</Text>
-      <View style={styles.progressCircleContainer}>
-        <CircularProgress
-          progress={(data.completed / data.total) * 100}
-          size={size}
-          completed={data.completed}
-          inProgress={data.inProgress}
-          total={data.total}
-        />
+  }) => {
+    const isSmall = width < 420; // treat small phones as compact
+    const cardWidth = isSmall ? 150 : 220;
+    const circleSize = size ?? (isSmall ? 64 : 80);
+
+    return (
+      <View style={[styles.progressCard, { width: cardWidth }]}>
+        <Text style={styles.progressCardTitle}>{title}</Text>
+        <View style={styles.progressCircleContainer}>
+          <CircularProgress
+            progress={(data.completed / data.total) * 100}
+            size={circleSize}
+            completed={data.completed}
+            inProgress={data.inProgress}
+            total={data.total}
+          />
+        </View>
+        <View style={styles.progressLegend}>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#2196F3' }]} />
+            <Text style={[styles.legendText, isSmall && { fontSize: 11 }]}>{data.completed} Completed</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#FF9800' }]} />
+            <Text style={[styles.legendText, isSmall && { fontSize: 11 }]}>{data.inProgress} In Progress</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#666666' }]} />
+            <Text style={[styles.legendText, isSmall && { fontSize: 11 }]}>{data.notStarted} Not Started</Text>
+          </View>
+        </View>
       </View>
-      <View style={styles.progressLegend}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#2196F3' }]} />
-          <Text style={styles.legendText}>{data.completed} Completed</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#FF9800' }]} />
-          <Text style={styles.legendText}>{data.inProgress} In Progress</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#666666' }]} />
-          <Text style={styles.legendText}>{data.notStarted} Not Started</Text>
-        </View>
-      </View>
-    </View>
-  );
+    );
+  };
 
   // Helper to format total time spent as d h m
   function formatTotalTime(totalSeconds: number) {
@@ -945,7 +950,7 @@ const getTextColor = (status: string) => {
               borderWidth: item.status === 'not-started' ? 1.5 : 0,
             }
           ]}>
-            <Text style={[styles.iconText, { color: icon.color }]}> {icon.symbol} </Text>
+            <Text style={[styles.iconText, { color: icon.color }]}>{icon.symbol}</Text>
           </View>
         </LinearGradient>
       </TouchableOpacity>
@@ -981,17 +986,7 @@ const getTextColor = (status: string) => {
 
   return (
     <>
-    {/* Hamburger Menu Button - Positioned at Navigation Header Level */}
-    <View style={styles.navigationHeaderOverlay}>
-      <TouchableOpacity 
-        style={styles.navigationHamburgerButton}
-        onPress={() => setIsMenuVisible(true)}
-        activeOpacity={0.7}
-      >
-        <Menu size={24} color="#ffffff" />
-      </TouchableOpacity>
-    </View>
-
+    {/* Note: Hamburger icon moved to global layout to ensure consistency across tabs */}
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Header */}
       <View style={styles.header}>
@@ -1022,9 +1017,9 @@ const getTextColor = (status: string) => {
             <View style={styles.revisionHeader}>
               <Text style={styles.revisionTitle}>Daily Verses</Text>
               {stats.dailyRevisionCompleted >= stats.dailyRevisionTarget ? (
-                <CheckCircle size={20} color="#4CAF50" />
+                <CheckCircle size={16} color="#4CAF50" />
               ) : (
-                <XCircle size={20} color="#F44336" />
+                <XCircle size={16} color="#F44336" />
               )}
             </View>
             <Text style={styles.revisionProgress}>
@@ -1047,9 +1042,9 @@ const getTextColor = (status: string) => {
             <View style={styles.revisionHeader}>
               <Text style={styles.revisionTitle}>Weekly Surahs</Text>
               {stats.weeklyRevisionCompleted >= stats.weeklyRevisionTarget ? (
-                <CheckCircle size={20} color="#4CAF50" />
+                <CheckCircle size={16} color="#4CAF50" />
               ) : (
-                <XCircle size={20} color="#F44336" />
+                <XCircle size={16} color="#F44336" />
               )}
             </View>
             <Text style={styles.revisionProgress}>
@@ -1217,10 +1212,9 @@ const getTextColor = (status: string) => {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1a1a1a',
-  },
+  container: { flex: 1, backgroundColor: '#1a1a1a' },
+
+  /* Header */
   header: {
     paddingTop: 48,
     paddingBottom: 24,
@@ -1229,458 +1223,134 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
-  headerTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  headerTopWithMenu: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  headerHamburgerButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  hamburgerButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  topRightMenuContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 1000,
-    alignItems: 'flex-start', // Changed to flex-start for left alignment
-    paddingTop: 0,
-    paddingLeft: 16, // Changed from paddingRight to paddingLeft
-    pointerEvents: 'box-none', // Allow touches to pass through except for the button
-  },
+  headerTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  headerTopWithMenu: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  headerHamburgerButton: { padding: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.06)' },
+  hamburgerButton: { padding: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.06)' },
+
+  /* Navigation overlay for hamburger */
   navigationHeaderOverlay: {
     position: 'absolute',
-    top: -50, // Position above the content to align with navigation header
-    right: 16, // Changed from left: 16 to right: 16
-    zIndex: 1000,
-    height: 44, // Standard navigation header height
-    justifyContent: 'center',
-  },
-  navigationHamburgerButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  topRightHamburgerButton: {
-    marginTop: 8,
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  greeting: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  welcomeText: {
-    fontSize: 16,
-    color: '#888888',
-    fontWeight: '400',
-    lineHeight: 20,
-  },
-  section: {
-    marginBottom: 24,
-    paddingHorizontal: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 16,
-  },
-  progressCard: {
-    backgroundColor: '#333333',
-    borderRadius: 12,
-    padding: 16,
-    marginRight: 12,
-    alignItems: 'center',
-    minWidth: 140,
-  },
-  progressCardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 12,
-  },
-  progressCircleContainer: {
-    position: 'relative',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  progressTextContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
     top: 0,
-    left: 0,
-  },
-  progressPercentage: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#ffffff',
-  },
-  progressLegend: {
-    gap: 4,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  legendText: {
-    fontSize: 11,
-    color: '#888888',
-  },
-  revisionContainer: {
-    gap: 12,
-  },
-  revisionItem: {
-    backgroundColor: '#333333',
-    borderRadius: 12,
-    padding: 16,
-  },
-  revisionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  revisionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  revisionProgress: {
-    fontSize: 14,
-    color: '#888888',
-    marginBottom: 8,
-  },
-  progressBar: {
-    height: 6,
-    backgroundColor: '#555555',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#2196F3',
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  statCard: {
-    width: (width - 50) / 2,
-    backgroundColor: '#333333',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderLeftWidth: 4,
-  },
-  statHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  statTitle: {
-    fontSize: 12,
-    color: '#888888',
-    marginLeft: 8,
-    textTransform: 'uppercase',
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  statSubtitle: {
-    fontSize: 12,
-    color: '#888888',
-  },
-  actionsContainer: {
-    gap: 12,
-  },
-  actionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#333333',
-    borderRadius: 12,
-    padding: 16,
-    borderColor: '#2196F3',
-    borderWidth: 2,
-  },
-  actionCardContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  actionCardText: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  actionCardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 2,
-  },
-  actionCardSubtitle: {
-    fontSize: 14,
-    color: '#888888',
-  },
-  activityContainer: {
-    gap: 12,
-  },
-  activityItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#333333',
-    borderRadius: 12,
-    padding: 16,
-  },
-  activityIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#2196F320',
+    left: 16,
+    right: 16,
+    height: 44,
     justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
+    alignItems: 'flex-start',
+    zIndex: 1000,
+    pointerEvents: 'box-none',
   },
-  activityContent: {
-    flex: 1,
-  },
-  activityText: {
-    fontSize: 14,
-    color: '#ffffff',
-    marginBottom: 2,
-  },
-  activityTime: {
-    fontSize: 12,
-    color: '#888888',
-  },
-  // --- Improved Mustahabbah styles ---
-  mustahabbahCard: {
-    borderRadius: 16,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 8,
-    overflow: 'hidden',
-  },
-  mustahabbahGrid: {
-    marginBottom: 24,
-    alignSelf: 'stretch',
-    width: '100%',
-  },
-  mustahabbahRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    marginBottom: 12,
-    paddingHorizontal: 0,
-    // spacing handled per-item marginRight to avoid overflow rounding
-    width: '100%',
-  },
-  cardWrapper: {
-    marginBottom: 12,
-    flexBasis: '33.33%',
-  },
-  cardWrapperSpacing: {
-    marginRight: 8,
-  },
-  card: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'flex-start',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
-    borderRadius: 12,
-    minHeight: 54,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
-    position: 'relative',
-  },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    flex: 1,
-    color: '#ffffff',
-    marginRight: 16,
-    textAlign: 'left',
-    lineHeight: 18,
-  },
+  navigationHamburgerButton: { padding: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.06)' },
+
+  /* Greeting */
+  greeting: { fontSize: 18, fontWeight: '600', color: '#ffffff', marginTop: 8 },
+  welcomeText: { fontSize: 14, color: '#cccccc', marginTop: 4 },
+
+  /* Sections */
+  section: { paddingHorizontal: 20, paddingVertical: 16 },
+  sectionTitle: { color: '#ffffff', fontSize: 16, fontWeight: '600', marginBottom: 12 },
+
+  /* Revision */
+  revisionContainer: {},
+  revisionItem: { backgroundColor: '#222222', borderRadius: 12, padding: 12, marginBottom: 12 },
+  revisionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  revisionTitle: { textAlign: 'center', fontSize: 16, fontWeight: '600', color: '#ffffff' },
+  revisionProgress: { fontSize: 14, color: '#888888' },
+
+  /* Progress bar */
+  progressBar: { height: 6, backgroundColor: '#555555', borderRadius: 3, overflow: 'hidden', marginTop: 8 },
+  progressFill: { height: '100%', backgroundColor: '#2196F3' },
+
+  /* Small progress card */
+  progressCard: { backgroundColor: '#222', borderRadius: 12, padding: 12, marginRight: 12, width: 220 },
+  progressCardTitle: { color: '#fff', fontSize: 14, marginBottom: 8 },
+  progressCircleContainer: { alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  progressLegend: { flexDirection: 'column', alignItems: 'flex-start', marginTop: 8 },
+  legendItem: { flexDirection: 'row', alignItems: 'center' },
+  legendDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
+  legendText: { color: '#888888', fontSize: 13 },
+
+  /* Action cards */
+  actionsContainer: { gap: 12, marginVertical: 8 },
+  actionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#333333', borderRadius: 12, padding: 16, borderColor: '#2196F3', borderWidth: 0 },
+  actionCardContent: { flexDirection: 'row', alignItems: 'center' },
+  actionCardText: { flex: 1, marginLeft: 12 },
+  actionCardTitle: { fontSize: 16, fontWeight: '600', color: '#ffffff', marginBottom: 2 },
+  actionCardSubtitle: { fontSize: 14, color: '#888888' },
+
+  /* Mustahabbah grid */
+  mustahabbahGrid: { marginTop: 8 },
+  mustahabbahRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+  mustahabbahCard: { backgroundColor: '#2a2a2a', borderRadius: 12, padding: 12, flex: 1, marginRight: 8 },
+
+  /* Cards */
+  cardWrapper: { width: (width - 60) / 3 },
+  cardWrapperSpacing: { marginRight: 8 },
+  card: { backgroundColor: '#2b2b2b', borderRadius: 12, padding: 12, position: 'relative' },
+  notStartedBorder: { borderLeftWidth: 4, borderLeftColor: '#666' },
+  cardTitle: { color: '#ffffff', fontSize: 14, fontWeight: '600' },
+
+  /* Icon */
   iconContainer: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    alignItems: 'center',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     justifyContent: 'center',
-    flexShrink: 0,
+    alignItems: 'center',
     position: 'absolute',
     top: 4,
-    right: 6,
+    right: 4,
   },
   iconText: {
-    fontSize: 9,
-    fontWeight: 'bold',
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    lineHeight: 12,
   },
-  progressSummary: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#3a3a3a',
-  },
-  progressItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  memorizedDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 8,
-    shadowColor: '#4A9B8E',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  remainingDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#4a4a4a',
-    borderWidth: 2,
-    borderColor: '#6a6a6a',
-    marginRight: 8,
-  },
-  progressText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#ffffff',
-  },
-  notStartedBorder: {
-    borderWidth: 1,
-    borderColor: '#4a4a4a',
-  },
-  // 🍔 Hamburger Menu Styles
-  menuOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  menuBackdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  menuContainer: {
-    backgroundColor: '#2a2a2a',
-    borderRadius: 16,
-    margin: 20,
-    maxWidth: 320,
-    width: '90%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  menuHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#3a3a3a',
-  },
-  menuTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#ffffff',
-  },
-  menuCloseButton: {
-    padding: 4,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  menuContent: {
-    padding: 16,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  menuItemIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  menuItemContent: {
-    flex: 1,
-  },
-  menuItemTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 2,
-  },
-  menuItemSubtitle: {
-    fontSize: 14,
-    color: '#aaaaaa',
-  },
-  menuFooter: {
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#3a3a3a',
-    alignItems: 'center',
-  },
-  menuFooterText: {
-    fontSize: 12,
-    color: '#888888',
-    fontStyle: 'italic',
-  },
+
+  /* Menu modal */
+  menuOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'flex-end', backgroundColor: 'transparent' },
+  menuBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  menuContainer: { backgroundColor: '#1a1a1a', borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16 },
+  menuHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  menuTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  menuCloseButton: { padding: 8, borderRadius: 8, backgroundColor: '#222' },
+  menuContent: { marginTop: 8 },
+  menuItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 12, backgroundColor: '#222', marginBottom: 10 },
+  menuItemIcon: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  menuItemContent: { flex: 1 },
+  menuItemTitle: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  menuItemSubtitle: { color: '#aaa', fontSize: 13 },
+  menuFooter: { marginTop: 12 },
+  menuFooterText: { color: '#888', fontSize: 12 },
+
+  /* Activity */
+  activityContainer: { gap: 12, marginTop: 12 },
+  activityItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#333333', borderRadius: 12, padding: 16, marginBottom: 12 },
+  activityIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(33,150,243,0.08)', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  activityContent: { flex: 1 },
+  activityText: { color: '#ffffff', fontSize: 14, marginBottom: 4 },
+  activityTime: { color: '#888888', fontSize: 12 },
+
+  /* Stats */
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  statCard: { width: (width - 50) / 2, backgroundColor: '#333333', borderRadius: 12, padding: 16, marginBottom: 12 },
+  statHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  statTitle: { fontSize: 12, color: '#888888', marginLeft: 8, textTransform: 'uppercase' },
+  statValue: { fontSize: 24, fontWeight: 'bold', color: '#ffffff', marginBottom: 4 },
+  statSubtitle: { fontSize: 12, color: '#888888' },
+
+  /* Progress summary */
+  progressSummary: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 20, borderTopWidth: 1, borderTopColor: '#3a3a3a' },
+  progressItem: { flexDirection: 'row', alignItems: 'center' },
+  memorizedDot: { width: 12, height: 12, borderRadius: 6, marginRight: 8, shadowColor: '#4A9B8E', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 4, elevation: 3 },
+  remainingDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#4a4a4a', borderWidth: 2, borderColor: '#6a6a6a', marginRight: 8 },
+  progressText: { fontSize: 14, fontWeight: '500', color: '#ffffff' },
+
+  /* Additional small helpers used by components */
+  progressTextContainer: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+  progressPercentage: { color: '#fff', fontSize: 12, fontWeight: '700' },
+
+  // fallback defaults
+  smallButton: { padding: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.06)' },
 });
