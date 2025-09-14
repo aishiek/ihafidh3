@@ -30,12 +30,6 @@ export default function FastingLayout() {
           presentation: 'modal',
         }}
       />
-      <Stack.Screen
-        name="intentions"
-        options={{
-          title: 'Fasting Intentions',
-        }}
-      />
     </Stack>
   );
 }

@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { v4 as uuidv4 } from 'uuid';
+import * as Crypto from 'expo-crypto';
 
 const USER_ID_KEY = 'ihafidh_user_id';
 const USER_NAME_KEY = 'ihafidh_user_name';
@@ -9,12 +9,31 @@ const isExpoGo = Constants.appOwnership === 'expo';
 
 let analyticsModule: any = null;
 
+// Lightweight UUID v4 generator using expo-crypto
+function generateUUIDv4(): string {
+  // Generate 16 random bytes
+  const bytes = Crypto.getRandomValues(new Uint8Array(16));
+  // Per RFC 4122 set version and variant bits
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xxxxxx
+  const hex: string[] = [];
+  for (let i = 0; i < bytes.length; i++) {
+    hex.push((bytes[i] + 0x100).toString(16).substring(1));
+  }
+  return (
+    hex[0] + hex[1] + hex[2] + hex[3] + '-' +
+    hex[4] + hex[5] + '-' +
+    hex[6] + hex[7] + '-' +
+    hex[8] + hex[9] + '-' +
+    hex[10] + hex[11] + hex[12] + hex[13] + hex[14] + hex[15]
+  );
+}
+
 // Initialize analytics module using optional static requires to avoid dynamic import chunks
 function initializeAnalytics() {
   analyticsModule = null;
   if (isExpoGo) {
     try {
-      // Optional dependency for Expo Go builds
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const expoAnalytics = require('expo-firebase-analytics');
       analyticsModule = expoAnalytics?.default ?? expoAnalytics;
@@ -23,7 +42,6 @@ function initializeAnalytics() {
     }
   } else {
     try {
-      // Optional dependency for bare/production builds
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const firebaseAnalytics = require('@react-native-firebase/analytics');
       analyticsModule = firebaseAnalytics?.default ?? firebaseAnalytics;
@@ -39,7 +57,12 @@ initializeAnalytics();
 export async function ensureUserId() {
   let userId = await AsyncStorage.getItem(USER_ID_KEY);
   if (!userId) {
-    userId = uuidv4();
+    try {
+      userId = generateUUIDv4();
+    } catch (e) {
+      console.warn('UUID generation failed, falling back to timestamp-based id', e);
+      userId = 'uid-' + Date.now().toString(36);
+    }
     await AsyncStorage.setItem(USER_ID_KEY, userId);
   }
   if (!isExpoGo && analyticsModule?.setUserId) {

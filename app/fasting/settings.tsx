@@ -11,10 +11,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FastingCalendarContext } from '../../components/fasting/context/FastingCalendarContext';
 import { useUnifiedTheme } from '../../hooks/useUnifiedTheme';
+import { ArrowLeft } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 
 const FastingSettings: React.FC = () => {
   const { theme } = useUnifiedTheme();
   const fastingContext = useContext(FastingCalendarContext);
+  const router = useRouter();
 
   if (!fastingContext) {
     return (
@@ -75,9 +78,17 @@ const FastingSettings: React.FC = () => {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+      {/* App-style header with yellow back arrow */}
+      <View style={[styles.headerBar, { backgroundColor: theme.background, borderBottomColor: theme.border }]}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" hitSlop={{ top:10, bottom:10, left:10, right:10 }} onPress={() => router.back()} style={styles.backButton}>
+          <ArrowLeft size={24} color="#FFC107" />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Manage Fasting Settings</Text>
+        <View style={{ width: 40 }} />
+      </View>
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Title */}
-        <Text style={[styles.pageTitle, { color: theme.text }]}>Manage Fasting Settings</Text>
+        {/* Title removed (now in header) */}
+        {/* <Text style={[styles.pageTitle, { color: theme.text }]}>Manage Fasting Settings</Text> */}
         <Text style={[styles.helperText, { color: theme.textSecondary }]}>Global notifications can be enabled/disabled from the main Settings screen. Here you can fine‑tune individual fasting type alerts and Hijri date adjustment.</Text>
 
         {/* FASTING TYPES */}
@@ -180,14 +191,18 @@ const FastingSettings: React.FC = () => {
 
         <View style={styles.bottomSpacing} />
       </ScrollView>
+      {/* Footer spacer to emulate tab footer area if needed */}
+      <View style={styles.footerSpacer} />
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  headerBar: { flexDirection:'row', alignItems:'center', paddingHorizontal:16, paddingTop:4, paddingBottom:10, borderBottomWidth:1 },
+  backButton: { width:40, height:40, alignItems:'center', justifyContent:'center' },
+  headerTitle: { flex:1, textAlign:'center', fontSize:18, fontWeight:'700' },
   content: { flex: 1, paddingHorizontal: 16 },
-  pageTitle: { fontSize: 20, fontWeight: '700', marginTop: 8, marginBottom: 10 },
   helperText: { fontSize: 12, lineHeight: 16, marginBottom: 16 },
   section: { marginTop: 16, borderRadius: 12, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
   sectionTitle: { fontSize: 16, fontWeight: '600', marginBottom: 16 },
@@ -196,6 +211,7 @@ const styles = StyleSheet.create({
   typeTitle: { fontSize: 14, fontWeight: '600', marginBottom: 2 },
   typeDesc: { fontSize: 11, lineHeight: 14 },
   bottomSpacing: { height: 32 },
+  footerSpacer: { height: 12 },
 });
 
 export default FastingSettings;

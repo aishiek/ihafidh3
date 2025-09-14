@@ -1,5 +1,5 @@
+import * as Font from 'expo-font';
 import { FastingCalendarProvider } from '@/components/fasting/context/FastingCalendarContext';
-import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import React, { Component, ReactNode } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
@@ -21,8 +21,10 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
     if (this.state.error) {
       return (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' }}>
-          <Text style={{ color: 'white', fontSize: 16, marginBottom: 8 }}>Something went wrong.</Text>
-          <Text style={{ color: '#f87171', fontSize: 12, paddingHorizontal: 16, textAlign: 'center' }}>{this.state.error.message}</Text>
+          <Text style={{ color: 'white', fontSize: 16, marginBottom: 8, fontFamily: 'ScheherazadeNew-Bold' }}>Something went wrong.</Text>
+          <Text style={{ color: '#f87171', fontSize: 12, paddingHorizontal: 16, textAlign: 'center', fontFamily: 'ScheherazadeNew-Regular' }}>
+            {this.state.error.message}
+          </Text>
         </View>
       );
     }
@@ -30,23 +32,65 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
   }
 }
 
-export default function RootLayout() {
-  const [fontsLoaded] = useFonts({
-    'Scheherazade': require('../assets/fonts/ScheherazadeNew-Regular.ttf'),
-    'Scheherazade-Bold': require('../assets/fonts/ScheherazadeNew-Bold.ttf'),
-    'NooreHuda': require('../assets/fonts/NooreHuda-Regular.ttf'),
-  });
+let __fontsLoadedSingleton = false;
+let __fontLoadPromise: Promise<void> | null = null;
+async function loadAppFontsOnce() {
+  if (__fontsLoadedSingleton) return;
+  if (__fontLoadPromise) return __fontLoadPromise;
+  __fontLoadPromise = (async () => {
+    try {
+      await Font.loadAsync({
+        'ScheherazadeNew-Regular': require('../assets/fonts/ScheherazadeNew-Regular.ttf'),
+        'ScheherazadeNew-Bold': require('../assets/fonts/ScheherazadeNew-Bold.ttf'),
+        'NooreHuda-Regular': require('../assets/fonts/NooreHuda-Regular.ttf'),
+      });
+      __fontsLoadedSingleton = true;
+      console.log('[fonts] Loaded (first time).');
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      // iOS CTFontManagerError 104 often means already registered; treat as success
+      if (/CTFontManagerError|already been registered|Font registration was unsuccessful/i.test(msg)) {
+        console.warn('[fonts] Duplicate / benign registration issue, continuing:', msg);
+        __fontsLoadedSingleton = true; // allow app to proceed
+      } else {
+        console.error('[fonts] Fatal font load error:', e);
+        throw e;
+      }
+    }
+  })();
+  return __fontLoadPromise;
+}
 
-  // Log early to confirm JS bundle executed
+export default function RootLayout() {
+  const [fontsLoaded, setFontsLoaded] = React.useState(false);
+  const [fontError, setFontError] = React.useState<Error | null>(null);
+  const [forceContinue, setForceContinue] = React.useState(false);
+
   React.useEffect(() => {
-    console.log('RootLayout mounted: fontsLoaded=', fontsLoaded);
+    let mounted = true;
+    loadAppFontsOnce()
+      .then(() => { if (mounted) setFontsLoaded(true); })
+      .catch(err => { if (mounted) { setFontError(err instanceof Error ? err : new Error(String(err))); setFontsLoaded(true); } });
+
+    const to = setTimeout(() => {
+      if (mounted && !fontsLoaded) {
+        console.warn('[fonts] Timeout waiting (4s) – forcing continue');
+        setForceContinue(true);
+      }
+    }, 4000);
+    return () => { mounted = false; clearTimeout(to); };
   }, [fontsLoaded]);
 
-  if (!fontsLoaded) {
+  if (!fontsLoaded && !forceContinue) {
     return (
       <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color="#FFD700" />
-        <Text style={{ marginTop: 12, color: '#fff' }}>Loading…</Text>
+        <Text style={{ marginTop: 12, color: '#fff', fontFamily: 'ScheherazadeNew-Regular', fontSize: 16 }}>Loading…</Text>
+        {fontError ? (
+          <Text style={{ marginTop: 8, color: '#f87171', fontSize: 12, fontFamily: 'ScheherazadeNew-Regular', paddingHorizontal: 20, textAlign: 'center' }}>
+            Font error: {fontError.message}
+          </Text>
+        ) : null}
       </View>
     );
   }
