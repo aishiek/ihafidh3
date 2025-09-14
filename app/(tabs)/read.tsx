@@ -1,20 +1,19 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { StyleSheet, Text, View, FlatList, Pressable, TextInput, ActivityIndicator, Alert, ViewStyle, TouchableOpacity, Modal, InteractionManager, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Search, ArrowLeft, Play, Pause, BookMarked, BookX, CheckCircle, RefreshCw } from 'lucide-react-native';
+import JuzMemorization from '@/components/JuzMemorization';
+import VerseItem from '@/components/VerseItem';
 import { surahsData } from '@/data/surahs';
+import { fetchVersesBySurah } from '@/services/quranApi';
 import { useProgressStore } from '@/store/progressStore';
 import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
+import type { Surah } from '@/types';
+import { Verse } from '@/types';
+import { pauseAudio, playAudio } from '@/utils/audioUtils';
 import { useCustomColors } from '@/utils/themeUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
-import { Verse } from '@/types';
-import type { Surah } from '@/types';
-import VerseItem from '@/components/VerseItem';
-import { fetchVersesBySurah } from '@/services/quranApi';
-import { playAudio, pauseAudio } from '@/utils/audioUtils';
-import MinimalTopStrip from '@/components/MinimalTopStrip';
-import JuzMemorization from '@/components/JuzMemorization';
+import { useRouter } from 'expo-router';
+import { ArrowLeft, CheckCircle, Pause, Play, RefreshCw, Search } from 'lucide-react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, InteractionManager, Modal, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View, ViewStyle } from 'react-native';
 
 // Dynamic batch size based on surah length
 const getDynamicBatchSize = (surahVerseCount: number, isInitial: boolean = false) => {
@@ -64,6 +63,8 @@ export default function ReadScreen() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [isPlayingSurah, setIsPlayingSurah] = useState(false);
+  const surahAudioUrlRef = useRef<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMoreVerses, setHasMoreVerses] = useState(true);
   const [totalVersesInSurah, setTotalVersesInSurah] = useState(0);
@@ -542,6 +543,34 @@ export default function ReadScreen() {
       setIsPlayingAudio(false);
     }
   };
+  
+  // Full Surah audio (single continuous stream via islamic.network high quality)
+  const handleToggleSurahAudio = useCallback(async () => {
+    if (!selectedSurah) return;
+    try {
+      if (isPlayingSurah) {
+        await pauseAudio();
+        setIsPlayingSurah(false);
+        return;
+      }
+      // Build surah mp3 url (128kbps) pattern: https://cdn.islamic.network/quran/audio-surah/128/<reciter>/<surah>.mp3
+      const reciter = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
+      const surahIdPadded = selectedSurah.id.toString();
+      const surahUrl = `https://cdn.islamic.network/quran/audio-surah/128/${reciter}/${surahIdPadded}.mp3`;
+      surahAudioUrlRef.current = surahUrl;
+      await playAudio(surahUrl, 1, (status) => {
+        if (status?.didJustFinish) {
+          setIsPlayingSurah(false);
+        }
+        if (status?.error) {
+          setIsPlayingSurah(false);
+        }
+      });
+      setIsPlayingSurah(true);
+    } catch (e) {
+      setIsPlayingSurah(false);
+    }
+  }, [selectedSurah, isPlayingSurah]);
 
   const renderVerse = ({ item: verse }: { item: Verse }) => (
     <VerseItem
@@ -798,10 +827,33 @@ export default function ReadScreen() {
           </TouchableOpacity>
           {selectedSurah ? (
             <View style={styles.headerTitleContainer}>
-              <Text style={styles.headerTitle}>{selectedSurah.englishName}</Text>
+              <View style={{ flexDirection:'row', alignItems:'center', marginBottom:4 }}>
+                <Text style={styles.headerTitle}>{selectedSurah.englishName}</Text>
+                <TouchableOpacity
+                  onPress={handleToggleSurahAudio}
+                  style={{
+                    marginLeft:10,
+                    backgroundColor: isPlayingSurah ? '#FFD700' : '#333333',
+                    borderRadius: 22,
+                    width:42,
+                    height:42,
+                    justifyContent:'center',
+                    alignItems:'center',
+                    borderWidth:1,
+                    borderColor: isPlayingSurah ? '#FFD700' : '#555555',
+                    shadowColor:'#000',
+                    shadowOpacity:0.3,
+                    shadowRadius:4,
+                    shadowOffset:{ width:0, height:2 }
+                  }}
+                  activeOpacity={0.8}
+                >
+                  {isPlayingSurah ? <Pause size={22} color="#1a1a1a" /> : <Play size={22} color="#FFD700" />}
+                </TouchableOpacity>
+              </View>
               <Text style={[styles.headerSubtitle, { 
                 fontFamily: getArabicFontFamily(),
-                fontSize: fontSizeArabic * 0.9, // Slightly smaller than verse text
+                fontSize: fontSizeArabic * 0.9,
                 lineHeight: fontSizeArabic * 1.4
               }]}>{selectedSurah.arabicName}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>

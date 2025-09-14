@@ -1,20 +1,19 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { toHijri, toGregorian } from 'hijri-converter';
+import { toGregorian, toHijri } from 'hijri-converter';
+import React, { useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Dimensions,
+    Dimensions,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
 // Using a custom grid instead of RNCalendar for Hijri month layout
-import { CalendarDay, FastingType, FastingIntention } from '@/types/fasting';
 import { FASTING_INFO } from '@/constants/fastingInfo';
-import { FastingLogic } from '@/services/fasting/fastingLogic';
-import DayDetailModal from './context/DayDetailModal';
 import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
+import { FastingLogic } from '@/services/fasting/fastingLogic';
+import { CalendarDay, FastingIntention, FastingType } from '@/types/fasting';
+import DayDetailModal from './context/DayDetailModal';
 
 // English names for Hijri months
 const HIJRI_MONTHS_EN = [
@@ -372,7 +371,7 @@ export default function Calendar({
                   <View style={[styles.todayRing, { borderColor: '#14B8A6' }]} />
                 )}
                 <Text style={[styles.hijriNumber, { color: hijriTextColor }]}>{day.hijriDay}</Text>
-                <Text style={[styles.gregNumber, { color: gregTextColor }]}>{day.gregDate.getUTCDate()}</Text>
+                <Text style={[styles.gregNumber, { color: '#FFFF00' }]}>{day.gregDate.getUTCDate()}</Text>
               </View>
             </TouchableOpacity>
           );

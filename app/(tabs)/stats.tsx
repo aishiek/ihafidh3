@@ -1,13 +1,13 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, Pressable, Modal, TouchableOpacity } from 'react-native';
-import { useRouter } from 'expo-router';
-import { X } from 'lucide-react-native';
-import { useCustomColors } from '@/utils/themeUtils';
-import { useThemeColor } from '@/utils/useThemeColor';
+import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
 import { useSettingsStore } from '@/store/settingsStore';
-import { surahsData } from '@/data/surahs';
-import { calculateOverallJuzStats, calculateJuzProgress } from '@/utils/juzCalculator';
+import { calculateJuzProgress, calculateOverallJuzStats } from '@/utils/juzCalculator';
+import { useCustomColors } from '@/utils/themeUtils';
+import { useThemeColor } from '@/utils/useThemeColor';
+import { useRouter } from 'expo-router';
+import { X } from 'lucide-react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 // Remove unused import - now using calculateJuzProgress from juzCalculator
 import CircularProgress from '@/components/CircularProgress';
 import { useQuranStore } from '@/store/quranStore';

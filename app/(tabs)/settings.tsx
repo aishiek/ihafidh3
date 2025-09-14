@@ -1,17 +1,15 @@
-import React, { useState, useMemo } from 'react';
-import { StyleSheet, Text, View, TextInput, Pressable, Alert, ScrollView, Linking } from 'react-native';
-import { Stack } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User, MessageSquare, Globe, Calendar, Bell, Moon } from 'lucide-react-native';
-import { Music } from 'lucide-react-native';
+import { useFastingCalendar } from '@/components/fasting/context/FastingCalendarContext';
+import { RECITERS } from '@/constants/reciters';
+import { TRANSLATION_LANGUAGES } from '@/constants/translationLanguages';
+import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
+import { useSettingsStore } from '@/store/settingsStore';
 import { useThemeStore } from '@/store/themeStore';
 import { useThemeColor } from '@/utils/useThemeColor';
-import { useSettingsStore } from '@/store/settingsStore';
-import { TRANSLATION_LANGUAGES } from '@/constants/translationLanguages';
-import { RECITERS } from '@/constants/reciters';
-import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
-import { useFastingContext } from '@/components/fasting/context/FastingCalendarContext';
-import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router, Stack } from 'expo-router';
+import { Bell, Calendar, Globe, MessageSquare, Moon, Music, User } from 'lucide-react-native';
+import React, { useMemo, useState } from 'react';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 const USER_NAME_KEY = 'user_name';
 
@@ -22,7 +20,7 @@ export default function SettingsScreen() {
   
   // Mixed state management integration
   const unifiedTheme = useUnifiedTheme();
-  const fastingContext = useFastingContext();
+  const fastingContext = useFastingCalendar();
   const [localName, setLocalName] = useState(userName || '');
   const [selectedTranslation, setSelectedTranslation] = useState(translationLanguage || 'en.asad');
   const [selectedReciter, setSelectedReciter] = useState(reciterIdentifier || 'ar.alafasy');
@@ -692,138 +690,67 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* FastingCalendar Settings Section */}
+        {/* FastingCalendar Settings Section (always active now) */}
         <View style={styles.section}>
           <View style={styles.sectionTitle}>
             <Calendar size={20} color={theme.primary} style={styles.sectionIcon} />
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Fasting Calendar</Text>
           </View>
           
-          <Text style={[styles.feedbackText, { marginBottom: 16 }]}>
-            Manage your Islamic fasting calendar notifications and settings. 
-            {fastingContext ? ' ✅ Connected with mixed state management.' : ' Available when FastingCalendar is active.'}
-          </Text>
+          <Text style={[styles.feedbackText, { marginBottom: 16 }]}>Manage your Islamic fasting calendar notifications and settings.</Text>
 
-          {/* Fasting Notifications Status */}
+          {/* Fasting Notifications Status (Global Master) */}
           <View style={styles.displayOption}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Bell size={16} color={theme.textSecondary} style={{ marginRight: 8 }} />
-              <Text style={[styles.displayOptionText, { color: theme.text }]}>
-                Fasting Notifications
-              </Text>
+              <Text style={[styles.displayOptionText, { color: theme.text }]}>Enable Fasting Notifications</Text>
             </View>
-            <View style={[
-              styles.toggleSwitch,
-              { 
-                backgroundColor: fastingContext?.state.settings.notifications.enabled 
-                  ? theme.primary 
-                  : theme.inactive 
-              }
-            ]}>
-              <View style={[
-                styles.toggleThumb,
-                { 
-                  transform: [{ 
-                    translateX: fastingContext?.state.settings.notifications.enabled ? 16 : 0 
-                  }],
-                  backgroundColor: '#FFFFFF'
-                }
-              ]} />
-            </View>
+            <Pressable
+              onPress={async () => {
+                 await fastingContext.updateSettings({
+                   notifications: {
+                     ...fastingContext.state.settings.notifications,
+                     enabled: !fastingContext.state.settings.notifications.enabled
+                   }
+                 });
+               }}
+            >
+              <View style={[styles.toggleSwitch,{ backgroundColor: fastingContext?.state.settings.notifications.enabled ? theme.primary : theme.inactive }]}>
+                <View style={[styles.toggleThumb,{ transform: [{ translateX: fastingContext?.state.settings.notifications.enabled ? 16 : 0 }], backgroundColor: '#FFFFFF' }]} />
+              </View>
+            </Pressable>
           </View>
 
           {/* Location Display */}
-          {fastingContext && (
-            <View style={styles.displayOption}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Globe size={16} color={theme.textSecondary} style={{ marginRight: 8 }} />
-                <Text style={[styles.displayOptionText, { color: theme.text }]}>
-                  Location
-                </Text>
-              </View>
-              <Text style={[styles.displayOptionText, { color: theme.textSecondary, fontSize: 12 }]}>
-                {fastingContext.state.settings.location.city}, {fastingContext.state.settings.location.country}
-              </Text>
-            </View>
-          )}
+           <View style={styles.displayOption}>
+             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+               <Globe size={16} color={theme.textSecondary} style={{ marginRight: 8 }} />
+               <Text style={[styles.displayOptionText, { color: theme.text }]}>Location</Text>
+             </View>
+             <Text style={[styles.displayOptionText, { color: theme.textSecondary, fontSize: 12 }]}>
+               {fastingContext.state.settings.location.city}, {fastingContext.state.settings.location.country}
+             </Text>
+           </View>
 
-          {/* Theme Sync Status */}
-          <View style={styles.displayOption}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Moon size={16} color={theme.textSecondary} style={{ marginRight: 8 }} />
-              <Text style={[styles.displayOptionText, { color: theme.text }]}>
-                Theme Sync
-              </Text>
-            </View>
-            <Text style={[styles.displayOptionText, { 
-              color: fastingContext ? theme.success : theme.textSecondary, 
-              fontSize: 12,
-              fontWeight: '600'
-            }]}>
-              {fastingContext ? 'Active' : 'Inactive'}
-            </Text>
-          </View>
+           {/* Theme Sync Status */}
+           <View style={styles.displayOption}>
+             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+               <Moon size={16} color={theme.textSecondary} style={{ marginRight: 8 }} />
+               <Text style={[styles.displayOptionText, { color: theme.text }]}>Theme Sync</Text>
+             </View>
+             <Text style={[styles.displayOptionText, { color: theme.success, fontSize: 12, fontWeight: '600' }]}>
+              Active
+             </Text>
+           </View>
 
-          {/* Navigation to Fasting Settings */}
-          <Pressable 
-            style={[styles.feedbackButton, { 
-              backgroundColor: fastingContext ? theme.primary : theme.inactive,
-              marginTop: 16 
-            }]}
-            onPress={() => {
-              if (fastingContext) {
-                router.push('/fasting/settings');
-              } else {
-                Alert.alert(
-                  'FastingCalendar Not Available',
-                  'Open the Fasting Calendar from the menu to access these settings.',
-                  [
-                    { text: 'Open Calendar', onPress: () => router.push('/fasting/calendar') },
-                    { text: 'Cancel', style: 'cancel' }
-                  ]
-                );
-              }
-            }}
-            disabled={!fastingContext}
-          >
-            <Text style={styles.feedbackButtonText}>
-              {fastingContext ? 'Manage Fasting Settings' : 'Open Fasting Calendar First'}
-            </Text>
-          </Pressable>
-
-          {/* Mixed State Management Info */}
-          <View style={{
-            backgroundColor: theme.card,
-            padding: 12,
-            borderRadius: 8,
-            marginTop: 16,
-            borderLeftWidth: 4,
-            borderLeftColor: fastingContext ? theme.primary : theme.textSecondary
-          }}>
-            <Text style={{ 
-              color: theme.text, 
-              fontSize: 12, 
-              fontWeight: '600',
-              marginBottom: 4 
-            }}>
-              🔄 Mixed State Management
-            </Text>
-            <Text style={{ color: theme.textSecondary, fontSize: 11, lineHeight: 14 }}>
-              {fastingContext 
-                ? 'FastingCalendar uses Context API while iHafidh2 uses Zustand. Themes are automatically synchronized between both systems.'
-                : 'FastingCalendar will use Context API alongside iHafidh2\'s Zustand state management when active.'
-              }
-            </Text>
-            <Text style={{ 
-              color: theme.textSecondary, 
-              fontSize: 10, 
-              marginTop: 4,
-              fontStyle: 'italic' 
-            }}>
-              State Sources: Zustand {fastingContext ? '+ Context' : 'only'}
-            </Text>
-          </View>
-        </View>
+           {/* Navigate to full fasting settings */}
+           <Pressable 
+             style={[styles.feedbackButton, { backgroundColor: theme.primary, marginTop: 16 }]}
+             onPress={() => router.push('/fasting/settings')}
+           >
+             <Text style={styles.feedbackButtonText}>Manage Fasting Settings</Text>
+           </Pressable>
+         </View>
 
         {/* Feedback Section */}
         <View style={styles.section}>

@@ -1,8 +1,8 @@
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { clearAudioCache } from '@/utils/audioUtils';
 import { AppSettings } from '@/types';
+import { clearAudioCache } from '@/utils/audioCacheUtils';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 interface SettingsState extends AppSettings {
   userName: string;

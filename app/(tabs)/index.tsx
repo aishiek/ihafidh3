@@ -1,47 +1,41 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { 
-  ScrollView, 
-  StyleSheet, 
-  Text, 
-  View, 
-  TouchableOpacity,
-  Dimensions,
-  AppState,
-  Platform,
-  Modal
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { 
-  BookOpen, 
-  Target, 
-  Clock, 
-  Award, 
-  TrendingUp,
-  Play,
-  RotateCcw,
-  CheckCircle,
-  XCircle,
-  X,
-  Calendar,
-  Moon,
-  MapPin
-} from 'lucide-react-native';
+import MinimalTopStrip from '@/components/MinimalTopStrip';
+import { QuranProgressTracker } from '@/data/quranProgress';
+import { surahsData } from '@/data/surahs';
+import { getJuzProgress } from '@/database/QuranDatabase';
+import { useThemeColor } from '@/hooks/use-theme-color';
+import { useActivityStore } from '@/store/activityStore';
+import { useProgressStore } from '@/store/progressStore';
+import { useQuranStore } from '@/store/quranStore';
+import { useSettingsStore } from '@/store/settingsStore';
+import { calculateCurrentBadge } from '@/utils/badgeUtils';
+import { calculateJuzProgress, calculateOverallJuzStats } from '@/utils/juzCalculator';
+import { findVerseById } from '@/utils/verseUtils';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import Svg, { Circle, Path, Ellipse, G, Defs, LinearGradient as SvgLinearGradient, Stop, RadialGradient } from 'react-native-svg';
-import { useProgressStore } from '@/store/progressStore';
-import { useSettingsStore } from '@/store/settingsStore';
-import { useActivityStore } from '@/store/activityStore';
-import { surahsData } from '@/data/surahs';
-import { calculateOverallJuzStats, calculateJuzProgress } from '@/utils/juzCalculator';
-import { QuranProgressTracker } from '@/data/quranProgress';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { findVerseById } from '@/utils/verseUtils';
-import { calculateCurrentBadge } from '@/utils/badgeUtils';
-import { getJuzProgress } from '@/database/QuranDatabase';
-import MinimalTopStrip from '@/components/MinimalTopStrip';
-import { useQuranStore } from '@/store/quranStore';
-import { useThemeColor } from '@/hooks/use-theme-color';
+import {
+  Award,
+  BookOpen,
+  Calendar,
+  CheckCircle,
+  Clock,
+  MapPin,
+  Moon,
+  Play,
+  RotateCcw,
+  Target,
+  XCircle
+} from 'lucide-react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  AppState,
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
 
@@ -1160,55 +1154,6 @@ const getTextColor = (status: string) => {
         </View>
       </View>
     </ScrollView>
-
-    {/* 🍔 Hamburger Menu Modal */}
-    <Modal
-      visible={isMenuVisible}
-      transparent
-      animationType="fade"
-      onRequestClose={() => setIsMenuVisible(false)}
-    >
-      <View style={styles.menuOverlay}>
-        <TouchableOpacity 
-          style={styles.menuBackdrop}
-          activeOpacity={1}
-          onPress={() => setIsMenuVisible(false)}
-        />
-        <View style={styles.menuContainer}>
-          <View style={styles.menuHeader}>
-            <Text style={styles.menuTitle}>More Features</Text>
-            <TouchableOpacity 
-              style={styles.menuCloseButton}
-              onPress={() => setIsMenuVisible(false)}
-            >
-              <X size={24} color="#ffffff" />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.menuContent}>
-            {menuItems.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.menuItem}
-                onPress={item.onPress}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.menuItemIcon, { backgroundColor: `${item.color}20` }]}>
-                  <item.icon size={24} color={item.color} />
-                </View>
-                <View style={styles.menuItemContent}>
-                  <Text style={styles.menuItemTitle}>{item.title}</Text>
-                  <Text style={styles.menuItemSubtitle}>{item.subtitle}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-          
-          <View style={styles.menuFooter}>
-            <Text style={styles.menuFooterText}>More features coming soon...</Text>
-          </View>
-        </View>        </View>
-      </Modal>
     </>
   );
 }
@@ -1274,7 +1219,7 @@ const styles = StyleSheet.create({
 
   /* Action cards */
   actionsContainer: { gap: 12, marginVertical: 8 },
-  actionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#333333', borderRadius: 12, padding: 16, borderColor: '#2196F3', borderWidth: 0 },
+  actionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#333333', borderRadius: 12, padding: 16, borderColor: '#2196F3', borderWidth: 2 },
   actionCardContent: { flexDirection: 'row', alignItems: 'center' },
   actionCardText: { flex: 1, marginLeft: 12 },
   actionCardTitle: { fontSize: 16, fontWeight: '600', color: '#ffffff', marginBottom: 2 },
@@ -1313,9 +1258,9 @@ const styles = StyleSheet.create({
   /* Menu modal */
   menuOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'flex-end', backgroundColor: 'transparent' },
   menuBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
-  menuContainer: { backgroundColor: '#1a1a1a', borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16 },
+  menuContainer: { backgroundColor: '#1a1a1a', borderRadius: 16, padding: 16, alignSelf: 'center', width: '90%' },
   menuHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  menuTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  menuTitle: { color: '#fff', fontSize: 18, fontWeight: '700', textAlign: 'center' },
   menuCloseButton: { padding: 8, borderRadius: 8, backgroundColor: '#222' },
   menuContent: { marginTop: 8 },
   menuItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 12, backgroundColor: '#222', marginBottom: 10 },
@@ -1324,7 +1269,7 @@ const styles = StyleSheet.create({
   menuItemTitle: { color: '#fff', fontSize: 16, fontWeight: '600' },
   menuItemSubtitle: { color: '#aaa', fontSize: 13 },
   menuFooter: { marginTop: 12 },
-  menuFooterText: { color: '#888', fontSize: 12 },
+  menuFooterText: { color: '#888', fontSize: 12, textAlign: 'center' },
 
   /* Activity */
   activityContainer: { gap: 12, marginTop: 12 },

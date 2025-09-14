@@ -3,8 +3,8 @@
  * Handles scheduling and managing fasting reminders
  */
 
-import * as Notifications from 'expo-notifications';
 import { CalendarDay, FastingNotificationSettings, FastingType } from '@/types/fasting';
+import * as Notifications from 'expo-notifications';
 
 export class FastingNotificationService {
   private static isInitialized = false;
@@ -65,9 +65,7 @@ export class FastingNotificationService {
 
       for (const day of calendarDays) {
         for (const fastingType of day.fastingTypes) {
-          // Skip Ramadan notifications (handled separately)
-          if (fastingType === FastingType.RAMADAN) continue;
-
+          // Ramadan is now included like other fasting types
           const typeSettings = notificationSettings.fastingTypes[fastingType];
           if (!typeSettings?.enabled) continue;
 

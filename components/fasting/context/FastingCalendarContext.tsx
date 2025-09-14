@@ -3,22 +3,20 @@
  * Integrated with iHafidh2's mixed state management system
  */
 
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  FastingCalendarState,
-  FastingCalendarAction,
-  FastingAppSettings,
-  FastingLocation,
-  FastingIntention,
-  FastingType,
-  FastingNotificationSettings,
-  FastingContextType,
-} from '@/types/fasting';
-import { FastingApiService } from '@/services/fasting/apiService';
+import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
 import { FastingCalendarService } from '@/services/fasting/calendarService';
 import { FastingNotificationService } from '@/services/fasting/notificationService';
-import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
+import {
+  FastingAppSettings,
+  FastingCalendarAction,
+  FastingCalendarState,
+  FastingContextType,
+  FastingIntention,
+  FastingNotificationSettings,
+  FastingType
+} from '@/types/fasting';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, useContext, useEffect, useReducer } from 'react';
 
 // Default notification settings
 const getDefaultNotificationSettings = (): FastingNotificationSettings => ({
@@ -26,7 +24,7 @@ const getDefaultNotificationSettings = (): FastingNotificationSettings => ({
   defaultTime: '06:00',
   defaultBeforeDays: 1,
   fastingTypes: Object.values(FastingType).reduce((acc, type) => {
-    if (type === FastingType.RAMADAN) return acc; // Skip RAMADAN as per requirements
+    // Include ALL fasting types now (Ramadan included) for notifications
     return {
       ...acc,
       [type]: {
@@ -269,7 +267,7 @@ export function FastingCalendarProvider({ children }: { children: React.ReactNod
   // Load calendar data when month changes
   useEffect(() => {
     loadCalendarData(state.currentMonth);
-  }, [state.currentMonth, state.settings.location]);
+  }, [state.currentMonth, state.settings.location, state.settings.hijriAdjustment]);
 
   // Initialize notification service
   useEffect(() => {

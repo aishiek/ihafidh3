@@ -1,13 +1,13 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-function Moon() {
+const Qibla = () => {
   return (
     <View style={styles.container}>
-      <Text>Moon Component</Text>
+      <Text>Qibla Component</Text>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -17,6 +17,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default function MoonRoute() {
-  return <Moon />;
-}
+export default Qibla;

@@ -1,0 +1,25 @@
+diff --git a/node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios/ReactCommon/RCTTurboModule.mm b/node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios/ReactCommon/RCTTurboModule.mm
+index 441a16f..9ea5051 100644
+--- a/node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios/ReactCommon/RCTTurboModule.mm
++++ b/node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios/ReactCommon/RCTTurboModule.mm
+@@ -438,7 +438,19 @@ TraceSection s(
+     @try {
+       [inv invokeWithTarget:strongModule];
+     } @catch (NSException *exception) {
+-      throw convertNSExceptionToJSError(runtime, exception, std::string{moduleName}, methodNameStr);
++      if (shouldVoidMethodsExecuteSync_) {
++        // Preserve original behavior for sync void methods so JS can receive a proper JSError.
++        throw convertNSExceptionToJSError(runtime, exception, std::string{moduleName}, methodNameStr);
++      } else {
++        // NEW: Swallow exceptions from async void TurboModule methods to prevent process abort (TestFlight crash).
++        RCTLogError(@"[TurboModule] Caught exception in %s.%s (void method). Swallowing to prevent native crash. Exception: %@\n%@",
++                    moduleName,
++                    methodName,
++                    exception,
++                    [exception callStackSymbols]);
++        // Early return (will still execute @finally). JS will see undefined; error logged natively.
++        return;
++      }
+     } @finally {
+       [retainedObjectsForInvocation removeAllObjects];
+     }

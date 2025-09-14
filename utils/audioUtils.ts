@@ -1,11 +1,8 @@
-import { Platform } from 'react-native';
-import { Audio } from 'expo-av';
 import { useSettingsStore } from '@/store/settingsStore';
-import { getReciterByIdentifier } from '@/constants/reciters';
 import type { Verse } from '@/types';
+import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 
-let sound: Audio.Sound | null = null;
-// First declaration at line 6
+let player: any | null = null;
 let isPlaying = false; // Restore explicit isPlaying state
 let repeatCount = 0;
 let maxRepeats = 1;
@@ -16,10 +13,11 @@ const BISMILLAH_URL = 'https://verses.quran.com/Bismillah.mp3';
 // Initialize audio mode
 export async function initializeAudio(): Promise<void> {
   try {
-    await Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: true,
-      shouldDuckAndroid: true,
+    await setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: true,
+      interruptionMode: 'mixWithOthers',
+      interruptionModeAndroid: 'duckOthers'
     });
   } catch (error) {
     console.error('Failed to initialize audio:', error);
@@ -127,28 +125,6 @@ export function getPlayingState(): { isPlaying: boolean; currentUrl: string } {
   };
 }
 
-// Clear audio cache and reset state when reciter changes
-export function clearAudioCache(): void {
-  // Reset all state variables
-  if (sound) {
-    sound.unloadAsync().catch(console.error);
-    sound = null;
-  }
-  isPlaying = false;
-  currentAudioUrl = '';
-  repeatCount = 0;
-  maxRepeats = 1;
-  
-  // Notify UI of state change
-  if (onPlaybackStatusUpdate) {
-    onPlaybackStatusUpdate({ 
-      isPlaying: false,
-      currentUrl: '',
-      cacheCleared: true
-    });
-  }
-}
-
 // Check if audio URL is available before attempting to play
 export async function checkAudioAvailability(audioUrl: string): Promise<{ available: boolean; error?: string }> {
   try {
@@ -199,81 +175,64 @@ function getFriendlyErrorMessage(error: any): string {
   return 'Audio playback error - please try again';
 }
 
+// Play audio using expo-audio
 export async function playAudio(
-  audioUrl: string, 
-  repeats = 1, 
+  audioUrl: string,
+  repeats = 1,
   statusCallback?: (status: any) => void
 ): Promise<void> {
   try {
-    // If already playing the same audio, don't restart
-    if (isPlaying && currentAudioUrl === audioUrl) {
-      return;
-    }
-    
-    // Clean up any existing audio completely
+    if (isPlaying && currentAudioUrl === audioUrl) return;
     await stopAudio();
-    
-    // Set up new audio state
     currentAudioUrl = audioUrl;
     maxRepeats = repeats;
     repeatCount = 0;
     onPlaybackStatusUpdate = statusCallback || null;
-    
-    // Validate audio URL
-    if (!audioUrl || audioUrl.trim() === '') {
-      throw new Error('Audio URL is not available');
-    }
-    
-    // Check audio availability first
+    if (!audioUrl || audioUrl.trim() === '') throw new Error('Audio URL is not available');
     const availability = await checkAudioAvailability(audioUrl);
-    if (!availability.available) {
-      throw new Error(availability.error || 'Audio not available');
-    }
-    
-    // Initialize audio mode
+    if (!availability.available) throw new Error(availability.error || 'Audio not available');
     await initializeAudio();
-    
-    // Set playing state BEFORE creating sound to prevent double-clicks
     isPlaying = true;
-    
-    // Immediately notify UI that we're starting playback
-    if (onPlaybackStatusUpdate) {
-      onPlaybackStatusUpdate({ 
-        isPlaying: true, 
-        isLoading: true,
-        currentUrl: audioUrl 
-      });
-    }
-    
-    // Load and play the audio
-    const { sound: newSound } = await Audio.Sound.createAsync(
-      { uri: audioUrl },
-      { 
-        shouldPlay: true,
-        progressUpdateIntervalMillis: 100,
-        positionMillis: 0,
-        volume: 1.0,
-        rate: 1.0,
-        shouldCorrectPitch: true,
-      },
-      onPlaybackStatusUpdateHandler
-    );
-    
-    sound = newSound;
-    
-  } catch (error: unknown) {
+    if (onPlaybackStatusUpdate) onPlaybackStatusUpdate({ isPlaying: true, isLoading: true, currentUrl: audioUrl });
+    player = createAudioPlayer(audioUrl, { updateInterval: 100, downloadFirst: false });
+    (player as any).addListener((status: any) => onPlaybackStatusUpdateHandler(mapStatus(status)));
+    await player.play();
+  } catch (error) {
     console.error('Failed to play audio:', error);
-    // Reset state on error and notify UI
     isPlaying = false;
     currentAudioUrl = '';
     if (onPlaybackStatusUpdate) {
-      onPlaybackStatusUpdate({ 
-        isPlaying: false, 
-        error: getFriendlyErrorMessage(error),
-        currentUrl: '' 
-      });
+      onPlaybackStatusUpdate({ isPlaying: false, error: getFriendlyErrorMessage(error), currentUrl: '' });
     }
     throw error;
+  }
+}
+
+function mapStatus(status: any) {
+  if (!status) return status;
+  return {
+    isLoaded: status.isLoaded,
+    isPlaying: status.isPlaying,
+    didJustFinish: status.didJustFinish,
+    positionMillis: (status.currentTime ?? 0) * 1000,
+    durationMillis: (status.duration ?? 0) * 1000,
+    error: status.error
+  };
+}
+
+function onPlaybackStatusUpdateHandler(status: any) {
+  if (!onPlaybackStatusUpdate) return;
+  onPlaybackStatusUpdate({ isPlaying, currentUrl: currentAudioUrl, ...status });
+  if (status?.didJustFinish) {
+    repeatCount++;
+    if (repeatCount < maxRepeats) {
+      try {
+        player?.seek(0);
+        player?.play();
+      } catch (e) { console.error(e); }
+    } else {
+      stopAudio().catch(console.error);
+    }
   }
 }
 
@@ -290,32 +249,18 @@ export async function playBismillahThenVerse(
     // Initialize audio mode
     await initializeAudio();
 
-    // Load and play Bismillah once
-    const { sound: bismiSound } = await Audio.Sound.createAsync(
-      { uri: BISMILLAH_URL },
-      {
-        shouldPlay: true,
-        progressUpdateIntervalMillis: 100,
-        positionMillis: 0,
-        volume: 1.0,
-        rate: 1.0,
-        shouldCorrectPitch: true,
-      }
-    );
-
-    bismiSound.setOnPlaybackStatusUpdate(async (status: any) => {
-      if (status?.didJustFinish) {
-        try {
-          await bismiSound.unloadAsync();
-        } catch {}
-        // Now play the actual verse with repeats and proper callbacks
+    let bismiPlayer = createAudioPlayer(BISMILLAH_URL, { updateInterval: 100 });
+    (bismiPlayer as any).addListener(async (status: any) => {
+      const mapped = mapStatus(status);
+      if (mapped?.didJustFinish) {
+        try { (bismiPlayer as any)?.release(); } catch {}
         await playAudio(verseAudioUrl, repeats, statusCallback);
       }
-      if (status?.error) {
-        // Fallback: try to play verse directly
+      if (mapped?.error) {
         await playAudio(verseAudioUrl, repeats, statusCallback);
       }
     });
+    await bismiPlayer.play();
   } catch (error) {
     // If anything fails, just attempt to play the verse directly
     await playAudio(verseAudioUrl, repeats, statusCallback);
@@ -339,168 +284,42 @@ export async function playVerseWithOptionalBismillah(
 }
 
 export async function stopAudio(): Promise<void> {
-  // Set state first to prevent race conditions
   isPlaying = false;
-  
-  if (sound) {
-    try {
-      await sound.stopAsync();
-      await sound.unloadAsync();
-    } catch (error) {
-      console.error('Failed to stop audio:', error);
-    }
-    sound = null;
-  }
-  
-  // Clean up all state
+  try { player?.pause(); player?.release(); } catch (e) { console.error('Failed to stop audio:', e); }
+  player = null;
   currentAudioUrl = '';
   repeatCount = 0;
   maxRepeats = 1;
-  
-  // Notify UI
-  if (onPlaybackStatusUpdate) {
-    onPlaybackStatusUpdate({ 
-      isPlaying: false,
-      currentUrl: '' 
-    });
-  }
+  if (onPlaybackStatusUpdate) onPlaybackStatusUpdate({ isPlaying: false, currentUrl: '' });
 }
 
 export async function pauseAudio(): Promise<void> {
-  if (sound && isPlaying) {
+  if (player && isPlaying) {
     try {
-      await sound.pauseAsync();
-      isPlaying = false; // Update state immediately
-      
-      if (onPlaybackStatusUpdate) {
-        onPlaybackStatusUpdate({ 
-          isPlaying: false, 
-          isPaused: true,
-          currentUrl: currentAudioUrl 
-        });
-      }
-    } catch (error) {
-      console.error('Failed to pause audio:', error);
-    }
+      await player.pause();
+      isPlaying = false;
+      if (onPlaybackStatusUpdate) onPlaybackStatusUpdate({ isPlaying: false, isPaused: true, currentUrl: currentAudioUrl });
+    } catch (e) { console.error('Failed to pause audio:', e); }
   }
 }
 
 export async function resumeAudio(): Promise<void> {
-  if (sound && !isPlaying) {
+  if (player && !isPlaying) {
     try {
-      await sound.playAsync();
-      isPlaying = true; // Update state immediately
-      
-      if (onPlaybackStatusUpdate) {
-        onPlaybackStatusUpdate({ 
-          isPlaying: true, 
-          isPaused: false,
-          currentUrl: currentAudioUrl 
-        });
-      }
-    } catch (error) {
-      console.error('Failed to resume audio:', error);
-    }
+      await player.play();
+      isPlaying = true;
+      if (onPlaybackStatusUpdate) onPlaybackStatusUpdate({ isPlaying: true, isPaused: false, currentUrl: currentAudioUrl });
+    } catch (e) { console.error('Failed to resume audio:', e); }
   }
 }
 
-function onPlaybackStatusUpdateHandler(status: any) {
-  // Update our internal state based on actual playback status
-  if (status.isLoaded) {
-    isPlaying = status.isPlaying;
-  }
-  
-  // Always forward status to callback with enhanced info
-  if (onPlaybackStatusUpdate) {
-    onPlaybackStatusUpdate({
-      ...status,
-      currentUrl: currentAudioUrl,
-      repeatCount: repeatCount,
-      maxRepeats: maxRepeats
-    });
-  }
-  
-  // Handle playback errors
-  if (status.error) {
-    console.error('Audio playback error:', status.error);
-    isPlaying = false;
-    if (onPlaybackStatusUpdate) {
-      onPlaybackStatusUpdate({
-        ...status,
-        isPlaying: false,
-        currentUrl: '',
-        error: getFriendlyErrorMessage(status.error)
-      });
-    }
-    return;
-  }
-  
-  // Handle playback completion
-  if (status.didJustFinish) {
-    repeatCount++;
-    
-    if (repeatCount < maxRepeats) {
-      // Play again for repeat
-      sound?.replayAsync().catch(console.error);
-    } else {
-      // Done with all repeats
-      cleanupAfterCompletion();
-    }
-  }
-}
-
-// Handle completion cleanup
-function cleanupAfterCompletion(): void {
+// Unified cache / state clear for expo-audio implementation
+export function clearAudioCache(): void {
+  try { player?.pause(); player?.release(); } catch (e) { console.error('Failed to clear audio cache:', e); }
+  player = null;
   isPlaying = false;
-  
-  // Unload the sound to free resources
-  if (sound) {
-    sound.unloadAsync().catch(console.error);
-    sound = null;
-  }
-  
-  // Reset state
-  const wasPlayingUrl = currentAudioUrl;
   currentAudioUrl = '';
   repeatCount = 0;
   maxRepeats = 1;
-  
-  // CRITICAL: Notify UI that playback is completely finished
-  if (onPlaybackStatusUpdate) {
-    onPlaybackStatusUpdate({ 
-      isPlaying: false,
-      didJustFinish: true,
-      currentUrl: '',
-      playbackComplete: true,
-      wasPlayingUrl: wasPlayingUrl // Include for UI reference
-    });
-  }
-}
-
-// Clean up audio resources
-export async function cleanupAudio(): Promise<void> {
-  await stopAudio();
-}
-
-// Generate full surah audio URL
-export function generateSurahAudioUrl(surahNumber: number, reciterIdentifier?: string): string {
-  try {
-    const reciter = reciterIdentifier || useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
-    return `https://cdn.islamic.network/quran/audio-surah/128/${reciter}/${surahNumber}.mp3`;
-  } catch (error) {
-    console.error('Error generating surah audio URL:', error);
-    // Safe fallback to Alafasy
-    return `https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy/${surahNumber}.mp3`;
-  }
-}
-
-// Play full surah audio
-export async function playSurahAudio(surahNumber: number, onStatusUpdate?: (status: any) => void): Promise<void> {
-  try {
-    const audioUrl = generateSurahAudioUrl(surahNumber);
-    await playAudio(audioUrl, 1, onStatusUpdate);
-  } catch (error) {
-    console.error('Error playing surah audio:', error);
-    throw error;
-  }
+  if (onPlaybackStatusUpdate) onPlaybackStatusUpdate({ isPlaying: false, currentUrl: '', cacheCleared: true });
 }

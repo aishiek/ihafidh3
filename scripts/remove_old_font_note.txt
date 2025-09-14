@@ -1,0 +1,1 @@
+Old font reference removed from Xcode project. Safe to delete 'assets/fonts/noorehuda Regular.ttf' if not needed for version control history.

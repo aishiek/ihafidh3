@@ -1,32 +1,32 @@
-// QiblaFinder.tsx - With Pulsing Glow Around Kaaba
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, ActivityIndicator, Dimensions, StyleSheet, Animated } from 'react-native';
+// QiblaFinder.tsx - Enhanced with Traditional Compass Design
+import Constants from 'expo-constants';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { Magnetometer } from 'expo-sensors';
-import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, Line, Polygon, G, Defs, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
+import React, { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Dimensions, StyleSheet, Text, Vibration, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Constants from 'expo-constants';
+import Svg, { Circle, Defs, G, Line, Polygon, RadialGradient, Stop, LinearGradient as SvgLinearGradient, Text as SvgText } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
 const COMPASS_SIZE = width * 0.82;
 const CENTER = COMPASS_SIZE / 2;
 
-// Kaaba Icon
-const KaabaIcon = ({ size = 40 }) => (
-  <Svg width={size} height={size * 0.75} viewBox="0 0 64 48">
+// Removed CenterKaabaIcon (no longer needed) and kept only KaabaIcon for arrow tip
+const KaabaIcon = ({ size = 24 }) => (
+  <Svg width={size} height={size * 0.8} viewBox="0 0 32 24">
     <Defs>
-      <SvgLinearGradient id="kaabaBody" x1="0" y1="0" x2="0" y2="1">
-        <Stop offset="0%" stopColor="#111" />
+      <SvgLinearGradient id="kaabaBodyArrow" x1="0" y1="0" x2="0" y2="1">
+        <Stop offset="0%" stopColor="#1a1a1a" />
         <Stop offset="100%" stopColor="#000" />
       </SvgLinearGradient>
-      <SvgLinearGradient id="kaabaBand" x1="0" y1="0" x2="1" y2="0">
+      <SvgLinearGradient id="kaabaBandArrow" x1="0" y1="0" x2="1" y2="0">
         <Stop offset="0%" stopColor="#fbbf24" />
         <Stop offset="100%" stopColor="#d97706" />
       </SvgLinearGradient>
     </Defs>
-    <Polygon points="8,40 8,12 32,4 56,12 56,40 32,44" fill="url(#kaabaBody)" stroke="#444" strokeWidth="0.5" />
-    <Line x1="8" y1="22" x2="56" y2="26" stroke="url(#kaabaBand)" strokeWidth="4" />
+    <Polygon points="4,20 4,6 16,2 28,6 28,20 16,22" fill="url(#kaabaBodyArrow)" stroke="#333" strokeWidth="0.3" />
+    <Line x1="4" y1="11" x2="28" y2="13" stroke="url(#kaabaBandArrow)" strokeWidth="2" />
   </Svg>
 );
 
@@ -37,10 +37,13 @@ export default function QiblaFinder() {
   const [qiblaAngle, setQiblaAngle] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAligned, setIsAligned] = useState(false);
 
   const compassRotation = useRef(new Animated.Value(0)).current;
-  const glowAnim = useRef(new Animated.Value(0)).current; // 👈 pulsing glow
+  const glowAnim = useRef(new Animated.Value(0)).current;
+  const alignmentGlow = useRef(new Animated.Value(0)).current;
   const lastHeadingUpdate = useRef(Date.now());
+  const lastVibration = useRef(0);
   const isExpoGo = Constants.appOwnership === 'expo';
 
   const computeQibla = (lat: number, lng: number) => {
@@ -53,15 +56,42 @@ export default function QiblaFinder() {
     return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
   };
 
+  // Check alignment and provide feedback
+  const checkAlignment = (currentHeading: number, targetAngle: number) => {
+    let diff = Math.abs(currentHeading - targetAngle);
+    if (diff > 180) diff = 360 - diff;
+    
+    const aligned = diff <= 10; // Within 10 degrees
+    setIsAligned(aligned);
+    
+    if (aligned) {
+      const now = Date.now();
+      if (now - lastVibration.current > 2000) { // Vibrate every 2 seconds when aligned
+        Vibration.vibrate([100, 50, 100]);
+        lastVibration.current = now;
+      }
+      
+      // Start alignment glow animation
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(alignmentGlow, { toValue: 1, duration: 500, useNativeDriver: true }),
+          Animated.timing(alignmentGlow, { toValue: 0, duration: 500, useNativeDriver: true }),
+        ])
+      ).start();
+    }
+  };
+
   useEffect(() => {
     Animated.timing(compassRotation, {
       toValue: -heading,
       duration: 200,
       useNativeDriver: true,
     }).start();
-  }, [heading]);
+    
+    checkAlignment(heading, qiblaAngle);
+  }, [heading, qiblaAngle]);
 
-  // 🔆 Glow Animation Loop
+  // Regular glow animation loop
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
@@ -134,7 +164,7 @@ export default function QiblaFinder() {
   return (
     <View style={styles.root}>
       <LinearGradient colors={['#0f172a', '#1e3a8a', '#0f172a']} style={styles.gradient}>
-        <View style={[styles.container, { paddingTop: insets.top + 20 }]}> {/* restored smaller padding; header removed externally */}
+        <View style={[styles.container, { paddingTop: insets.top + 20 }]}>
           <Text style={styles.title}>🕌 Qibla Finder</Text>
           <Text style={styles.subtitle}>Align yourself towards Mecca</Text>
           {isLoading ? (
@@ -148,55 +178,151 @@ export default function QiblaFinder() {
             </View>
           ) : (
             <>
-              {/* Compass */}
-              <View style={styles.compassWrapper}> {/* reverted to original marginTop from styles (30) */}
-                <Animated.View
-                  style={{
-                    transform: [{
-                      rotate: compassRotation.interpolate({
-                        inputRange: [-360, 0, 360],
-                        outputRange: ['-360deg', '0deg', '360deg']
-                      })
-                    }]
-                  }}
-                >
-                  <Svg width={COMPASS_SIZE} height={COMPASS_SIZE}>
-                    <Defs>
-                      <RadialGradient id="faceGradient" cx="50%" cy="50%" r="50%">
-                        <Stop offset="0%" stopColor="#1e293b" />
-                        <Stop offset="100%" stopColor="#111827" />
-                      </RadialGradient>
-                      <SvgLinearGradient id="qArrow" x1="0%" y1="0%" x2="0%" y2="100%">
-                        <Stop offset="0%" stopColor="#34d399" />
-                        <Stop offset="100%" stopColor="#059669" />
-                      </SvgLinearGradient>
-                    </Defs>
+              {/* Enhanced Compass */}
+              <View style={styles.compassWrapper}>
+                <View style={styles.compassContainer}>
+                  {/* Fixed North Indicator */}
+                  <View style={styles.northIndicator}>
+                    <View style={styles.northTriangle} />
+                    <Text style={styles.northText}>N</Text>
+                  </View>
+                  
+                  <Animated.View
+                    style={{
+                      transform: [{
+                        rotate: compassRotation.interpolate({
+                          inputRange: [-360, 0, 360],
+                          outputRange: ['-360deg', '0deg', '360deg']
+                        })
+                      }]
+                    }}
+                  >
+                    <Svg width={COMPASS_SIZE} height={COMPASS_SIZE}>
+                      <Defs>
+                        {/* Enhanced compass face gradient */}
+                        <RadialGradient id="compassFace" cx="50%" cy="50%" r="50%">
+                          <Stop offset="0%" stopColor="#f8fafc" />
+                          <Stop offset="70%" stopColor="#e2e8f0" />
+                          <Stop offset="100%" stopColor="#cbd5e1" />
+                        </RadialGradient>
+                        <SvgLinearGradient id="qiblaArrow" x1="0%" y1="0%" x2="0%" y2="100%">
+                          <Stop offset="0%" stopColor="#22c55e" />
+                          <Stop offset="50%" stopColor="#16a34a" />
+                          <Stop offset="100%" stopColor="#15803d" />
+                        </SvgLinearGradient>
+                        {/* Removed northArrow gradient */}
+                      </Defs>
 
-                    {/* Dial */}
-                    <Circle cx={CENTER} cy={CENTER} r={CENTER - 6} fill="url(#faceGradient)" stroke="#facc15" strokeWidth="6" />
+                      {/* Outer ring */}
+                      <Circle cx={CENTER} cy={CENTER} r={CENTER - 3} fill="none" stroke="#b45309" strokeWidth="6" />
+                      
+                      {/* Compass face */}
+                      <Circle cx={CENTER} cy={CENTER} r={CENTER - 12} fill="url(#compassFace)" stroke="#92400e" strokeWidth="2" />
 
-                    {/* Ticks */}
-                    {Array.from({ length: 36 }).map((_, i) => {
-                      const angle = (i * 10) * (Math.PI / 180);
-                      const x1 = CENTER + (CENTER - 15) * Math.cos(angle);
-                      const y1 = CENTER + (CENTER - 15) * Math.sin(angle);
-                      const x2 = CENTER + (CENTER - (i % 9 === 0 ? 35 : 25)) * Math.cos(angle);
-                      const y2 = CENTER + (CENTER - (i % 9 === 0 ? 35 : 25)) * Math.sin(angle);
-                      return (
-                        <Line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={i % 9 === 0 ? "#fbbf24" : "#475569"} strokeWidth={i % 9 === 0 ? 3 : 1} />
-                      );
-                    })}
+                      {/* Degree markings and directional labels */}
+                      {Array.from({ length: 72 }).map((_, i) => {
+                        const angle = (i * 5) * (Math.PI / 180);
+                        const isMainDirection = i % 18 === 0; // Every 90 degrees
+                        const isCardinalDirection = i % 9 === 0; // Every 45 degrees
+                        const isMajorTick = i % 6 === 0; // Every 30 degrees
+                        
+                        const outerRadius = CENTER - 15;
+                        const innerRadius = CENTER - (isMainDirection ? 40 : isCardinalDirection ? 35 : isMajorTick ? 30 : 25);
+                        
+                        const x1 = CENTER + outerRadius * Math.cos(angle - Math.PI / 2);
+                        const y1 = CENTER + outerRadius * Math.sin(angle - Math.PI / 2);
+                        const x2 = CENTER + innerRadius * Math.cos(angle - Math.PI / 2);
+                        const y2 = CENTER + innerRadius * Math.sin(angle - Math.PI / 2);
+                        
+                        const strokeColor = isMainDirection ? "#92400e" : isCardinalDirection ? "#a16207" : "#78716c";
+                        const strokeWidth = isMainDirection ? 3 : isCardinalDirection ? 2 : 1;
+                        
+                        return (
+                          <Line 
+                            key={i} 
+                            x1={x1} 
+                            y1={y1} 
+                            x2={x2} 
+                            y2={y2} 
+                            stroke={strokeColor} 
+                            strokeWidth={strokeWidth} 
+                          />
+                        );
+                      })}
 
-                    {/* Qibla Arrow */}
-                    <G origin={`${CENTER}, ${CENTER}`} rotation={qiblaAngle}>
-                      <Line x1={CENTER} y1={CENTER} x2={CENTER} y2={CENTER - (CENTER - 60)} stroke="url(#qArrow)" strokeWidth={8} strokeLinecap="round" />
-                      <Polygon points={`${CENTER},${CENTER - (CENTER - 60)} ${CENTER - 14},${CENTER - (CENTER - 40)} ${CENTER + 14},${CENTER - (CENTER - 40)}`} fill="url(#qArrow)" />
-                    </G>
+                      {/* Direction labels */}
+                      {['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'].map((direction, i) => {
+                        const angle = (i * 45) * (Math.PI / 180);
+                        const radius = CENTER - 50;
+                        const x = CENTER + radius * Math.cos(angle - Math.PI / 2);
+                        const y = CENTER + radius * Math.sin(angle - Math.PI / 2);
+                        
+                        return (
+                          <SvgText
+                            key={direction}
+                            x={x}
+                            y={y}
+                            fontSize="16"
+                            fontWeight="bold"
+                            fill="#374151"
+                            textAnchor="middle"
+                            alignmentBaseline="middle"
+                          >
+                            {direction}
+                          </SvgText>
+                        );
+                      })}
 
-                    {/* Center Circle */}
-                    <Circle cx={CENTER} cy={CENTER} r={22} fill="#facc15" stroke="#000" strokeWidth={2} />
-                  </Svg>
-                  {/* Pulsing Glow */}
+                      {/* Degree numbers */}
+                      {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((degree) => {
+                        const angle = (degree) * (Math.PI / 180);
+                        const radius = CENTER - 65;
+                        const x = CENTER + radius * Math.cos(angle - Math.PI / 2);
+                        const y = CENTER + radius * Math.sin(angle - Math.PI / 2);
+                        
+                        return (
+                          <SvgText
+                            key={degree}
+                            x={x}
+                            y={y}
+                            fontSize="12"
+                            fill="#6b7280"
+                            textAnchor="middle"
+                            alignmentBaseline="middle"
+                          >
+                            {degree}
+                          </SvgText>
+                        );
+                      })}
+
+                      {/* Qibla Arrow (green) with Kaaba icon at tip */}
+                      <G origin={`${CENTER}, ${CENTER}`} rotation={qiblaAngle}>
+                        <Line 
+                          x1={CENTER} 
+                          y1={CENTER} 
+                          x2={CENTER} 
+                          y2={CENTER - (CENTER - 70)} 
+                          stroke="url(#qiblaArrow)" 
+                          strokeWidth={8} 
+                          strokeLinecap="round" 
+                        />
+                        <Polygon 
+                          points={`${CENTER},${CENTER - (CENTER - 60)} ${CENTER - 12},${CENTER - (CENTER - 85)} ${CENTER + 12},${CENTER - (CENTER - 85)}`} 
+                          fill="url(#qiblaArrow)" 
+                        />
+                        {/* Kaaba icon anchored at arrow tip. We translate so its bottom aligns roughly with the polygon tip */}
+                        <G transform={`translate(${CENTER - 12}, ${CENTER - (CENTER - 100)})`}>
+                          <KaabaIcon size={24} />
+                        </G>
+                      </G>
+
+                      {/* Center circle (kept) */}
+                      <Circle cx={CENTER} cy={CENTER} r={28} fill="#1f2937" stroke="#fbbf24" strokeWidth={3} />
+                      <Circle cx={CENTER} cy={CENTER} r={22} fill="#facc15" stroke="#92400e" strokeWidth={2} />
+                    </Svg>
+                  </Animated.View>
+
+                  {/* Pulsing Glow Effects */}
                   <Animated.View
                     style={[
                       styles.glow,
@@ -208,15 +334,36 @@ export default function QiblaFinder() {
                       }
                     ]}
                   />
-                  <View style={styles.kaabaOverlay}>
-                    <KaabaIcon size={34} />
-                  </View>
-                </Animated.View>
+                  
+                  {/* Alignment Glow */}
+                  {isAligned && (
+                    <Animated.View
+                      style={[
+                        styles.alignmentGlow,
+                        {
+                          transform: [
+                            { scale: alignmentGlow.interpolate({ inputRange: [0, 1], outputRange: [1, 1.8] }) }
+                          ],
+                          opacity: alignmentGlow.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] })
+                        }
+                      ]}
+                    />
+                  )}
+                </View>
               </View>
+
+              {/* Status indicator */}
+              {isAligned && (
+                <View style={styles.alignedIndicator}>
+                  <Text style={styles.alignedText}>✅ Aligned with Qibla!</Text>
+                </View>
+              )}
+
               {/* Info */}
               <View style={styles.infoPanel}>
                 <Text style={styles.infoText}>Qibla: {qiblaAngle.toFixed(0)}°</Text>
                 <Text style={styles.infoText}>Heading: {heading.toFixed(0)}°</Text>
+                <Text style={styles.infoText}>Difference: {Math.abs(((heading - qiblaAngle + 540) % 360) - 180).toFixed(0)}°</Text>
               </View>
               {isExpoGo && (
                 <Text style={styles.mockNote}>(Mock location in Expo Go)</Text>
@@ -240,6 +387,37 @@ const styles = StyleSheet.create({
   errorWrap: { marginTop: 80, padding: 16, backgroundColor: 'rgba(255,0,0,0.1)', borderRadius: 12 },
   errorText: { color: '#f87171', textAlign: 'center' },
   compassWrapper: { marginTop: 30, justifyContent: 'center', alignItems: 'center' },
+  compassContainer: { 
+    position: 'relative',
+    width: COMPASS_SIZE,
+    height: COMPASS_SIZE,
+  },
+  northIndicator: {
+    position: 'absolute',
+    top: -25,
+    left: '50%',
+    marginLeft: -15,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  northTriangle: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderBottomWidth: 12,
+    borderStyle: 'solid',
+    backgroundColor: 'transparent',
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: '#ef4444',
+  },
+  northText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#ef4444',
+    marginTop: 2,
+  },
   glow: {
     position: 'absolute',
     width: 80,
@@ -249,8 +427,45 @@ const styles = StyleSheet.create({
     top: CENTER - 40,
     left: CENTER - 40,
   },
-  kaabaOverlay: { position: 'absolute', top: '42%', left: '42%' },
-  infoPanel: { marginTop: 30, padding: 16, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.1)' },
-  infoText: { fontSize: 18, fontWeight: '600', color: '#f8fafc', textAlign: 'center' },
-  mockNote: { marginTop: 10, fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }
+  alignmentGlow: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#22c55e',
+    top: CENTER - 50,
+    left: CENTER - 50,
+  },
+  alignedIndicator: {
+    marginTop: 20,
+    padding: 12,
+    backgroundColor: 'rgba(34, 197, 94, 0.2)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#22c55e',
+  },
+  alignedText: {
+    color: '#22c55e',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  infoPanel: { 
+    marginTop: 30, 
+    padding: 16, 
+    borderRadius: 16, 
+    backgroundColor: 'rgba(255,255,255,0.1)' 
+  },
+  infoText: { 
+    fontSize: 18, 
+    fontWeight: '600', 
+    color: '#f8fafc', 
+    textAlign: 'center' 
+  },
+  mockNote: { 
+    marginTop: 10, 
+    fontSize: 12, 
+    color: '#94a3b8', 
+    fontStyle: 'italic' 
+  }
 });

@@ -1,17 +1,15 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { StyleSheet, Text, View, ScrollView, Pressable, Alert, ActivityIndicator, TouchableOpacity, Platform } from 'react-native';
-import { Brain, Target, CheckCircle, X, Eye, RefreshCw, Trophy } from 'lucide-react-native';
+import MinimalTopStrip from '@/components/MinimalTopStrip';
+import QuranQuizCelebration from '@/components/QuranQuizCelebration';
+import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
+import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useThemeColor } from '@/utils/useThemeColor';
-import { surahsData } from '@/data/surahs';
-import { getVersesBySurah } from '@/data/verses';
-import { Verse } from '@/types';
-import { useQuranStore } from '@/store/quranStore';
-import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import QuranQuizCelebration from '@/components/QuranQuizCelebration';
-import MinimalTopStrip from '@/components/MinimalTopStrip';
+import { useRouter } from 'expo-router';
+import { Brain, CheckCircle, Eye, Target, X } from 'lucide-react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 interface QuizVerse {
   verseId: number;
@@ -591,7 +589,7 @@ export default function QuizScreen() {
                 • The quiz selects random verses from your fully memorized surahs
               </Text>
               <Text style={styles.infoText}>
-                • You'll be asked to recall 3-15 verses from memory
+                • You'll be asked to recall 3-50 verses from memory
               </Text>
               <Text style={styles.infoText}>
                 • Mark each verse as correct or incorrect after reciting

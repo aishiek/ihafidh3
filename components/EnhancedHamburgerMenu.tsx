@@ -3,29 +3,25 @@
  * Demonstrates unified theme and mixed state management approach
  */
 
+import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
+import { StateMigrationUtils, useContextAwareTheme } from '@/utils/stateManagementBridge';
+import { router } from 'expo-router';
+import {
+  Calendar,
+  MapPin,
+  Menu,
+  Moon,
+  X
+} from 'lucide-react-native';
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
   Modal,
   ScrollView,
-  Animated,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import {
-  Menu,
-  X,
-  Calendar,
-  Moon,
-  MapPin,
-  Settings,
-  Palette,
-  Bell,
-} from 'lucide-react-native';
-import { router } from 'expo-router';
-import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
-import { useContextAwareTheme, StateMigrationUtils } from '@/utils/stateManagementBridge';
 
 interface MenuItem {
   id: string;
@@ -266,7 +262,7 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
       <Modal
         visible={isMenuVisible}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setIsMenuVisible(false)}
       >
         <View style={styles.modalOverlay}>
@@ -276,13 +272,13 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
             activeOpacity={1}
           />
           
-          <View style={styles.menuContainer}>
+          <View style={[styles.menuContainer, { alignSelf: 'center', justifyContent: 'center' }]}>
             {/* Header */}
             <View style={styles.menuHeader}>
               <View>
-                <Text style={styles.menuTitle}>Features</Text>
+                <Text style={styles.menuTitle}>Essentials</Text>
                 <Text style={styles.menuSubtitle}>
-                  Mixed State Management • {fastingContext ? 'Context + Zustand' : 'Zustand Only'}
+                  Tools to enhance your Spiritual Journey!
                 </Text>
               </View>
               <TouchableOpacity
