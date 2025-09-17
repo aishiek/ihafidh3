@@ -106,7 +106,12 @@ export default function QiblaFinder() {
     let headingSub: Location.LocationSubscription | null = null;
     (async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (!Location?.requestForegroundPermissionsAsync) {
+          setErrorMsg('Location module unavailable');
+          setIsLoading(false);
+          return;
+        }
+        const { status } = await Location.requestForegroundPermissionsAsync().catch(() => ({ status: 'denied' } as any));
         if (status !== 'granted') {
           setErrorMsg('Location permission denied.');
           setIsLoading(false);
@@ -122,42 +127,67 @@ export default function QiblaFinder() {
             },
             timestamp: Date.now()
           } as Location.LocationObject;
+        } else if (Location?.getCurrentPositionAsync) {
+          try {
+            currentLocation = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy?.Balanced || 3 });
+          } catch (e) {
+            console.warn('[location] getCurrentPosition failed', e);
+            currentLocation = {
+              coords: { latitude: 0, longitude: 0, accuracy: 0, altitude: 0, heading: 0, speed: 0 },
+              timestamp: Date.now()
+            } as any;
+          }
         } else {
-          currentLocation = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          currentLocation = {
+            coords: { latitude: 0, longitude: 0, accuracy: 0, altitude: 0, heading: 0, speed: 0 },
+            timestamp: Date.now()
+          } as any;
         }
 
         setDeviceLocation(currentLocation);
         setQiblaAngle(computeQibla(currentLocation.coords.latitude, currentLocation.coords.longitude));
 
-        try {
-          headingSub = await Location.watchHeadingAsync(h => {
-            const val = h.trueHeading ?? h.magHeading ?? 0;
-            const now = Date.now();
-            if (now - lastHeadingUpdate.current > 100) {
-              lastHeadingUpdate.current = now;
-              setHeading(val);
-            }
-          });
-        } catch {
-          magSub = Magnetometer.addListener(data => {
-            const angle = (Math.atan2(data.y, data.x) * 180) / Math.PI;
-            const normalized = (angle + 360) % 360;
-            const now = Date.now();
-            if (now - lastHeadingUpdate.current > 100) {
-              lastHeadingUpdate.current = now;
-              setHeading(normalized);
-            }
-          });
+        // Heading subscription
+        if (Location?.watchHeadingAsync) {
+          try {
+            headingSub = await Location.watchHeadingAsync(h => {
+              const val = h.trueHeading ?? h.magHeading ?? 0;
+              const now = Date.now();
+              if (now - lastHeadingUpdate.current > 100) {
+                lastHeadingUpdate.current = now;
+                setHeading(val);
+              }
+            });
+          } catch (e) {
+            console.warn('[location] watchHeadingAsync failed, fallback to Magnetometer', e);
+          }
         }
-      } catch {
+
+        if (!headingSub && Magnetometer?.addListener) {
+          try {
+            magSub = Magnetometer.addListener(data => {
+              const angle = (Math.atan2(data.y, data.x) * 180) / Math.PI;
+              const normalized = (angle + 360) % 360;
+              const now = Date.now();
+              if (now - lastHeadingUpdate.current > 100) {
+                lastHeadingUpdate.current = now;
+                setHeading(normalized);
+              }
+            });
+          } catch (e) {
+            console.warn('[sensors] Magnetometer listener failed', e);
+          }
+        }
+      } catch (e) {
+        console.warn('[qibla] initialization failed', e);
         setErrorMsg('Failed to acquire location.');
       } finally {
         setIsLoading(false);
       }
     })();
     return () => {
-      if (magSub) magSub.remove();
-      if (headingSub) headingSub.remove();
+      try { magSub && magSub.remove && magSub.remove(); } catch {}
+      try { headingSub && headingSub.remove && headingSub.remove(); } catch {}
     };
   }, [isExpoGo]);
 

@@ -10,13 +10,13 @@ interface SettingsState extends AppSettings {
   translationLanguage: string;
   reciterIdentifier: string;
   showTransliteration: boolean;
-  arabicFont: 'default' | 'scheherazade' | 'scheherazade-bold' | 'tajweed' | 'indo-pak';
+  arabicFont: 'default' | 'scheherazade' | 'scheherazade-bold' | 'tajweed' | 'indo-pak' | 'amiri-quran';
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
   setRepeatMode: (mode: number) => void;
   setFontSizeArabic: (size: number) => void;
   setFontSizeTransliteration: (size: number) => void;
   setFontSizeTranslation: (size: number) => void;
-  setArabicFont: (font: 'default' | 'scheherazade' | 'scheherazade-bold' | 'tajweed' | 'indo-pak') => void;
+  setArabicFont: (font: 'default' | 'scheherazade' | 'scheherazade-bold' | 'tajweed' | 'indo-pak' | 'amiri-quran') => void;
   setShowTranslation: (show: boolean) => void;
   setShowTransliteration: (show: boolean) => void;
   setAutoPlayAudio: (autoPlay: boolean) => void;
@@ -67,7 +67,7 @@ export const useSettingsStore = create<SettingsState>()(
       quizVerseCount: 5,
       translationLanguage: 'en.sahih',
       reciterIdentifier: 'ar.alafasy',
-      arabicFont: 'default',
+      arabicFont: 'amiri-quran',
       
       setTheme: (theme) => set({ theme }),
       setRepeatMode: (repeatMode) => set({ repeatMode }),
@@ -107,7 +107,7 @@ export const useSettingsStore = create<SettingsState>()(
           // @ts-ignore add new field default
           (state as any).fontSizeTransliteration = (state as any).fontSizeTransliteration || 14;
           // @ts-ignore extend persisted state
-          (state as any).arabicFont = (state as any).arabicFont || 'default';
+          (state as any).arabicFont = (state as any).arabicFont || 'amiri-quran';
           state.showTranslation = state.showTranslation ?? true;
           // @ts-ignore extend persisted state
           (state as any).showTransliteration = (state as any).showTransliteration ?? false;

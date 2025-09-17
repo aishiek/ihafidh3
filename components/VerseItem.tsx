@@ -8,6 +8,7 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { useProgressStore } from '@/store/progressStore';
 import { playAudio, pauseAudio, playVerseWithOptionalBismillah } from '@/utils/audioUtils';
 import TajweedVerse from 'rn-tajweed-verse';
+import { getArabicFontFamily } from '@/utils/fontUtils';
 
 interface VerseItemProps {
   verse: Verse;
@@ -27,36 +28,14 @@ const VerseItem = ({
   onPlayAudio,
 }: VerseItemProps) => {
   const { primary } = useThemeColor();
-  const { fontSizeArabic, fontSizeTransliteration, fontSizeTranslation, arabicFont, showTranslation, showTransliteration, repeatMode } = useSettingsStore();
+  const { fontSizeArabic, fontSizeTransliteration, fontSizeTranslation, arabicFont, showTranslation, showTransliteration, repeatMode, setRepeatMode } = useSettingsStore();
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [audioFallback, setAudioFallback] = useState(false);
   const [memorized, setMemorized] = useState(false);
   const [revised, setRevised] = useState(false);
-  const [repeatCount, setRepeatCount] = useState(1);
+  const [repeatCount, setRepeatCount] = useState(repeatMode || 1);
   const [showRepeatModal, setShowRepeatModal] = useState(false);
-  
-  // Helper function to get Arabic font family
-  const getArabicFontFamily = () => {
-    switch (arabicFont) {
-      case 'scheherazade':
-        return 'Scheherazade';
-      case 'scheherazade-bold':
-        return 'Scheherazade-Bold';
-      case 'tajweed':
-        return 'Scheherazade'; // Use Scheherazade for Tajweed mode
-      case 'indo-pak':
-        return 'NooreHuda';
-      default:
-        // For system default, provide fallback Arabic fonts that are commonly available
-        // These fonts are typically available on most devices and provide good Arabic rendering
-        return Platform.select({
-          ios: 'Arial, Helvetica Neue, Helvetica', // iOS has good Arabic support with these fonts
-          android: 'Roboto, Noto Sans Arabic, Arial', // Android's fonts with good Arabic support
-          default: 'Arial, Helvetica, sans-serif' // Fallback for other platforms
-        });
-    }
-  };
   
   // Update memorization and revision status when component mounts or verse changes
   useEffect(() => {
@@ -153,6 +132,15 @@ const VerseItem = ({
   
   const repeatOptions = [1, 2, 3, 4, 5, 7];
   
+  // Keep local repeatCount in sync with global repeatMode
+  useEffect(() => {
+    if (repeatMode && repeatMode !== repeatCount) {
+      setRepeatCount(repeatMode);
+    }
+  }, [repeatMode]);
+  
+  const arabicFamily = getArabicFontFamily(arabicFont);
+
   return (
     <Pressable
       style={[
@@ -212,10 +200,10 @@ const VerseItem = ({
           config={{
             style: {
               fontSize: fontSizeArabic,
-              lineHeight: fontSizeArabic * 1.5,
+              lineHeight: fontSizeArabic * 1.8, // Improved line height
               color: '#FFFFFF',
               direction: 'rtl',
-              fontFamily: getArabicFontFamily(), // Use the same font logic for consistency
+              fontFamily: arabicFamily,
             }
           }}
         />
@@ -226,10 +214,12 @@ const VerseItem = ({
             { 
               color: '#ffffff',
               fontSize: fontSizeArabic,
-              fontFamily: getArabicFontFamily(),
-              fontWeight: arabicFont === 'default' ? '400' : 'normal',
-              // Add better line height for system fonts to improve readability
-              lineHeight: arabicFont === 'default' ? fontSizeArabic * 1.8 : fontSizeArabic * 1.5,
+              fontFamily: arabicFamily,
+              // Avoid forcing fontWeight which can cause fallback; use font file's weight
+              lineHeight: fontSizeArabic * 1.8,
+              // Avoid letterSpacing on Arabic which can break shaping
+              textAlign: 'right',
+              paddingHorizontal: 4,
             }
           ]}
         >
@@ -329,14 +319,12 @@ const VerseItem = ({
                       repeatCount === option && styles.repeatOptionButtonSelected
                     ]}
                     onPress={() => {
+                      setRepeatMode(option);
                       setRepeatCount(option);
                       setShowRepeatModal(false);
                     }}
                   >
-                    <Text style={[
-                      styles.repeatOptionText,
-                      repeatCount === option && styles.repeatOptionTextSelected
-                    ]}>{option}x</Text>
+                    <Text style={styles.repeatOptionText}>{option}x</Text>
                   </TouchableOpacity>
                 ))}
             </View>
@@ -349,133 +337,121 @@ const VerseItem = ({
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
-    borderRadius: 12,
     marginBottom: 16,
+    padding: 12,
+    borderRadius: 12,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   verseNumber: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   verseNumberText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   verseInfo: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 8,
   },
   verseInfoText: {
     fontSize: 12,
+    opacity: 0.8,
   },
   audioErrorText: {
-    fontSize: 10,
+    fontSize: 12,
     marginTop: 4,
   },
   audioFallbackText: {
-    fontSize: 10,
+    fontSize: 12,
     marginTop: 4,
   },
   audioButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
+    padding: 8,
+    borderRadius: 8,
+  },
+  repeatButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#222',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#444',
   },
   arabicText: {
-    textAlign: 'right',
-    lineHeight: 36,
-    marginBottom: 12,
-    fontWeight: '500',
-  },
-  translationText: {
-    lineHeight: 24,
-    marginBottom: 12,
+    textAlignVertical: 'center',
   },
   transliterationText: {
-    lineHeight: 22,
-    marginBottom: 10,
+    marginTop: 8,
+  },
+  translationText: {
+    marginTop: 4,
   },
   actionsContainer: {
     flexDirection: 'row',
-    marginTop: 8,
     justifyContent: 'space-between',
-    gap: 8,
+    marginTop: 12,
   },
   actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
     flex: 1,
-    justifyContent: 'center',
+    marginHorizontal: 4,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
   },
   actionText: {
-    marginLeft: 4,
-    fontWeight: '500',
-    fontSize: 12,
-  },
-  repeatButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexDirection: 'row',
-    backgroundColor: 'transparent',
+    fontSize: 14,
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   repeatModalContent: {
-    backgroundColor: '#232323',
+    backgroundColor: '#111',
+    padding: 16,
     borderRadius: 12,
-    padding: 24,
-    alignItems: 'center',
-    minWidth: 220,
+    width: '80%',
   },
   repeatModalTitle: {
-    color: '#FFD700',
+    color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 16,
+    marginBottom: 12,
+    textAlign: 'center',
   },
   repeatOptionsRow: {
     flexDirection: 'row',
-    gap: 12,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
   },
   repeatOptionButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: '#333',
-    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#444',
+    margin: 6,
   },
   repeatOptionButtonSelected: {
-    backgroundColor: '#FFD700',
+    backgroundColor: '#FFD70020',
+    borderColor: '#FFD700',
   },
   repeatOptionText: {
     color: '#fff',
-    fontWeight: '600',
-    fontSize: 15,
-  },
-  repeatOptionTextSelected: {
-    color: '#232323',
+    fontSize: 14,
   },
 });
 
-// Memoize the component to prevent unnecessary re-renders
 export default memo(VerseItem);

@@ -1,6 +1,5 @@
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Crypto from 'expo-crypto';
 
 const USER_ID_KEY = 'ihafidh_user_id';
 const USER_NAME_KEY = 'ihafidh_user_name';
@@ -9,10 +8,35 @@ const isExpoGo = Constants.appOwnership === 'expo';
 
 let analyticsModule: any = null;
 
-// Lightweight UUID v4 generator using expo-crypto
+// Attempt to obtain a secure getRandomValues implementation (priority: expo-crypto -> globalThis.crypto -> fallback)
+let getRandomValuesFn: ((arr: Uint8Array) => Uint8Array) | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const maybeCrypto = require('expo-crypto');
+  if (maybeCrypto?.getRandomValues) {
+    getRandomValuesFn = maybeCrypto.getRandomValues;
+  }
+} catch {/* silent */}
+
+if (!getRandomValuesFn && globalThis?.crypto?.getRandomValues) {
+  getRandomValuesFn = (arr: Uint8Array) => globalThis.crypto.getRandomValues!(arr);
+}
+
+function fillRandomBytes(length: number): Uint8Array {
+  const bytes = new Uint8Array(length);
+  if (getRandomValuesFn) {
+    return getRandomValuesFn(bytes);
+  }
+  // Fallback (not cryptographically strong, but acceptable for non-security user id)
+  for (let i = 0; i < length; i++) {
+    bytes[i] = Math.floor(Math.random() * 256);
+  }
+  return bytes;
+}
+
+// Lightweight UUID v4 generator with graceful fallback
 function generateUUIDv4(): string {
-  // Generate 16 random bytes
-  const bytes = Crypto.getRandomValues(new Uint8Array(16));
+  const bytes = fillRandomBytes(16);
   // Per RFC 4122 set version and variant bits
   bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
   bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xxxxxx

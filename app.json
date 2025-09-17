@@ -2,7 +2,7 @@
   "expo": {
     "name": "iHafidh",
     "slug": "ihafidh2",
-    "version": "1.1.4",
+    "version": "1.1.5",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "icon": "./assets/images/icon.png",
@@ -14,6 +14,7 @@
     "assetBundlePatterns": [
       "**/*"
     ],
+    
     "plugins": [
       "expo-router",
       "expo-sqlite",
@@ -28,8 +29,7 @@
             "hermesEnabled": false
           },
           "ios": {
-            "useFrameworks": "static",
-            "hermesEnabled": true
+            "hermesEnabled": false
           }
         }
       ]
@@ -37,7 +37,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ihafidh",
-      "buildNumber": "3",
+      "buildNumber": "4",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app needs access to your location to determine Qibla direction and to enhance fasting calendar accuracy.",
         "ITSAppUsesNonExemptEncryption": false,

@@ -204,11 +204,10 @@ function calculateVerseId(surahNumber: number, verseNumber: number): number {
   return id + verseNumber;
 }
 
-// Add this to the existing generateAudioUrl function
-
 // Generate audio URL (delegate to shared util which respects reciter setting)
 function generateAudioUrl(surahNumber: number, verseNumber: number): string {
-  return generateSharedAudioUrl(surahNumber, verseNumber);
+  const reciterIdentifier = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
+  return generateSharedAudioUrl(surahNumber, verseNumber, reciterIdentifier);
 }
 
 // Improved request queue for lazy loading

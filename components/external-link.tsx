@@ -14,10 +14,16 @@ export function ExternalLink({ href, ...rest }: Props) {
         if (process.env.EXPO_OS !== 'web') {
           // Prevent the default behavior of linking to the default browser on native.
           event.preventDefault();
-          // Open the link in an in-app browser.
-          await openBrowserAsync(href, {
-            presentationStyle: WebBrowserPresentationStyle.AUTOMATIC,
-          });
+          try {
+            if (typeof openBrowserAsync === 'function') {
+              // Open the link in an in-app browser.
+              await openBrowserAsync(href, {
+                presentationStyle: WebBrowserPresentationStyle.AUTOMATIC,
+              });
+            }
+          } catch (e) {
+            console.warn('[web-browser] open failed', e);
+          }
         }
       }}
     />

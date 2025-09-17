@@ -134,12 +134,16 @@ export default function QuranQuizCelebration({ visible, onComplete }: { visible:
   // Helper function to get Arabic font family (same as VerseItem)
   const getArabicFontFamily = () => {
     switch (arabicFont) {
+      case 'amiri-quran':
+        return 'AmiriQuran-Regular';
       case 'scheherazade':
-        return 'Scheherazade';
+        return 'ScheherazadeNew-Regular';
       case 'scheherazade-bold':
-        return 'Scheherazade-Bold';
+        return 'ScheherazadeNew-Bold';
       case 'tajweed':
-        return 'Scheherazade'; // Use Scheherazade for Tajweed mode
+        return 'ScheherazadeNew-Regular'; // Use Scheherazade for Tajweed mode
+      case 'indo-pak':
+        return 'NooreHuda-Regular';
       default:
         // For system default, provide fallback Arabic fonts that are commonly available
         return Platform.select({

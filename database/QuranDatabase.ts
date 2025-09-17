@@ -7,6 +7,17 @@ import { QueueItem } from '@/utils/WriteBackQueue';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
+// Provide a safe getter for legacy code at bottom expecting getDb()
+export async function getDb(): Promise<any> {
+  if (!db || Platform.OS === 'web') {
+    return {
+      transaction: async (fn: any) => { try { await fn({ executeSql: () => {} }); } catch {} },
+      executeSql: async () => [{ rows: { _array: [] } }],
+    };
+  }
+  return db;
+}
+
 const DATABASE_NAME = 'quran.db';
 const DATABASE_VERSION = '1.0';
 const PREFETCH_PROGRESS_KEY = 'prefetch_progress';
@@ -15,22 +26,24 @@ const FAILED_VERSES_KEY = 'failed_verses';
 // Initialize database
 export const initDatabase = async (): Promise<void> => {
   if (Platform.OS === 'web' || db) return;
-  
   try {
+    if (!SQLite || !SQLite.openDatabaseSync) {
+      console.warn('[sqlite] module unavailable - skipping DB init');
+      return;
+    }
     db = SQLite.openDatabaseSync(DATABASE_NAME);
     await createTables();
-    console.log("Database initialized successfully");
+    console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
-    throw error;
   }
 };
 
 // Create tables
 const createTables = async (): Promise<void> => {
   if (!db) return;
-  
   try {
+    if (!db.execAsync) { console.warn('[sqlite] execAsync unavailable'); return; }
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS verses (
         id INTEGER PRIMARY KEY,
@@ -44,7 +57,6 @@ const createTables = async (): Promise<void> => {
         pageNumber INTEGER,
         UNIQUE(surahId, verseNumber)
       );
-      
       CREATE TABLE IF NOT EXISTS memorization_status (
         surahId INTEGER NOT NULL,
         verseNumber INTEGER NOT NULL,
@@ -52,15 +64,13 @@ const createTables = async (): Promise<void> => {
         lastReviewed DATETIME,
         PRIMARY KEY (surahId, verseNumber)
       );
-      
       CREATE INDEX IF NOT EXISTS idx_verses_surah ON verses(surahId);
       CREATE INDEX IF NOT EXISTS idx_verses_juz ON verses(juzNumber);
       CREATE INDEX IF NOT EXISTS idx_memorization_surah ON memorization_status(surahId);
     `);
-    console.log("Database tables and indexes created successfully");
+    console.log('Database tables and indexes created successfully');
   } catch (error) {
     console.error('Error creating tables:', error);
-    throw error;
   }
 };
 
@@ -77,8 +87,8 @@ export const getSurahById = async (id: number): Promise<Surah | null> => {
 // Cache verses
 export const cacheVerses = async (verses: Verse[]): Promise<void> => {
   if (!db || Platform.OS === 'web' || verses.length === 0) return;
-  
   try {
+    if (!db.runAsync) { console.warn('[sqlite] runAsync unavailable'); return; }
     for (const verse of verses) {
       await db.runAsync(
         `INSERT OR REPLACE INTO verses (
@@ -88,7 +98,7 @@ export const cacheVerses = async (verses: Verse[]): Promise<void> => {
         [
           verse.id,
           verse.surahId,
-          verse.verseNumber,
+            verse.verseNumber,
           verse.arabicText,
           verse.translation,
           verse.audioUrl || '',
@@ -96,7 +106,7 @@ export const cacheVerses = async (verses: Verse[]): Promise<void> => {
           verse.hizbNumber || 0,
           verse.pageNumber || 0
         ]
-      );
+      ).catch(e => console.warn('[sqlite] insert failed', e));
     }
   } catch (error) {
     console.error('Error caching verses:', error);
@@ -146,34 +156,29 @@ export const getCachedVerses = async (
   pageSize: number = 10
 ): Promise<Verse[]> => {
   if (!db || Platform.OS === 'web') return [];
-  
   try {
+    if (!db.getAllAsync) { console.warn('[sqlite] getAllAsync unavailable'); return []; }
     const offset = (page - 1) * pageSize;
     const result = await db.getAllAsync(
       'SELECT * FROM verses WHERE surahId = ? ORDER BY verseNumber LIMIT ? OFFSET ?',
       [surahId, pageSize, offset]
-    );
-    
-    const verses = result.map((row: any) => ({
+    ).catch(e => { console.warn('[sqlite] query failed', e); return []; });
+    // Explicitly type verses array to satisfy Verse shape (audioUrl optional in our Verse interface)
+    const verses: Verse[] = (result as any[]).map((row: any) => ({
       id: row.id,
       surahId: row.surahId,
       verseNumber: row.verseNumber,
       arabicText: row.arabicText,
       translation: row.translation,
-      audioUrl: row.audioUrl || '',
+      audioUrl: row.audioUrl || undefined,
       juzNumber: row.juzNumber,
       hizbNumber: row.hizbNumber,
       pageNumber: row.pageNumber
     }));
-    
-    // Add Bismillah verse for first page if applicable
     if (page === 1 && surahId !== 1 && surahId !== 9) {
       const bismillahVerse = await handleBismillahVerse(surahId);
-      if (bismillahVerse) {
-        verses.unshift(bismillahVerse);
-      }
+      if (bismillahVerse) verses.unshift(bismillahVerse as Verse);
     }
-    
     return verses;
   } catch (error) {
     console.error('Error getting cached verses:', error);
@@ -202,13 +207,9 @@ export const getVersesBySurah = async (
 // Check if surah is cached
 export const isSurahCached = async (surahId: number): Promise<boolean> => {
   if (!db || Platform.OS === 'web') return false;
-  
   try {
-    const result = await db.getFirstAsync(
-      'SELECT COUNT(*) as count FROM verses WHERE surahId = ?',
-      [surahId]
-    ) as { count: number } | null;
-    
+    if (!db.getFirstAsync) { console.warn('[sqlite] getFirstAsync unavailable'); return false; }
+    const result = await db.getFirstAsync('SELECT COUNT(*) as count FROM verses WHERE surahId = ?', [surahId]) as { count: number } | null;
     return (result?.count || 0) > 0;
   } catch (error) {
     console.error(`Error checking if surah ${surahId} is cached:`, error);
@@ -219,16 +220,11 @@ export const isSurahCached = async (surahId: number): Promise<boolean> => {
 // Check if surah is fully cached
 export const isSurahFullyCached = async (surahId: number): Promise<boolean> => {
   if (!db || Platform.OS === 'web') return false;
-  
   const surah = surahsData.find(s => s.id === surahId);
   if (!surah) return false;
-  
   try {
-    const result = await db.getFirstAsync(
-      'SELECT COUNT(*) as count FROM verses WHERE surahId = ?',
-      [surahId]
-    ) as { count: number } | null;
-    
+    if (!db.getFirstAsync) { console.warn('[sqlite] getFirstAsync unavailable'); return false; }
+    const result = await db.getFirstAsync('SELECT COUNT(*) as count FROM verses WHERE surahId = ?', [surahId]) as { count: number } | null;
     return (result?.count || 0) >= surah.versesCount;
   } catch (error) {
     console.error(`Error checking if surah ${surahId} is fully cached:`, error);
@@ -240,11 +236,9 @@ export const isSurahFullyCached = async (surahId: number): Promise<boolean> => {
 export const getPrefetchProgress = async (): Promise<{ completed: number, total: number }> => {
   try {
     const progressStr = await AsyncStorage.getItem(PREFETCH_PROGRESS_KEY);
-    if (progressStr) {
-      return JSON.parse(progressStr);
-    }
+    if (progressStr) return JSON.parse(progressStr);
     return { completed: 0, total: 6236 };
-  } catch (error) {
+  } catch {
     return { completed: 0, total: 6236 };
   }
 };
@@ -312,9 +306,8 @@ export const clearFailedVerses = async (): Promise<void> => {
 // Clear cache
 export const clearCache = async (): Promise<void> => {
   if (!db || Platform.OS === 'web') return;
-  
   try {
-    await db.execAsync('DELETE FROM verses');
+    if (db.execAsync) await db.execAsync('DELETE FROM verses');
     await AsyncStorage.multiRemove([PREFETCH_PROGRESS_KEY, FAILED_VERSES_KEY]);
   } catch (error) {
     console.error('Error clearing cache:', error);
@@ -325,7 +318,7 @@ export const clearCache = async (): Promise<void> => {
 export const closeDatabase = async (): Promise<void> => {
   if (db && Platform.OS !== 'web') {
     try {
-      await db.closeAsync();
+      if (db.closeAsync) await db.closeAsync();
       db = null;
     } catch (error) {
       console.error('Error closing database:', error);
@@ -378,7 +371,7 @@ export const markAllVersesMemorized = async (surahId: number, isMemorized: boole
 
   try {
     const surah = surahsData.find(s => s.id === surahId);
-    if (!surah) return;
+    if (!surah || !db?.withTransactionAsync || !db?.runAsync) return;
 
     // Create a list of all verse numbers for the surah
     const verseNumbers = Array.from({ length: surah.versesCount }, (_, i) => i + 1);
@@ -386,6 +379,7 @@ export const markAllVersesMemorized = async (surahId: number, isMemorized: boole
     // Batch insert/replace operations
     await db.withTransactionAsync(async () => {
       for (const verseNumber of verseNumbers) {
+        if (!db) break; // safeguard
         await db.runAsync(
           `INSERT OR REPLACE INTO memorization_status (surahId, verseNumber, isMemorized, lastReviewed)
            VALUES (?, ?, ?, datetime('now'))`,
@@ -407,8 +401,9 @@ export const getJuzProgress = async (juzNumber: number): Promise<{ memorized: nu
   }
 
   try {
+    if (!db.getAllAsync) return { memorized: 0, total: 0, progress: 0 };
     // Get all verses in the specified Juz
-    const versesInJuz = await db.getAllAsync(
+    const versesInJuz: any[] = await db.getAllAsync(
       'SELECT surahId, verseNumber FROM verses WHERE juzNumber = ?',
       [juzNumber]
     );
@@ -421,9 +416,10 @@ export const getJuzProgress = async (juzNumber: number): Promise<{ memorized: nu
     let memorizedCount = 0;
     
     for (const verse of versesInJuz) {
+      if (!db.getFirstAsync) continue;
       const result = await db.getFirstAsync(
         'SELECT isMemorized FROM memorization_status WHERE surahId = ? AND verseNumber = ?',
-        [verse.surahId, verse.verseNumber]
+        [(verse as any).surahId, (verse as any).verseNumber]
       ) as { isMemorized: number } | null;
       
       if (result?.isMemorized === 1) {
@@ -499,27 +495,34 @@ export const getSurahDownloadStatus = async (surahId: number): Promise<{
 }; 
 
 export async function bulkUpdateVerses(batch: QueueItem[]) {
-  const db = await getDb();
-  await db.transaction(async tx => {
+  const dbInstance = await getDb();
+  if (!dbInstance?.transaction) return;
+  await dbInstance.transaction(async (tx: any) => {
     for (const { verseId, state, type } of batch) {
-      if (type === 'memorized') {
-        await tx.executeSql('UPDATE verses SET memorized = ? WHERE id = ?', [state ? 1 : 0, verseId]);
-      } else if (type === 'revised') {
-        await tx.executeSql('UPDATE verses SET revised = ? WHERE id = ?', [state ? 1 : 0, verseId]);
-      }
+      try {
+        if (type === 'memorized') {
+          await tx.executeSql?.('UPDATE verses SET memorized = ? WHERE id = ?', [state ? 1 : 0, verseId]);
+        } else if (type === 'revised') {
+          await tx.executeSql?.('UPDATE verses SET revised = ? WHERE id = ?', [state ? 1 : 0, verseId]);
+        }
+      } catch (e) { console.warn('[sqlite] bulkUpdateVerses item failed', e); }
     }
   });
 }
 
 // Utility to get all memorized/revised verse IDs for cache warm-up
 export async function getAllMemorizedVerseIds(): Promise<number[]> {
-  const db = await getDb();
-  const res = await db.executeSql('SELECT id FROM verses WHERE memorized = 1');
-  return res[0].rows._array.map((row: any) => row.id);
+  const dbInstance = await getDb();
+  try {
+    const res = await dbInstance.executeSql?.('SELECT id FROM verses WHERE memorized = 1');
+    return res?.[0]?.rows?._array?.map((row: any) => row.id) || [];
+  } catch { return []; }
 }
 
 export async function getAllRevisedVerseIds(): Promise<number[]> {
-  const db = await getDb();
-  const res = await db.executeSql('SELECT id FROM verses WHERE revised = 1');
-  return res[0].rows._array.map((row: any) => row.id);
+  const dbInstance = await getDb();
+  try {
+    const res = await dbInstance.executeSql?.('SELECT id FROM verses WHERE revised = 1');
+    return res?.[0]?.rows?._array?.map((row: any) => row.id) || [];
+  } catch { return []; }
 }
