@@ -54,8 +54,8 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
   const menuItems: MenuItem[] = [
     {
       id: 'fasting-calendar',
-      title: 'Fasting Calendar',
-      subtitle: fastingContext ? 'Using Context API' : 'Will use Context when integrated',
+      title: 'Sunnah Fastings...',
+      subtitle: 'Fast and Purify Your Soul',
       icon: Calendar,
       color: fastingTheme.theme.primary,
       feature: 'fasting',

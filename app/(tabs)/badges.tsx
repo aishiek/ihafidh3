@@ -207,9 +207,9 @@ export default function BadgesScreen() {
       {/* Custom header with back button */}
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color="#ffffff" />
+          <ArrowLeft size={24} color="#FFC107" />
         </Pressable>
-        <Text style={styles.headerTitle}>Badges</Text>
+        <Text style={styles.headerTitle}>Achieve your Hifdh accolades!</Text>
         <View style={styles.headerRight} />
       </View>
 

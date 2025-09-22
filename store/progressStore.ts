@@ -28,10 +28,10 @@ interface QuizResult {
 interface Badges {
   awwalNoor: boolean; // First Light - Complete Juz Amma (Surah 78-114)
   hamilAlHikmah: boolean; // Bearer of Wisdom - Memorize 10 complete surahs
-  saariSabeelillah: boolean; // Walking the Path - 7-day streak
-  muratilQuran: boolean; // Beautiful Reciter - 10 perfect quizzes
-  hafizJuz: boolean; // Juz Memorizer - Complete one full juz
-  hafizQuran: boolean; // Quran Memorizer - Complete entire Quran
+  saariSabeelillah: boolean; // 7-day streak
+  muratilQuran: boolean; // 10 perfect quizzes
+  hafizJuz: boolean; // Complete one full juz
+  hafizQuran: boolean; // Complete entire Quran
 }
 
 interface RevisionSchedule {
@@ -76,6 +76,8 @@ interface ProgressState {
   lastDailyMarkedForRevisionReset: string | null;
   weeklyRevisedSurahsCompleted: number[]; // IDs of surahs completed for weekly target
   lastWeeklyRevisedSurahsReset: string | null;
+  // New: store memorization date per verse (yyyy-MM-dd)
+  memorizedVerseDates: Record<number, string>;
   
   markVerseAsMemorized: (verseId: number) => void;
   unmarkVerseAsMemorized: (verseId: number) => void;
@@ -143,6 +145,7 @@ export const useProgressStore = create<ProgressState>()(
       lastDailyMarkedForRevisionReset: null,
       weeklyRevisedSurahsCompleted: [],
       lastWeeklyRevisedSurahsReset: null,
+      memorizedVerseDates: {},
       
       markVerseAsMemorized: (verseId) => {
         set((state) => {
@@ -151,14 +154,22 @@ export const useProgressStore = create<ProgressState>()(
           }
           
           const newMemorizedVerses = [...state.memorizedVerses, verseId];
+          const today = formatDate(new Date());
+          const newMemDates = { ...state.memorizedVerseDates, [verseId]: today };
           
-          // Update badges after adding a new memorized verse
-          setTimeout(async () => {
-            await logAyahMemorized(newMemorizedVerses.length, 'daily');
-            get().updateBadges();
+          // Update badges after adding a new memorized verse (non-blocking)
+          setTimeout(() => {
+            try {
+              logAyahMemorized(newMemorizedVerses.length, 'daily').catch(() => {
+                // Silently handle analytics errors to avoid UI lag
+              });
+              get().updateBadges();
+            } catch (error) {
+              // Silently handle any synchronous errors
+            }
           }, 0);
           
-          return { memorizedVerses: newMemorizedVerses };
+          return { memorizedVerses: newMemorizedVerses, memorizedVerseDates: newMemDates };
         });
       },
       
@@ -169,11 +180,18 @@ export const useProgressStore = create<ProgressState>()(
           }
           
           const newMemorizedVerses = state.memorizedVerses.filter(id => id !== verseId);
+          const { [verseId]: _removed, ...restDates } = state.memorizedVerseDates || {};
           
-          // Update badges after removing a memorized verse
-          setTimeout(() => get().updateBadges(), 0);
+          // Update badges after removing a memorized verse (non-blocking)
+          setTimeout(() => {
+            try {
+              get().updateBadges();
+            } catch (error) {
+              // Silently handle any errors
+            }
+          }, 0);
           
-          return { memorizedVerses: newMemorizedVerses };
+          return { memorizedVerses: newMemorizedVerses, memorizedVerseDates: restDates };
         });
       },
       
@@ -217,10 +235,16 @@ export const useProgressStore = create<ProgressState>()(
             weeklyRevisedSurahsCompleted: newWeeklyRevisedSurahsCompleted
           };
         });
-        // After marking as revised, update notifications
-        setTimeout(async () => {
-          const revisedVerses = get().revisedVerses;
-          await logAyahRevised(revisedVerses.length);
+        // After marking as revised, update notifications (non-blocking)
+        setTimeout(() => {
+          try {
+            const revisedVerses = get().revisedVerses;
+            logAyahRevised(revisedVerses.length).catch(() => {
+              // Silently handle analytics errors to avoid UI lag
+            });
+          } catch (error) {
+            // Silently handle any synchronous errors
+          }
         }, 0);
       },
       
@@ -438,9 +462,14 @@ export const useProgressStore = create<ProgressState>()(
           };
           // Only update if badges actually changed
           if (JSON.stringify(state.badges) !== JSON.stringify(newBadges)) {
-            (Object.keys(newBadges) as (keyof typeof newBadges)[]).forEach(async (badge) => {
+            // Log badge achievements non-blocking to avoid UI lag
+            (Object.keys(newBadges) as (keyof typeof newBadges)[]).forEach((badge) => {
               if (newBadges[badge] && !state.badges[badge]) {
-                await logBadgeEarned(badge);
+                setTimeout(() => {
+                  logBadgeEarned(badge).catch(() => {
+                    // Silently handle analytics errors
+                  });
+                }, 0);
               }
             });
             return { badges: newBadges };
@@ -619,6 +648,11 @@ export const useProgressStore = create<ProgressState>()(
           if (state.lastDailyMarkedForRevisionReset === undefined) state.lastDailyMarkedForRevisionReset = null;
           if (state.weeklyRevisedSurahsCompleted === undefined) state.weeklyRevisedSurahsCompleted = [];
           if (state.lastWeeklyRevisedSurahsReset === undefined) state.lastWeeklyRevisedSurahsReset = null;
+          
+          // Ensure memorized verse dates object is initialized
+          if (!state.memorizedVerseDates) {
+            state.memorizedVerseDates = {} as Record<number, string>;
+          }
         }
       },
     }

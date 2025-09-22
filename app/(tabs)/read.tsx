@@ -7,10 +7,10 @@ import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import type { Surah } from '@/types';
 import { Verse } from '@/types';
-import { pauseAudio, playAudio } from '@/utils/audioUtils';
+import { pauseAudio, playAudio, generateSurahAudioUrl, playSurahAudioWithFallback } from '@/utils/audioUtils';
 import { useCustomColors } from '@/utils/themeUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, CheckCircle, Pause, Play, RefreshCw, Search } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, InteractionManager, Modal, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View, ViewStyle } from 'react-native';
@@ -33,7 +33,7 @@ const getCacheKey = (surahId: number, page: number, language: string) => `surah_
 
 // Helper function to get all cached verses for a surah for a specific language
 const getCachedSurahVerses = (surahId: number, language: string): { verses: Verse[], maxPage: number } => {
-  const verses: Verse[] = [];
+  const versesMap = new Map<number, Verse>(); // Use Map to prevent duplicates by verse ID
   let maxPage = 0;
   
   // Get all cached pages for this surah
@@ -42,17 +42,22 @@ const getCachedSurahVerses = (surahId: number, language: string): { verses: Vers
       const parts = key.split('_');
       const pageNum = parseInt(parts[parts.length - 1]);
       maxPage = Math.max(maxPage, pageNum);
-      verses.push(...cachedVerses);
+      
+      // Add verses to map to prevent duplicates
+      cachedVerses.forEach(verse => {
+        versesMap.set(verse.id, verse);
+      });
     }
   }
   
-  // Sort verses by verse number
-  verses.sort((a, b) => a.verseNumber - b.verseNumber);
+  // Convert map to array and sort by verse number
+  const verses = Array.from(versesMap.values()).sort((a, b) => a.verseNumber - b.verseNumber);
   return { verses, maxPage };
 };
 
 export default function ReadScreen() {
   const router = useRouter();
+  const { surahId: paramSurahId, verseId: paramVerseId } = useLocalSearchParams<{ surahId?: string; verseId?: string }>();
   const colors = useCustomColors();
   const { primary } = useThemeColor();
   const [searchQuery, setSearchQuery] = useState('');
@@ -78,13 +83,17 @@ export default function ReadScreen() {
     setLastReadVerse, 
     markVerseAsMemorized,
     unmarkVerseAsMemorized,
-    markVerseAsRevised
+    markVerseAsRevised,
+    // New: use memorizedVerseDates for khatam date
+    memorizedVerseDates,
   } = useProgressStore();
   const { clearError, setLastViewedSurahId, getLastViewedSurahId } = useQuranStore();
   const lastViewedSurahId = useQuranStore(state => state.lastViewedSurahId);
   const { autoPlayAudio, translationLanguage, arabicFont, fontSizeArabic } = useSettingsStore();
 
   const surahListRef = useRef<FlatList>(null);
+  const versesListRef = useRef<FlatList<Verse>>(null);
+  const targetVerseRef = useRef<number | null>(null);
   
   // Helper function to get Arabic font family (same as VerseItem)
   const getArabicFontFamily = () => {
@@ -309,7 +318,13 @@ export default function ReadScreen() {
       }
       
       if (fetchedVerses.length > 0) {
-        setVerses(prev => [...prev, ...fetchedVerses]);
+        setVerses(prev => {
+          // Create a set of existing verse IDs to prevent duplicates
+          const existingIds = new Set(prev.map(v => v.id));
+          // Filter out any verses that are already in the list
+          const newVerses = fetchedVerses.filter(v => !existingIds.has(v.id));
+          return [...prev, ...newVerses];
+        });
         setCurrentPage(nextPage);
         const newTotal = verses.length + fetchedVerses.length;
         const stillHasMore = newTotal < totalVersesInSurah;
@@ -556,21 +571,26 @@ export default function ReadScreen() {
         setIsPlayingSurah(false);
         return;
       }
-      // Build surah mp3 url (128kbps) pattern: https://cdn.islamic.network/quran/audio-surah/128/<reciter>/<surah>.mp3
-      const reciter = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
-      const surahIdPadded = selectedSurah.id.toString();
-      const surahUrl = `https://cdn.islamic.network/quran/audio-surah/128/${reciter}/${surahIdPadded}.mp3`;
+      
+      // Use the proper surah audio URL with fallback support
+      const reciterIdentifier = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
+      const surahUrl = await generateSurahAudioUrl(reciterIdentifier, selectedSurah.id);
       surahAudioUrlRef.current = surahUrl;
-      await playAudio(surahUrl, 1, (status) => {
-        if (status?.didJustFinish) {
+      
+      await playSurahAudioWithFallback(selectedSurah.id, 1, (status) => {
+        if (status?.didJustFinish || status?.isPlaying === false) {
           setIsPlayingSurah(false);
         }
         if (status?.error) {
           setIsPlayingSurah(false);
         }
+        if (status?.fallbackUsed) {
+          console.log('Using fallback reciter for surah audio');
+        }
       });
       setIsPlayingSurah(true);
     } catch (e) {
+      console.error('Surah audio playback failed:', e);
       setIsPlayingSurah(false);
     }
   }, [selectedSurah, isPlayingSurah]);
@@ -603,13 +623,42 @@ export default function ReadScreen() {
     />
   );
 
+  const formatDate = (date: Date) => {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const d = date.getDate();
+    const m = months[date.getMonth()];
+    const y = date.getFullYear();
+    return `${d} ${m} ${y}`;
+  };
+
+  // Helper: get completion (khatm) date for a surah using per-verse memorization dates
+  const getSurahCompletionDate = (surahId: number) => {
+    const surah = surahsData.find(s => s.id === surahId);
+    if (!surah) return null;
+    const allIds = getSurahVerseRange({ id: surah.id, versesCount: surah.versesCount });
+    const memSet = new Set(memorizedVerses);
+    const isFull = allIds.every(id => memSet.has(id));
+    if (!isFull) return null;
+    // Pick the latest memorization date among verses in this surah
+    let latest: Date | null = null;
+    for (const id of allIds) {
+      const ds = memorizedVerseDates?.[id];
+      if (ds) {
+        const d = new Date(ds);
+        if (!latest || d > latest) latest = d;
+      }
+    }
+    return latest || null;
+  };
+
   const renderSurahItem = ({ item }: { item: Surah }) => {
     const surahProgress = calculateSurahProgress(item.id);
     const progressColor = getProgressColor(surahProgress.progress);
     const cachedData = getCachedSurahVerses(item.id, translationLanguage);
     const isCached = cachedData.verses.length > 0;
     const revelationDisplay = item.revelationType === 'Medinan' ? 'Madani' : 'Makki';
-    
+    const showKhatm = Math.round(surahProgress.progress) === 100;
+    const completionDate = showKhatm ? getSurahCompletionDate(item.id) : null;
     return (
       <Pressable 
         style={[
@@ -627,20 +676,21 @@ export default function ReadScreen() {
         ]}
         onPress={() => handleSurahPress(item)}
       >
-        <View style={[styles.surahNumber, { backgroundColor: primary }]}>
+        <View style={[styles.surahNumber, { backgroundColor: primary }]}> 
           <Text style={[styles.surahNumberText, { color: '#ffffff' }]}>{item.id}</Text>
         </View>
         <View style={styles.surahInfo}>
           <Text style={[styles.surahName, { color: '#ffffff' }]}>{item.name}</Text>
           <Text style={[styles.surahEnglish, { color: '#888888' }]}>{item.englishName}</Text>
-                      <Text style={[styles.surahDetails, { color: '#888888' }]}>
-              {item.versesCount} verses • <Text style={{ color: '#4CAF50' }}>{revelationDisplay}</Text>
-            </Text>
+          <View style={styles.surahDetailsRow}>
+            <Text style={[styles.surahDetails, { color: '#888888' }]}> {item.versesCount} verses • <Text style={{ color: '#4CAF50' }}>{revelationDisplay}</Text> </Text>
+            {showKhatm && completionDate && (
+              <Text style={styles.khatamDate}>{formatDate(completionDate)} : ختم</Text>
+            )}
+          </View>
         </View>
-        <View style={[styles.progressPill, { backgroundColor: progressColor }]}>
-          <Text style={styles.progressText}>
-            {Math.round(surahProgress.progress)}%
-          </Text>
+        <View style={[styles.progressPill, { backgroundColor: progressColor }]}> 
+          <Text style={styles.progressText}>{Math.round(surahProgress.progress)}%</Text>
         </View>
       </Pressable>
     );
@@ -819,6 +869,37 @@ export default function ReadScreen() {
     }
   }, [arabicFont, selectedSurah, translationLanguage, clearSurahCache]);
 
+  // Handle deep-link style params from Home: open surah and optionally scroll to verse
+  useEffect(() => {
+    const sid = paramSurahId ? Number(paramSurahId) : undefined;
+    const vid = paramVerseId ? Number(paramVerseId) : undefined;
+    if (sid && !Number.isNaN(sid)) {
+      const surah = surahsData.find(s => s.id === sid);
+      if (surah) {
+        setSelectedSurah(surah);
+        setLastViewedSurahId(surah.id);
+        if (vid && !Number.isNaN(vid)) {
+          targetVerseRef.current = vid;
+        }
+        loadInitialVerses(surah);
+      }
+    }
+  }, [paramSurahId, paramVerseId, setLastViewedSurahId, loadInitialVerses]);
+
+  // After verses load, scroll to the requested verse if any
+  useEffect(() => {
+    if (selectedSurah && targetVerseRef.current && verses.length > 0) {
+      const idx = verses.findIndex(v => v.verseNumber === targetVerseRef.current);
+      if (idx >= 0) {
+        setTimeout(() => {
+          versesListRef.current?.scrollToIndex({ index: idx, animated: true });
+        }, 300);
+      }
+      // Clear target whether found or not to avoid loops
+      targetVerseRef.current = null;
+    }
+  }, [verses, selectedSurah]);
+
   return (
     <View style={[styles.container, { backgroundColor: '#1a1a1a' }]}> 
       {renderProgressModal()}
@@ -925,30 +1006,33 @@ export default function ReadScreen() {
 
       {/* Tabs + Search - Always visible, no jumping */}
       {!selectedSurah && (
-        <View style={[styles.searchBarContainer, { flexDirection: 'row', alignItems: 'center', gap: 12 }]}> 
-          {/* Tab buttons - Compact fixed width to keep search visible */}
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <TouchableOpacity onPress={() => setTab('surah')} style={[styles.tabButton, { width: 72, alignItems: 'center' }, tab === 'surah' && { backgroundColor: primary }]}> 
-              <Text style={[styles.tabText, tab === 'surah' && styles.tabTextActive]}>Surah</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setTab('juz')} style={[styles.tabButton, { width: 72, alignItems: 'center' }, tab === 'juz' && { backgroundColor: primary }]}> 
-              <Text style={[styles.tabText, tab === 'juz' && styles.tabTextActive]}>Juz</Text>
-            </TouchableOpacity>
+        <>
+          <View style={[styles.searchBarContainer, { flexDirection: 'row', alignItems: 'center', gap: 12 }]}> 
+            {/* Tab buttons - Compact fixed width to keep search visible */}
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity onPress={() => setTab('surah')} style={[styles.tabButton, { width: 72, alignItems: 'center' }, tab === 'surah' && { backgroundColor: primary }]}> 
+                <Text style={[styles.tabText, tab === 'surah' && styles.tabTextActive]}>Surah</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setTab('juz')} style={[styles.tabButton, { width: 72, alignItems: 'center' }, tab === 'juz' && { backgroundColor: primary }]}> 
+                <Text style={[styles.tabText, tab === 'juz' && styles.tabTextActive]}>Juz</Text>
+              </TouchableOpacity>
+            </View>
+            
+            {/* Search Bar - Right aligned, compact width */}
+            <View style={[styles.searchInputWrapper, { flex: 1 }]}>
+              <Search size={20} color="#888888" style={styles.searchIcon} />
+              <TextInput
+                style={[styles.searchInput, { color: '#ffffff' }]}
+                placeholder="Search surahs..."
+                placeholderTextColor="#888888"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
           </View>
-          
-          {/* Search Bar - Right aligned, compact width */}
-          <View style={[styles.searchInputWrapper, { width: 160 }]}> 
-            <Search size={20} color="#888888" style={styles.searchIcon} />
-            <TextInput
-              style={[styles.searchInput, { color: '#ffffff' }]}
-              placeholder={'Search'}
-              placeholderTextColor="#888888"
-              value={searchQuery}
-              onChangeText={tab === 'surah' ? setSearchQuery : undefined}
-              editable={tab === 'surah'}
-            />
-          </View>
-        </View>
+        </>
       )}
       
       {/* Content */}
@@ -973,9 +1057,10 @@ export default function ReadScreen() {
               </View>
             ) : (
               <FlatList
+                ref={versesListRef}
                 data={verses}
                 renderItem={renderVerse}
-                keyExtractor={(item) => `${selectedSurah.id}-${item.id}`}
+                keyExtractor={(item, index) => `verse-${item.id}-${item.verseNumber}-${index}`}
                 contentContainerStyle={[styles.versesContent, { backgroundColor: '#1a1a1a' }]}
                 onEndReached={loadMoreVerses}
                 onEndReachedThreshold={0.5}
@@ -987,6 +1072,11 @@ export default function ReadScreen() {
                 windowSize={8}
                 initialNumToRender={getDynamicBatchSize(selectedSurah.versesCount, true)}
                 style={{ backgroundColor: '#1a1a1a' }}
+                onScrollToIndexFailed={({ index }) => {
+                  setTimeout(() => {
+                    versesListRef.current?.scrollToIndex({ index, animated: true });
+                  }, 300);
+                }}
               />
             )}
           </View>
@@ -1176,6 +1266,12 @@ const styles = StyleSheet.create({
     marginTop: 2,
     color: '#888888',
   },
+  surahDetailsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 2,
+  },
   progressPill: {
     paddingVertical: 6,
     paddingHorizontal: 12,
@@ -1245,5 +1341,12 @@ const styles = StyleSheet.create({
   },
   tabTextActive: {
     color: '#ffffff',
+  },
+  khatamDate: {
+    color: '#4CAF50',
+    fontFamily: 'ScheherazadeNew-Regular',
+    fontSize: 12,
+    textAlign: 'right',
+    marginLeft: 8,
   },
 });

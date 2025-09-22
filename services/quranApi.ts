@@ -204,12 +204,6 @@ function calculateVerseId(surahNumber: number, verseNumber: number): number {
   return id + verseNumber;
 }
 
-// Generate audio URL (delegate to shared util which respects reciter setting)
-function generateAudioUrl(surahNumber: number, verseNumber: number): string {
-  const reciterIdentifier = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
-  return generateSharedAudioUrl(surahNumber, verseNumber, reciterIdentifier);
-}
-
 // Improved request queue for lazy loading
 class LazyLoadingQueue {
   private activeRequests = new Map<string, Promise<any>>();

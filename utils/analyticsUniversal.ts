@@ -8,6 +8,18 @@ const isExpoGo = Constants.appOwnership === 'expo';
 
 let analyticsModule: any = null;
 
+// Debounce mechanism to reduce console warnings
+let lastWarningTime = 0;
+const WARNING_DEBOUNCE_MS = 5000; // Only show warnings every 5 seconds
+
+const logAnalyticsWarning = (message: string) => {
+  const now = Date.now();
+  if (now - lastWarningTime > WARNING_DEBOUNCE_MS) {
+    console.warn(message);
+    lastWarningTime = now;
+  }
+};
+
 // Attempt to obtain a secure getRandomValues implementation (priority: expo-crypto -> globalThis.crypto -> fallback)
 let getRandomValuesFn: ((arr: Uint8Array) => Uint8Array) | null = null;
 try {
@@ -97,45 +109,61 @@ export async function ensureUserId() {
 
 export async function setUserName(name: string) {
   await AsyncStorage.setItem(USER_NAME_KEY, name);
-  if (isExpoGo) {
-    await analyticsModule.setUserProperties({ user_name: name });
-  } else if (analyticsModule?.setUserProperty) {
-    await analyticsModule.setUserProperty('user_name', name);
+  if (analyticsModule) {
+    if (isExpoGo && analyticsModule.setUserProperties) {
+      await analyticsModule.setUserProperties({ user_name: name });
+    } else if (analyticsModule.setUserProperty) {
+      await analyticsModule.setUserProperty('user_name', name);
+    }
+  } else {
+    logAnalyticsWarning('Analytics module is not available. Skipping setUserName.');
   }
 }
 
 export async function logBadgeEarned(badgeName: string) {
   await ensureUserId();
-  if (isExpoGo) {
-    await analyticsModule.logEvent('badge_earned', { badge_name: badgeName });
-  } else if (analyticsModule?.logEvent) {
-    await analyticsModule.logEvent('badge_earned', { badge_name: badgeName });
+  if (analyticsModule && analyticsModule.logEvent) {
+    if (isExpoGo) {
+      await analyticsModule.logEvent('badge_earned', { badge_name: badgeName });
+    } else {
+      await analyticsModule.logEvent('badge_earned', { badge_name: badgeName });
+    }
+  } else {
+    logAnalyticsWarning('Analytics module is not available. Skipping logBadgeEarned.');
   }
 }
 
 export async function logAyahMemorized(count: number, scope: 'daily' | 'weekly') {
   await ensureUserId();
-  if (isExpoGo) {
-    await analyticsModule.logEvent('ayah_memorized', { count, scope });
-  } else if (analyticsModule?.logEvent) {
-    await analyticsModule.logEvent('ayah_memorized', { count, scope });
+  if (analyticsModule && analyticsModule.logEvent) {
+    if (isExpoGo) {
+      await analyticsModule.logEvent('ayah_memorized', { count, scope });
+    } else {
+      await analyticsModule.logEvent('ayah_memorized', { count, scope });
+    }
+  } else {
+    logAnalyticsWarning('Analytics module is not available. Skipping logAyahMemorized.');
   }
 }
 
 export async function logAyahRevised(count: number) {
   await ensureUserId();
-  if (isExpoGo) {
+  if (analyticsModule && analyticsModule.logEvent) {
     await analyticsModule.logEvent('ayah_revised', { count });
-  } else if (analyticsModule?.logEvent) {
-    await analyticsModule.logEvent('ayah_revised', { count });
+  } else {
+    logAnalyticsWarning('Analytics module is not available. Skipping logAyahRevised.');
   }
 }
 
 export async function logSurahRevised(surahId: number, scope: 'weekly') {
   await ensureUserId();
-  if (isExpoGo) {
-    await analyticsModule.logEvent('surah_revised', { surah_id: surahId, scope });
-  } else if (analyticsModule?.logEvent) {
-    await analyticsModule.logEvent('surah_revised', { surah_id: surahId, scope });
+  if (analyticsModule && analyticsModule.logEvent) {
+    if (isExpoGo) {
+      await analyticsModule.logEvent('surah_revised', { surah_id: surahId, scope });
+    } else {
+      await analyticsModule.logEvent('surah_revised', { surah_id: surahId, scope });
+    }
+  } else {
+    logAnalyticsWarning('Analytics module is not available. Skipping logSurahRevised.');
   }
 }

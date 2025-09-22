@@ -10,6 +10,7 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { calculateCurrentBadge } from '@/utils/badgeUtils';
 import { calculateJuzProgress, calculateOverallJuzStats } from '@/utils/juzCalculator';
 import { findVerseById } from '@/utils/verseUtils';
+import { saveLastRead, getLastRead } from '@/utils/lastReadUtils';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import {
@@ -258,12 +259,83 @@ export default function HomeScreen() {
   };
 
   const recentActivity = useMemo(() => {
-    const activities: Activity[] = []; const seen = new Set<string>();
-    const add = (a:Activity) => { const k = a.id; if(!seen.has(k)){ seen.add(k); activities.push(a);} };
-    quizResults.slice(-5).forEach(q => add({ id:`quiz-${q.id}`, type:'quiz', score: Math.round((q.correct / q.totalQuestions)*100), time: getRelativeTime(q.date) }));
-    revisedVerses.slice(-10).forEach(rv => { const verse = findVerseById(rv.verseId); const surah = surahsData.find(s=>s.id===verse.surahId); add({ id:`rev-${rv.verseId}`, type:'revised', surah:{ englishName: surah?.name||'', arabicName: surah?.arabicName||''}, time: getRelativeTime(rv.revisionDate) }); });
-    memorizedVerses.slice(-10).forEach(id => { const verse = findVerseById(id); const surah = surahsData.find(s=>s.id===verse.surahId); add({ id:`mem-${id}`, type:'memorized', surah:{ englishName: surah?.name||'', arabicName: surah?.arabicName||''}, time: 'Recently' }); });
-    return activities.slice(0,3);
+    // Helper: normalize + unique key
+    const createUniqueKey = (activity: Activity): string => {
+      if (activity.type === 'quiz') {
+        return `quiz-${activity.id}`;
+      }
+      if (activity.type === 'revised' || activity.type === 'memorized') {
+        return `${activity.type}-surah-${activity.surah.englishName.trim().toLowerCase()}`;
+      }
+      return activity.id;
+    };
+
+    const seenKeys = new Set<string>();
+    const allActivities: (Activity & { timestamp: number; priority: number })[] = [];
+
+    // Helper to insert unique activities
+    const pushUnique = (activity: Activity & { timestamp: number; priority: number }) => {
+      const key = createUniqueKey(activity);
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        allActivities.push(activity);
+      }
+    };
+
+    // Add quiz results (priority 1 - oldest)
+    quizResults.slice(-5).forEach((q) => {
+      pushUnique({
+        id: `quiz-${q.id}`,
+        type: 'quiz',
+        score: Math.round((q.correct / q.totalQuestions) * 100),
+        time: getRelativeTime(q.date),
+        timestamp: new Date(q.date).getTime(),
+        priority: 1,
+      });
+    });
+
+    // Add revision activities (priority 2 - middle)
+    revisedVerses.slice(-5).forEach((rv) => {
+      const verse = findVerseById(rv.verseId);
+      const surah = surahsData.find((s) => s.id === verse.surahId);
+      if (surah) {
+        pushUnique({
+          id: `rev-${rv.verseId}`,
+          type: 'revised',
+          surah: { englishName: surah.name, arabicName: surah.arabicName },
+          time: getRelativeTime(rv.revisionDate),
+          timestamp: new Date(rv.revisionDate).getTime(),
+          priority: 2,
+        });
+      }
+    });
+
+    // Add memorization activities (priority 3 - newest)
+    memorizedVerses.slice(-5).forEach((id, index) => {
+      const verse = findVerseById(id);
+      const surah = surahsData.find((s) => s.id === verse.surahId);
+      if (surah) {
+        // TODO: Replace with actual timestamp if available in schema
+        const estimatedTimestamp = Date.now() - index * 60000;
+        pushUnique({
+          id: `mem-${id}-${verse.surahId}`,
+          type: 'memorized',
+          surah: { englishName: surah.name, arabicName: surah.arabicName },
+          time: 'Recently',
+          timestamp: estimatedTimestamp,
+          priority: 3,
+        });
+      }
+    });
+
+    // Sort by priority then timestamp
+    allActivities.sort((a, b) => {
+      if (a.priority !== b.priority) return b.priority - a.priority;
+      return b.timestamp - a.timestamp;
+    });
+
+    // Limit to 3 and strip helper fields
+    return allActivities.slice(0, 3).map(({ timestamp, priority, ...clean }) => clean);
   }, [quizResults, revisedVerses, memorizedVerses]);
 
   const currentBadge = useMemo(() => calculateCurrentBadge(memorizedVerses, progress.juz.completed), [memorizedVerses, progress.juz.completed]);
@@ -273,16 +345,33 @@ export default function HomeScreen() {
     if (lastReadVerse) {
       const verseDetails = findVerseById(lastReadVerse.id);
       const surah = surahsData.find(s => s.id === verseDetails.surahId);
-      actions.push({ title: 'Continue Reading', subtitle: surah ? `${surah.name} (${surah.arabicName})` : 'Resume', icon: Play, color: '#4CAF50', action: () => { if (surah) quranStore.setLastViewedSurahId(surah.id); router.push('/(tabs)/read'); } });
+      actions.push({
+        title: 'Continue Reading',
+        subtitle: surah ? `${surah.name} (${surah.arabicName})` : 'Resume',
+        icon: Play,
+        color: '#4CAF50',
+        action: async () => {
+          if (surah) {
+            await saveLastRead(surah.id, verseDetails.verseNumber);
+            router.push(`/surah/${surah.id}`);
+          }
+        },
+      });
     } else {
-      actions.push({ title: 'Start Reading', subtitle: 'Begin your journey', icon: Play, color: '#4CAF50', action: () => router.push('/(tabs)/read') });
+      actions.push({
+        title: 'Start Reading',
+        subtitle: 'Begin your journey',
+        icon: Play,
+        color: '#4CAF50',
+        action: () => router.push('/(tabs)/read'),
+      });
     }
     const pending = revisionSchedule.versesPerDay - stats.dailyRevisionCompleted;
-    actions.push(pending > 0 ? { title: 'Revision Due', subtitle: `${pending} verses pending`, icon: RotateCcw, color: '#FF9800', action: () => router.push('/(tabs)/revision') } : { title: 'Daily Goal Complete', subtitle: 'Well done!', icon: CheckCircle, color: '#4CAF50', action: () => router.push('/(tabs)/revision') });
-    actions.push({ title: 'Badges', subtitle: currentBadge.name, icon: Award, color: '#9C27B0', action: () => router.push('/(tabs)/badges') });
-    actions.push({ title: 'Take Quiz', subtitle: 'Test your knowledge', icon: Target, color: '#E91E63', action: () => router.push('/(tabs)/quiz') });
-    return actions;
-  }, [lastReadVerse, revisionSchedule.versesPerDay, stats.dailyRevisionCompleted, currentBadge.name, quranStore]);
+    actions.push(pending > 0
+      ? { title: 'Revision Due', subtitle: `${pending} verses pending`, icon: RotateCcw, color: '#FF9800', action: () => router.push('/(tabs)/revision') }
+      : null);
+    return actions.filter(Boolean);
+  }, [lastReadVerse, revisionSchedule, stats]);
 
   const CircularProgress = ({ progress, size=100, strokeWidth=8, progressColor='#2196F3', inProgressColor='#FF9800', notStartedColor='#666', completed=0, inProgress=0, total=100 }:{progress:number; size?:number; strokeWidth?:number; progressColor?:string; inProgressColor?:string; notStartedColor?:string; completed?:number; inProgress?:number; total?:number;}) => {
     const radius = (size - strokeWidth) / 2; const circumference = radius * 2 * Math.PI;
@@ -340,57 +429,68 @@ export default function HomeScreen() {
     </Pressable>
   );
 
-  const MustahabbahCard = ({ item, onPress }:{ item:{ key:string; label:string; status:'memorized'|'in-progress'|'not-started'}; onPress:(it:any)=>void; }) => {
-    const status = item.status; const colors = getBackgroundColors(status); const textColor = getTextColor(status);
-    const icon = status === 'memorized' ? '✓' : status === 'in-progress' ? '◐' : '✕';
-    const small = width < 360; const baseFont = small ? 12 : 13;
+  const MustahabbahCard = (
+    { item, onPress, wrapperStyle }:
+    { item: { label: string; status: 'memorized'|'in-progress'|'not-started' }, onPress?: (it: any) => void, wrapperStyle?: any }
+  ) => {
+    const backgroundColors = getBackgroundColors(item.status);
+    const textColor = getTextColor(item.status);
+    const icon = item.status === 'memorized' 
+      ? { symbol: '✓', color: '#ffffff' } 
+      : item.status === 'in-progress' 
+      ? { symbol: '◐', color: '#000000' } 
+      : { symbol: '✕', color: '#ef4444' };
+
+    // Dynamic base font size with auto-fit to guarantee full name visibility within two lines
+    const getFontSize = (_label: string) => {
+      return 15;
+    };
+
     return (
-      <TouchableOpacity style={[styles.cardWrapper, small && styles.cardWrapperSmall]} onPress={() => onPress(item)} activeOpacity={0.85}>
+      <TouchableOpacity 
+        style={[styles.cardWrapper, wrapperStyle]}
+        onPress={() => onPress?.(item)}
+        activeOpacity={0.8}
+      >
         <LinearGradient
-          colors={colors as any}
-          start={{x:0,y:0}}
-          end={{x:1,y:1}}
-          style={[styles.card, styles.compactCard, status==='not-started' && styles.notStartedBorder]}
+          colors={backgroundColors as any}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[
+            styles.card,
+            item.status === 'not-started' && styles.notStartedBorder
+          ]}
         >
-          <Text
+          <Text 
             style={[
-              styles.cardTitle,
-              styles.compactCardTitle,
-              small && styles.cardTitleSmall,
-              { color: textColor, fontSize: baseFont, lineHeight: baseFont+3 }
+              styles.cardTitle, 
+              { 
+                color: textColor,
+                fontSize: getFontSize(item.label),
+                lineHeight: getFontSize(item.label) + 3
+              }
             ]}
             numberOfLines={2}
+            ellipsizeMode="tail"
             adjustsFontSizeToFit
-            minimumFontScale={0.75}
+            minimumFontScale={0.7}
           >
             {item.label}
           </Text>
-          <View
-            style={[
-              styles.iconContainer,
-              styles.compactIconContainer,
-              small && styles.iconContainerSmall,
-              {
-                backgroundColor: status==='memorized'
-                  ? 'rgba(255,255,255,0.18)'
-                  : status==='in-progress'
-                    ? 'rgba(0,0,0,0.18)'
-                    : 'rgba(239,68,68,0.18)',
-                borderColor: status==='not-started' ? '#ef4444' : 'transparent',
-                borderWidth: status==='not-started' ? 1 : 0
-              }
-            ]}
-          >
-            <Text
-              style={[
-                styles.iconText,
-                styles.compactIconText,
-                small && styles.iconTextSmall,
-                { color: status==='memorized' ? '#fff' : status==='in-progress' ? '#000' : '#ef4444' }
-              ]}
-            >
-              {icon}
-            </Text>
+          
+          <View style={[
+            styles.iconContainer,
+            {
+              backgroundColor: item.status === 'memorized' 
+                ? 'rgba(255, 255, 255, 0.2)'
+                : item.status === 'in-progress'
+                ? 'rgba(0, 0, 0, 0.2)'
+                : 'rgba(239, 68, 68, 0.2)',
+              borderColor: item.status === 'not-started' ? '#ef4444' : 'transparent',
+              borderWidth: item.status === 'not-started' ? 1.5 : 0,
+            }
+          ]}>
+            <Text style={[styles.iconText, { color: icon.color }]}> {icon.symbol} </Text>
           </View>
         </LinearGradient>
       </TouchableOpacity>
@@ -455,6 +555,37 @@ export default function HomeScreen() {
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionsContainer}>
           {quickActions.map((a,i) => <ActionCard key={i} {...a} />)}
+          
+          {/* Badges Card */}
+          <Pressable
+            style={styles.badgeCard}
+            onPress={() => router.push('/(tabs)/badges')}
+          >
+            <View style={styles.badgeIcon}>
+              <Award size={24} color="#fff" />
+            </View>
+            <View style={styles.badgeContent}>
+              <Text style={styles.badgeTitle}>Badges</Text>
+              <Text style={styles.badgeSubtitle}>{currentBadge.name}</Text>
+            </View>
+          </Pressable>
+
+          {/* Quiz Card */}
+          <Pressable
+            style={styles.quizCard}
+            onPress={() => router.push('/quiz')}
+            disabled={memorizedVerses.length === 0}
+          >
+            <View style={styles.quizIcon}>
+              <Target size={24} color="#fff" />
+            </View>
+            <View style={styles.quizContent}>
+              <Text style={styles.quizTitle}>Take Quiz</Text>
+              <Text style={styles.quizSubtitle}>
+                {memorizedVerses.length > 0 ? "Test your knowledge" : "Memorize verses first"}
+              </Text>
+            </View>
+          </Pressable>
         </View>
       </View>
 
@@ -485,7 +616,11 @@ export default function HomeScreen() {
         <View style={styles.activityContainer}>
           {recentActivity.map(act => (
             <View key={act.id} style={styles.activityItem}>
-              <View style={styles.activityIcon}><BookOpen size={16} color={primary} /></View>
+              <View style={styles.activityIcon}>
+                {act.type === 'memorized' && <BookOpen size={16} color={primary} />}
+                {act.type === 'revised' && <RotateCcw size={16} color={primary} />}
+                {act.type === 'quiz' && <Award size={16} color={primary} />}
+              </View>
               <View style={styles.activityContent}>
                 <Text style={styles.activityText}>
                   {act.type === 'memorized' && 'surah' in act && `Memorized ${act.surah.englishName} (${act.surah.arabicName})`}
@@ -563,4 +698,67 @@ const styles = StyleSheet.create({
   activityContent: { flex:1 },
   activityText: { color:'#fff', fontSize:14, marginBottom:4 },
   activityTime: { color:'#888', fontSize:12 },
+  badgesContainer: { gap:12 },
+  badgeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#333',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 2,
+    borderColor: '#8b5cf6',
+  },
+  badgeIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#8b5cf6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  badgeContent: {
+    flex: 1,
+  },
+  badgeTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  badgeSubtitle: {
+    fontSize: 14,
+    color: '#888',
+  },
+  quizCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#333',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 2,
+    borderColor: '#ef4444',
+  },
+  quizIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#ef4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  quizContent: {
+    flex: 1,
+  },
+  quizTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  quizSubtitle: {
+    fontSize: 14,
+    color: '#888',
+  },
 });

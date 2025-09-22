@@ -24,6 +24,7 @@ import { surahsData } from '@/data/surahs';
 import { ThemeColors } from '@/types';
 import { calculateVerseId } from '@/utils/verseUtils';
 import { Platform } from 'react-native';
+import { getLastRead } from '@/utils/lastReadUtils';
 
 const PAGE_SIZE = 10;
 const BATCH_SIZE = 25;
@@ -889,6 +890,20 @@ export default function SurahScreen() {
 
   const styles = createStyles(colors);
 
+  useEffect(() => {
+    const scrollToLastRead = async () => {
+      const { surahId: lastSurahId, verseId: lastVerseId } = await getLastRead();
+      if (lastSurahId === surahId && lastVerseId && flatListRef.current) {
+        const index = verses.findIndex(verse => verse.id === lastVerseId);
+        if (index !== -1) {
+          flatListRef.current.scrollToIndex({ index, animated: true });
+        }
+      }
+    };
+
+    scrollToLastRead();
+  }, [surahId, verses]);
+  
   if (!surah) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>

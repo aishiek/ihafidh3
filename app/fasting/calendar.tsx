@@ -302,7 +302,7 @@ export default function CalendarScreen() {
             </TouchableOpacity>
             <View style={styles.customHeaderTitleContainer}>
               <Text style={[styles.customHeaderTitle, { color: theme.text }]}>
-                Sunnah Fastings
+                Revive the Sunnah Fastings...
               </Text>
             </View>
           </View>

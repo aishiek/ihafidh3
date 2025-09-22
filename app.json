@@ -46,7 +46,6 @@
         "NSPhotoLibraryAddUsageDescription": "Needed if you choose to save images from the app.",
         "NSPhotoLibraryUsageDescription": "Allows selecting or saving images related to your progress.",
         "UIBackgroundModes": [
-          "location",
           "fetch"
         ]
       },
