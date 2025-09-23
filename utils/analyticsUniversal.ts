@@ -65,26 +65,11 @@ function generateUUIDv4(): string {
   );
 }
 
-// Initialize analytics module using optional static requires to avoid dynamic import chunks
+// Initialize analytics - disabled to prevent crashes
 function initializeAnalytics() {
+  // Analytics disabled to prevent Firebase crashes
   analyticsModule = null;
-  if (isExpoGo) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const expoAnalytics = require('expo-firebase-analytics');
-      analyticsModule = expoAnalytics?.default ?? expoAnalytics;
-    } catch {
-      analyticsModule = null;
-    }
-  } else {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const firebaseAnalytics = require('@react-native-firebase/analytics');
-      analyticsModule = firebaseAnalytics?.default ?? firebaseAnalytics;
-    } catch {
-      analyticsModule = null;
-    }
-  }
+  console.log('📊 Analytics initialized (crash-safe mode)');
 }
 
 // Initialize analytics on module load

@@ -5,7 +5,6 @@
     "version": "1.1.5",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
     "icon": "./assets/images/icon.png",
     "splash": {
       "image": "./assets/images/splash.png",
@@ -15,11 +14,11 @@
     "assetBundlePatterns": [
       "**/*"
     ],
-    
     "plugins": [
       "expo-router",
       "expo-sqlite",
       "expo-notifications",
+      "expo-ads-admob",
       [
         "expo-build-properties",
         {
@@ -30,8 +29,7 @@
             "hermesEnabled": false
           },
           "ios": {
-            "hermesEnabled": true,
-            "deploymentTarget": "15.1"
+            "hermesEnabled": false
           }
         }
       ]
@@ -39,26 +37,34 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ihafidh",
-      "buildNumber": "11",
+      "buildNumber": "4",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app needs access to your location to determine Qibla direction and to enhance fasting calendar accuracy.",
+        "NSUserTrackingUsageDescription": "This app uses tracking to provide personalized ads and improve your experience by understanding how you use the app.",
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Camera access can be used for potential future features (e.g., scanning).",
         "NSPhotoLibraryAddUsageDescription": "Needed if you choose to save images from the app.",
         "NSPhotoLibraryUsageDescription": "Allows selecting or saving images related to your progress.",
+        "GADApplicationIdentifier": "ca-app-pub-XXXXXXXXXX~XXXXXXXXXX",
         "UIBackgroundModes": [
           "fetch"
         ],
-        "CFBundleAllowMixedLocalizations": true,
-        "UIRequiresFullScreen": false,
-        "UISupportedInterfaceOrientations": [
-          "UIInterfaceOrientationPortrait"
-        ],
-        "UISupportedInterfaceOrientations~ipad": [
-          "UIInterfaceOrientationPortrait",
-          "UIInterfaceOrientationPortraitUpsideDown",
-          "UIInterfaceOrientationLandscapeLeft",
-          "UIInterfaceOrientationLandscapeRight"
+        "SKAdNetworkItems": [
+          {
+            "SKAdNetworkIdentifier": "cstr6suwn9.skadnetwork"
+          },
+          {
+            "SKAdNetworkIdentifier": "4fzdc2byyyj.skadnetwork"
+          },
+          {
+            "SKAdNetworkIdentifier": "v72qych5uu.skadnetwork"
+          },
+          {
+            "SKAdNetworkIdentifier": "2u9pt9hc89.skadnetwork"
+          },
+          {
+            "SKAdNetworkIdentifier": "ludvb6z3bs.skadnetwork"
+          }
         ]
       },
       "runtimeVersion": {
@@ -74,21 +80,7 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#1a1a1a"
-      },
-      "intentFilters": [
-        {
-          "action": "VIEW",
-          "data": [
-            {
-              "scheme": "ihafidh"
-            }
-          ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
-        }
-      ]
+      }
     },
     "web": {
       "favicon": "./assets/images/favicon.png",
@@ -104,6 +96,9 @@
       "privacyPolicyUrl": "https://aishiek.github.io/",
       "supportUrl": "https://aishiek.github.io/",
       "keywords": "Vibe Coded Quran Memorization Statistic app complete stats with Intelligent quiz feature"
+    },
+    "developmentClient": {
+      "silentLaunch": true
     },
     "updates": {
       "enabled": true,
