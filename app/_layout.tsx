@@ -1,11 +1,11 @@
-import * as Font from 'expo-font';
 import { FastingCalendarProvider } from '@/components/fasting/context/FastingCalendarContext';
+import { initGlobalErrorHandlers } from '@/utils/globalErrorHandlers';
+import { runTurboModuleProbe } from '@/utils/turboModuleProbe';
+import * as Font from 'expo-font';
 import { Stack } from 'expo-router';
 import React, { Component, ReactNode } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { initGlobalErrorHandlers } from '@/utils/globalErrorHandlers';
-import { runTurboModuleProbe } from '@/utils/turboModuleProbe';
 
 // Initialize global handlers ASAP
 initGlobalErrorHandlers();
