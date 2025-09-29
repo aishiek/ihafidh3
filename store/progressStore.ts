@@ -1,13 +1,11 @@
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { formatDate } from '@/utils/dateUtils';
-import { Verse } from '@/types';
 import { surahsData } from '@/data/surahs';
+import { Verse } from '@/types';
+import { logAyahMemorized, logAyahRevised, logBadgeEarned } from '@/utils/analyticsUniversal';
+import { formatDate } from '@/utils/dateUtils';
 import { getJuzVerseRange } from '@/utils/juzCalculator';
-import { scheduleRevisionReminders } from '@/utils/notificationUtils';
-import { isDailyRevisionGoalMet, isWeeklyRevisionGoalMet } from '@/utils/revisionGoalUtils';
-import { logBadgeEarned, logAyahMemorized, logAyahRevised, logSurahRevised } from '@/utils/analyticsUniversal';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 interface TimeSpent {
   total: number; // in seconds

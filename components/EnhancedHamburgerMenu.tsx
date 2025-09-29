@@ -7,20 +7,20 @@ import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
 import { StateMigrationUtils, useContextAwareTheme } from '@/utils/stateManagementBridge';
 import { router } from 'expo-router';
 import {
-  Calendar,
-  MapPin,
-  Menu,
-  Moon,
-  X
+    Calendar,
+    MapPin,
+    Menu,
+    Moon,
+    X
 } from 'lucide-react-native';
 import React, { useState } from 'react';
 import {
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 interface MenuItem {

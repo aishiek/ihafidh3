@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { requestTrackingPermission, initializeTrackingServices } from '../utils/trackingPermission';
+import { initializeTrackingServices, requestTrackingPermission } from '../utils/trackingPermission';
 
 /**
  * ATT Integration Hook for Scenario 2 (With Tracking/AdMob)

@@ -1,9 +1,9 @@
-import React from 'react';
-import { View, StyleSheet, TouchableOpacity, SafeAreaView } from 'react-native';
+import QiblaFinder from '@/components/QiblaFinder';
+import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
 import { Stack, useRouter } from 'expo-router';
 import { ArrowLeft } from 'lucide-react-native';
-import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
-import QiblaFinder from '@/components/QiblaFinder';
+import React from 'react';
+import { SafeAreaView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 export default function QiblaScreen() {
   const router = useRouter();

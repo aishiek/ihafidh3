@@ -1,13 +1,13 @@
 // TurboModule probe: attempts early calls to critical native modules to surface which one crashes.
 // Each probe is isolated with timeout & error capture.
 /* eslint-disable no-console */
-import { Platform } from 'react-native';
-import * as Font from 'expo-font';
-import * as Notifications from 'expo-notifications';
-import * as Location from 'expo-location';
-import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Font from 'expo-font';
+import * as Haptics from 'expo-haptics';
+import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
 import { openDatabaseSync } from 'expo-sqlite';
+import { Platform } from 'react-native';
 // Optional modules (may not be installed) loaded via dynamic require to avoid build-time errors
 let SecureStore: any; try { SecureStore = require('expo-secure-store'); } catch {}
 let FileSystem: any; try { FileSystem = require('expo-file-system'); } catch {}

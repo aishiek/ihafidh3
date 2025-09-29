@@ -1,4 +1,6 @@
 import { FastingType } from '@/types/fasting';
+import { useRouter } from 'expo-router';
+import { ArrowLeft } from 'lucide-react-native';
 import React, { useContext } from 'react';
 import {
     ScrollView,
@@ -11,8 +13,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FastingCalendarContext } from '../../components/fasting/context/FastingCalendarContext';
 import { useUnifiedTheme } from '../../hooks/useUnifiedTheme';
-import { ArrowLeft } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
 
 const FastingSettings: React.FC = () => {
   const { theme } = useUnifiedTheme();

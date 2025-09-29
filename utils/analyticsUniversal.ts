@@ -1,5 +1,5 @@
-import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 
 const USER_ID_KEY = 'ihafidh_user_id';
 const USER_NAME_KEY = 'ihafidh_user_name';

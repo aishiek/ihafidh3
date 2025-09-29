@@ -1,138 +1,46 @@
+import { Audio } from 'expo-av';
 import { useSettingsStore } from '@/store/settingsStore';
 import type { Verse } from '@/types';
-import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 
-let player: any | null = null;
-let isPlaying = false; // Restore explicit isPlaying state
+export type AudioStatus = {
+  isPlaying?: boolean;
+  isPaused?: boolean;
+  didJustFinish?: boolean;
+  error?: string;
+  currentUrl?: string;
+  repeatCount?: number;
+  maxRepeats?: number;
+  fallbackUsed?: boolean;
+  message?: string;
+};
+
+let player: Audio.Sound | null = null;
+let isPlaying = false;
 let repeatCount = 0;
 let maxRepeats = 1;
-let currentAudioUrl = '';
-let onPlaybackStatusUpdate: ((status: any) => void) | null = null;
+let currentUrl = '';
+let statusCallback: ((status: AudioStatus) => void) | null = null;
+
 const BISMILLAH_URL = 'https://verses.quran.com/Bismillah.mp3';
 
-// Initialize audio mode
-export async function initializeAudio(): Promise<void> {
+/* ---------- INIT ---------- */
+export async function initializeAudio() {
   try {
-    if (typeof setAudioModeAsync === 'function') {
-      await setAudioModeAsync({
-        playsInSilentMode: true,
-        shouldPlayInBackground: true,
-        interruptionMode: 'mixWithOthers',
-        interruptionModeAndroid: 'duckOthers'
-      }).catch(e => console.warn('[audio] setAudioModeAsync failed', e));
-    }
-  } catch (error) {
-    console.error('Failed to initialize audio:', error);
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      staysActiveInBackground: true,
+      interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_MIX_WITH_OTHERS,
+      playsInSilentModeIOS: true,
+      interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DUCK_OTHERS,
+      shouldDuckAndroid: true,
+    });
+  } catch (err) {
+    console.warn('[audio] Failed to initialize audio', err);
   }
 }
 
-// Generate audio URL for a verse based on reciter (using only alquran.cloud API)
-// Generate ayah-level audio URL with auto-fallback to Alafasy
-export const generateAudioUrl = async (reciter: string, surah: number, ayah: number): Promise<string> => {
-  const globalAyah = calculateGlobalAyahId(surah, ayah);
-  const primaryUrl = `https://cdn.islamic.network/quran/audio/128/${reciter}/${globalAyah}.mp3`;
-  
-  const availability = await checkAudioAvailability(primaryUrl);
-  if (availability.available) {
-    return primaryUrl;
-  }
-
-  console.warn(`Reciter ${reciter} audio not available, falling back to Alafasy for Surah ${surah}, Ayah ${ayah}`);
-  return `https://cdn.islamic.network/quran/audio/128/ar.alafasy/${globalAyah}.mp3`;
-};
-
-// NEW: Generate surah-level audio URL using current reciter, fallback to Alafasy
-// Generate surah-level audio URL with auto-fallback to Alafasy
-export const generateSurahAudioUrl = async (reciter: string, surah: number): Promise<string> => {
-  const primaryUrl = `https://cdn.islamic.network/quran/audio-surah/128/${reciter}/${surah}.mp3`;
-
-  const availability = await checkAudioAvailability(primaryUrl);
-  if (availability.available) {
-    return primaryUrl;
-  }
-
-  console.warn(`Reciter ${reciter} surah audio not available, falling back to Alafasy for Surah ${surah}`);
-  return `https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy/${surah}.mp3`;
-};
-
-// Generate fallback audio URL with a different reciter
-export function generateFallbackAudioUrl(surahNumber: number, verseNumber: number): string {
-  const globalAyahId = calculateGlobalAyahId(surahNumber, verseNumber);
-  // Use Alafasy as fallback - most reliable reciter
-  return `https://cdn.islamic.network/quran/audio/128/ar.alafasy/${globalAyahId}.mp3`;
-}
-
-// Generate fallback surah audio URL using Alafasy
-export function generateSurahFallbackAudioUrl(surahNumber: number): string {
-  return `https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy/${surahNumber}.mp3`;
-}
-
-// Enhanced playAudio with fallback support
-// Simplified playAudioWithFallback
-export async function playAudioWithFallback(
-  surahNumber: number,
-  verseNumber: number,
-  repeats = 1,
-  statusCallback?: (status: any) => void
-): Promise<void> {
-  const reciter = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
-  const audioUrl = await generateAudioUrl(reciter, surahNumber, verseNumber);
-  await playAudio(audioUrl, repeats, statusCallback);
-}
-
-// Simplified playSurahAudioWithFallback
-export async function playSurahAudioWithFallback(
-  surahNumber: number,
-  repeats = 1,
-  statusCallback?: (status: any) => void
-): Promise<void> {
-  const reciter = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
-  
-  try {
-    // Try primary reciter first
-    const audioUrl = await generateSurahAudioUrl(reciter, surahNumber);
-    await playAudio(audioUrl, repeats, statusCallback);
-  } catch (error) {
-    console.log(`Primary surah audio failed for ${reciter}, trying fallback...`);
-    
-    // Try fallback reciter (Alafasy) if primary fails
-    try {
-      const fallbackUrl = await generateSurahAudioUrl('ar.alafasy', surahNumber);
-      await playAudio(fallbackUrl, repeats, (status) => {
-        // Notify about fallback usage
-        if (status?.isPlaying && statusCallback) {
-          statusCallback({ 
-            ...status,
-            fallbackUsed: true,
-            message: 'Using fallback reciter (Alafasy)'
-          });
-        } else if (statusCallback) {
-          statusCallback(status);
-        }
-      });
-    } catch (fallbackError) {
-      console.error('Fallback surah audio also failed:', fallbackError);
-      throw fallbackError;
-    }
-  }
-}
-
-// Generate audio URL for a specific reciter (used by Quran API service)
-export function generateSharedAudioUrl(surahNumber: number, verseNumber: number, reciterIdentifier: string): string {
-  try {
-    // Always use alquran.cloud API for reliability - no more everyayah.com
-    const globalAyahId = calculateGlobalAyahId(surahNumber, verseNumber);
-    return `https://cdn.islamic.network/quran/audio/128/${reciterIdentifier}/${globalAyahId}.mp3`;
-  } catch (error) {
-    console.error('Error generating shared audio URL:', error);
-    // Safe fallback to Alafasy on alquran.cloud
-    const globalAyahId = calculateGlobalAyahId(surahNumber, verseNumber);
-    return `https://cdn.islamic.network/quran/audio/128/ar.alafasy/${globalAyahId}.mp3`;
-  }
-}
-
-// Calculate global ayah index (1..6236) for islamic.network audio
-function calculateGlobalAyahId(surahNumber: number, verseNumber: number): number {
+/* ---------- URL HELPERS ---------- */
+function calculateGlobalAyahId(surah: number, ayah: number) {
   const counts = [
     7, 286, 200, 176, 120, 165, 206, 75, 129, 109,
     123, 111, 43, 52, 99, 128, 111, 110, 98, 135,
@@ -147,266 +55,139 @@ function calculateGlobalAyahId(surahNumber: number, verseNumber: number): number
     11, 8, 3, 9, 5, 4, 7, 3, 6, 3,
     5, 4, 5, 6
   ];
-  let id = 0;
-  for (let i = 1; i < surahNumber; i++) id += counts[i - 1];
-  return id + verseNumber;
+  return counts.slice(0, surah - 1).reduce((a, b) => a + b, 0) + ayah;
 }
 
-// Get current playing state - this was the main issue!
-export function getPlayingState(): { isPlaying: boolean; currentUrl: string } {
-  return {
-    isPlaying: isPlaying, // Use explicit isPlaying state, not sound existence
-    currentUrl: currentAudioUrl
-  };
-}
-
-// Check if audio URL is available before attempting to play
-export async function checkAudioAvailability(audioUrl: string): Promise<{ available: boolean; error?: string }> {
+export async function checkAudioAvailability(url: string) {
   try {
-    const response = await fetch(audioUrl, { method: 'HEAD' });
-    if (response.ok) {
-      return { available: true };
-    } else if (response.status === 404) {
-      return { 
-        available: false, 
-        error: 'Selected Reciter Audio Unavailable, Please choose another!' 
-      };
-    } else {
-      return { 
-        available: false, 
-        error: `Audio unavailable (${response.status})` 
-      };
-    }
-  } catch (error) {
-    return { 
-      available: false, 
-      error: 'Network error - please check your connection' 
-    };
+    const res = await fetch(url, { method: 'HEAD' });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 
-// Enhanced error handling for common audio errors
-function getFriendlyErrorMessage(error: any): string {
-  if (typeof error === 'string') {
-    if (error.includes('404') || error.includes('Not Found')) {
-      return 'Selected Reciter Audio Unavailable, Please choose another!';
-    }
-    if (error.includes('Network') || error.includes('connection')) {
-      return 'Network error - please check your connection';
-    }
-    return error;
-  }
-  
-  if (error?.message) {
-    if (error.message.includes('404') || error.message.includes('Not Found')) {
-      return 'Selected Reciter Audio Unavailable, Please choose another!';
-    }
-    if (error.message.includes('Network') || error.message.includes('connection')) {
-      return 'Network error - please check your connection';
-    }
-    return error.message;
-  }
-  
-  return 'Audio playback error - please try again';
+export async function generateVerseUrl(reciter: string, surah: number, ayah: number) {
+  const globalAyah = calculateGlobalAyahId(surah, ayah);
+  const url = `https://cdn.islamic.network/quran/audio/128/${reciter}/${globalAyah}.mp3`;
+  return (await checkAudioAvailability(url)) ? url : `https://cdn.islamic.network/quran/audio/128/ar.alafasy/${globalAyah}.mp3`;
 }
 
-// Play audio using expo-audio
-export async function playAudio(
-  audioUrl: string,
-  repeats = 1,
-  statusCallback?: (status: any) => void
-): Promise<void> {
-  try {
-    if (!createAudioPlayer) throw new Error('Audio module unavailable');
-    if (isPlaying && currentAudioUrl === audioUrl) return;
-    await stopAudio();
-    currentAudioUrl = audioUrl;
-    maxRepeats = repeats;
-    repeatCount = 0;
-    onPlaybackStatusUpdate = statusCallback || null;
-    if (!audioUrl || audioUrl.trim() === '') throw new Error('Audio URL is not available');
-    const availability = await checkAudioAvailability(audioUrl);
-    if (!availability.available) throw new Error(availability.error || 'Audio not available');
-    await initializeAudio();
-    isPlaying = true;
-    if (onPlaybackStatusUpdate) onPlaybackStatusUpdate({ isPlaying: true, isLoading: true, currentUrl: audioUrl });
-    try {
-      player = createAudioPlayer(audioUrl, { updateInterval: 100, downloadFirst: false });
-    } catch (e) {
-      console.warn('[audio] createAudioPlayer failed', e);
-      throw e;
-    }
-    if (player?.addListener) {
-      try { (player as any).addListener((status: any) => onPlaybackStatusUpdateHandler(mapStatus(status))); } catch {}
-    }
-    await player?.play?.();
-  } catch (error) {
-    console.error('Failed to play audio:', error);
-    isPlaying = false;
-    currentAudioUrl = '';
-    if (onPlaybackStatusUpdate) {
-      onPlaybackStatusUpdate({ isPlaying: false, error: getFriendlyErrorMessage(error), currentUrl: '' });
-    }
-    throw error;
-  }
+export async function generateSurahUrl(reciter: string, surah: number) {
+  const url = `https://cdn.islamic.network/quran/audio-surah/128/${reciter}/${surah}.mp3`;
+  return (await checkAudioAvailability(url)) ? url : `https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy/${surah}.mp3`;
 }
 
-function mapStatus(status: any) {
-  if (!status) return status;
-  return {
-    isLoaded: status.isLoaded,
-    isPlaying: status.isPlaying,
-    didJustFinish: status.didJustFinish,
-    positionMillis: (status.currentTime ?? 0) * 1000,
-    durationMillis: (status.duration ?? 0) * 1000,
-    error: status.error
-  };
+/* ---------- CORE AUDIO ---------- */
+async function playAudio(url: string, repeats = 1, callback?: (status: AudioStatus) => void) {
+  await stopAudio();
+  await initializeAudio();
+
+  player = new Audio.Sound();
+  await player.loadAsync({ uri: url });
+  currentUrl = url;
+  maxRepeats = Math.max(1, repeats);
+  repeatCount = 0;
+  isPlaying = true;
+  statusCallback = callback || null;
+
+  player.setOnPlaybackStatusUpdate(onPlaybackStatus);
+
+  await player.playAsync();
+  callback?.({ isPlaying: true, currentUrl: url });
 }
 
-async function onPlaybackStatusUpdateHandler(status: any) {
-  // Sync our global isPlaying state with the player's actual status
-  if (typeof status.isPlaying === 'boolean') {
+async function onPlaybackStatus(status: any) {
+  if (!status) return;
+
+  if (status.isLoaded) {
     isPlaying = status.isPlaying;
-  }
 
-  // Notify the UI with the most up-to-date, merged state
-  if (onPlaybackStatusUpdate) {
-    onPlaybackStatusUpdate({ ...status, isPlaying, currentUrl: currentAudioUrl });
-  }
-
-  if (status?.didJustFinish) {
-    repeatCount++;
-    if (repeatCount < maxRepeats) {
-      try {
-        if (!player) {
-          throw new Error("Player is not available for repeat.");
-        }
-        await player.seek(0);
-        await player.play();
-        // Manually update state after successfully starting playback
-        isPlaying = true;
-      } catch (e) {
-        console.error('Failed to repeat audio:', e);
-        await stopAudio(); // Clean up on error
-      }
-    } else {
-      // Final repeat has finished. Notify the UI before stopping.
-      if (onPlaybackStatusUpdate) {
-        onPlaybackStatusUpdate({ 
-          isPlaying: false, 
-          currentUrl: currentAudioUrl, 
-          didJustFinish: true,
-          ...status 
-        });
-      }
-      // Clean up the player and all state variables.
-      stopAudio().catch(console.error);
-    }
-  }
-}
-
-// Play Bismillah once, then play the verse audio with repeat logic
-export async function playBismillahThenVerse(
-  verseAudioUrl: string,
-  repeats = 1,
-  statusCallback?: (status: any) => void
-): Promise<void> {
-  try {
-    // Stop any current playback
-    await stopAudio();
-
-    // Initialize audio mode
-    await initializeAudio();
-
-    let bismiPlayer = createAudioPlayer(BISMILLAH_URL, { updateInterval: 100 });
-    (bismiPlayer as any).addListener(async (status: any) => {
-      const mapped = mapStatus(status);
-      if (mapped?.didJustFinish) {
-        try { (bismiPlayer as any)?.release(); } catch {}
-        await playAudio(verseAudioUrl, repeats, statusCallback);
-      }
-      if (mapped?.error) {
-        await playAudio(verseAudioUrl, repeats, statusCallback);
-      }
+    statusCallback?.({
+      isPlaying,
+      currentUrl,
+      repeatCount,
+      maxRepeats,
+      didJustFinish: status.didJustFinish,
     });
-    await bismiPlayer.play();
-  } catch (error) {
-    // If anything fails, just attempt to play the verse directly
-    await playAudio(verseAudioUrl, repeats, statusCallback);
+
+    if (status.didJustFinish) {
+      if (repeatCount < maxRepeats - 1) {
+        repeatCount++;
+        await player?.setPositionAsync(0);
+        await player?.playAsync();
+      } else {
+        await stopAudio();
+      }
+    }
+  } else if (status.error) {
+    statusCallback?.({ isPlaying: false, error: status.error });
   }
 }
 
-// Convenience: decide whether to include Bismillah, then play verse
-export async function playVerseWithOptionalBismillah(
-  verse: Verse,
-  repeats = 1,
-  statusCallback?: (status: any) => void
-): Promise<void> {
-  const surahId = verse.surahId || verse.surahNumber || 0;
-  const shouldIncludeBismillah = Boolean(verse.hasBismillahPrefix) || (surahId !== 9 && verse.verseNumber === 1);
-  const reciterIdentifier = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
-  const url = verse.audioUrl || await generateAudioUrl(reciterIdentifier, surahId, verse.verseNumber);
-  if (!url) return;
-  if (shouldIncludeBismillah) {
-    return playBismillahThenVerse(url, repeats, statusCallback);
-  }
-  return playAudio(url, repeats, statusCallback);
-}
-
-// NEW: Play full surah audio using current reciter with robust fallback
-export async function playSurahAudio(
-  surahNumber: number,
-  statusCallback?: (status: any) => void
-): Promise<void> {
-  const reciterIdentifier = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
-  const primaryUrl = await generateSurahAudioUrl(reciterIdentifier, surahNumber);
+export async function stopAudio() {
   try {
-    await playAudio(primaryUrl, 1, statusCallback);
-  } catch (e) {
-    // Fallback to Alafasy full-surah URL
-    const fallbackUrl = `https://cdn.islamic.network/quran/audio/128/ar.alafasy/${surahNumber}.mp3`;
-    await playAudio(fallbackUrl, 1, statusCallback);
-    if (statusCallback) statusCallback({ isPlaying: true, fallbackUsed: true, message: 'Using fallback reciter (Alafasy)' });
-  }
-}
-
-export async function stopAudio(): Promise<void> {
-  isPlaying = false;
-  try { player?.pause?.(); player?.release?.(); } catch (e) { console.error('Failed to stop audio:', e); }
+    await player?.stopAsync();
+    await player?.unloadAsync();
+  } catch {}
   player = null;
-  currentAudioUrl = '';
+  isPlaying = false;
+  currentUrl = '';
   repeatCount = 0;
   maxRepeats = 1;
-  if (onPlaybackStatusUpdate) onPlaybackStatusUpdate({ isPlaying: false, currentUrl: '' });
+  statusCallback?.({ isPlaying: false, currentUrl: '' });
 }
 
-export async function pauseAudio(): Promise<void> {
+export async function pauseAudio() {
   if (player && isPlaying) {
-    try {
-      await player.pause?.();
-      isPlaying = false;
-      if (onPlaybackStatusUpdate) onPlaybackStatusUpdate({ isPlaying: false, isPaused: true, currentUrl: currentAudioUrl });
-    } catch (e) { console.error('Failed to pause audio:', e); }
+    await player.pauseAsync();
+    isPlaying = false;
+    statusCallback?.({ isPlaying: false, isPaused: true, currentUrl });
   }
 }
 
-export async function resumeAudio(): Promise<void> {
+export async function resumeAudio() {
   if (player && !isPlaying) {
-    try {
-      await player.play?.();
-      isPlaying = true;
-      if (onPlaybackStatusUpdate) onPlaybackStatusUpdate({ isPlaying: true, isPaused: false, currentUrl: currentAudioUrl });
-    } catch (e) { console.error('Failed to resume audio:', e); }
+    await player.playAsync();
+    isPlaying = true;
+    statusCallback?.({ isPlaying: true, isPaused: false, currentUrl });
   }
 }
 
-// Unified cache / state clear for expo-audio implementation
-export function clearAudioCache(): void {
-  try { player?.pause?.(); player?.release?.(); } catch (e) { console.error('Failed to clear audio cache:', e); }
-  player = null;
-  isPlaying = false;
-  currentAudioUrl = '';
-  repeatCount = 0;
-  maxRepeats = 1;
-  if (onPlaybackStatusUpdate) onPlaybackStatusUpdate({ isPlaying: false, currentUrl: '', cacheCleared: true });
+/* ---------- HIGHER LEVEL HELPERS ---------- */
+export async function playVerseWithOptionalBismillah(verse: Verse, repeats = 1, cb?: (status: AudioStatus) => void) {
+  const reciter = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
+  const surah = verse.surahId || verse.surahNumber || 0;
+  const url = verse.audioUrl || await generateVerseUrl(reciter, surah, verse.verseNumber);
+
+  const shouldPlayBismillah = verse.hasBismillahPrefix || (surah !== 9 && verse.verseNumber === 1);
+
+  if (shouldPlayBismillah) {
+    await playBismillahThenVerse(url, repeats, cb);
+  } else {
+    await playAudio(url, repeats, cb);
+  }
+}
+
+async function playBismillahThenVerse(url: string, repeats = 1, cb?: (status: AudioStatus) => void) {
+  await stopAudio();
+  await initializeAudio();
+
+  const bismi = new Audio.Sound();
+  await bismi.loadAsync({ uri: BISMILLAH_URL });
+  bismi.setOnPlaybackStatusUpdate(async (status: any) => {
+    if (status.didJustFinish) {
+      await bismi.stopAsync();
+      await bismi.unloadAsync();
+      await playAudio(url, repeats, cb);
+    }
+  });
+
+  await bismi.playAsync();
+}
+
+export async function playSurah(surah: number, cb?: (status: AudioStatus) => void) {
+  const reciter = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
+  const url = await generateSurahUrl(reciter, surah);
+  await playAudio(url, 1, cb);
 }

@@ -9,33 +9,30 @@ import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { calculateCurrentBadge } from '@/utils/badgeUtils';
 import { calculateJuzProgress, calculateOverallJuzStats } from '@/utils/juzCalculator';
+import { saveLastRead } from '@/utils/lastReadUtils';
 import { findVerseById } from '@/utils/verseUtils';
-import { saveLastRead, getLastRead } from '@/utils/lastReadUtils';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import {
-  Award,
-  BookOpen,
-  Calendar,
-  CheckCircle,
-  Clock,
-  MapPin,
-  Moon,
-  Play,
-  RotateCcw,
-  Target,
-  XCircle
+    Award,
+    BookOpen,
+    CheckCircle,
+    Clock,
+    Play,
+    RotateCcw,
+    Target,
+    XCircle
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  AppState,
-  Dimensions,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  Pressable
+    AppState,
+    Dimensions,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 

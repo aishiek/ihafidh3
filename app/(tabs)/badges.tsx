@@ -1,17 +1,17 @@
+import { QuranProgressTracker } from '@/data/quranProgress';
+import { surahsData } from '@/data/surahs';
+import { useProgressStore } from '@/store/progressStore';
+import { calculateCurrentBadge } from '@/utils/badgeUtils';
+import { router } from 'expo-router';
+import { ArrowLeft, Award, CheckCircle, Lock } from 'lucide-react-native';
 import React, { useMemo } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Pressable
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View
 } from 'react-native';
-import { router } from 'expo-router';
-import { ArrowLeft, Award, Lock, CheckCircle } from 'lucide-react-native';
-import { useProgressStore } from '@/store/progressStore';
-import { surahsData } from '@/data/surahs';
-import { QuranProgressTracker } from '@/data/quranProgress';
-import { calculateCurrentBadge } from '@/utils/badgeUtils';
 
 export default function BadgesScreen() {
   const { memorizedVerses } = useProgressStore();

@@ -1,30 +1,25 @@
-import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { StyleSheet, Text, View, FlatList, ActivityIndicator, Pressable, Alert, RefreshControl, Modal, InteractionManager, TouchableOpacity } from 'react-native';
-import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
-import { Play, Pause, RefreshCw, Wifi, WifiOff, Download, CheckCircle2, Circle, BookMarked, BookX, CheckCircle, ArrowLeft } from 'lucide-react-native';
-import { useCustomColors } from '@/utils/themeUtils';
-import { useQuranStore } from '@/store/quranStore';
-import { useProgressStore } from '@/store/progressStore';
-import { useSettingsStore } from '@/store/settingsStore';
-import { Verse } from '@/types';
-import { getSurahById } from '@/data/surahs';
 import VerseItem from '@/components/VerseItem';
-import { playAudio, pauseAudio, playSurahAudio } from '@/utils/audioUtils';
-import { checkNetworkConnectivity, fetchVersesBySurah, smartDownloadSurah } from '@/services/quranApi';
-import { 
-  getCachedVerses, 
-  isSurahFullyCached, 
-  isSurahCached,
-  getVerseMemorizationStatus,
-  setVerseMemorizationStatus,
-  markAllVersesMemorized,
-  getSurahDownloadStatus
+import { getSurahById, surahsData } from '@/data/surahs';
+import {
+    getCachedVerses,
+    getSurahDownloadStatus,
+    getVerseMemorizationStatus,
+    isSurahFullyCached,
+    setVerseMemorizationStatus
 } from '@/database/QuranDatabase';
-import { surahsData } from '@/data/surahs';
-import { ThemeColors } from '@/types';
-import { calculateVerseId } from '@/utils/verseUtils';
-import { Platform } from 'react-native';
+import { checkNetworkConnectivity, fetchVersesBySurah, smartDownloadSurah } from '@/services/quranApi';
+import { useProgressStore } from '@/store/progressStore';
+import { useQuranStore } from '@/store/quranStore';
+import { useSettingsStore } from '@/store/settingsStore';
+import { ThemeColors, Verse } from '@/types';
+import { pauseAudio, playAudio, playSurahAudio } from '@/utils/audioUtils';
 import { getLastRead } from '@/utils/lastReadUtils';
+import { useCustomColors } from '@/utils/themeUtils';
+import { calculateVerseId } from '@/utils/verseUtils';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { ArrowLeft, CheckCircle, Download, Pause, Play, RefreshCw } from 'lucide-react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Modal, Platform, Pressable, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 const PAGE_SIZE = 10;
 const BATCH_SIZE = 25;

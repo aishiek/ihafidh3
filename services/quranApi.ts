@@ -1,33 +1,18 @@
-import { Verse } from '@/types';
 import { addFailedVerse, cacheVerses } from '@/database/QuranDatabase';
-import { generateSharedAudioUrl } from '@/utils/audioUtils';
 import { useSettingsStore } from '@/store/settingsStore';
+import { Verse } from '@/types';
+import { generateVerseUrl } from '@/utils/audioUtils';
 
 const ALQURAN_CLOUD_API = 'https://api.alquran.cloud/v1';
 
-// API response interfaces
 interface AlQuranCloudAyahResponse {
   code: number;
   status: string;
   data: {
     number: number;
     text: string;
-    edition: {
-      identifier: string;
-      language: string;
-      name: string;
-      englishName: string;
-      format: string;
-      type: string;
-    };
-    surah: {
-      number: number;
-      name: string;
-      englishName: string;
-      englishNameTranslation: string;
-      numberOfAyahs: number;
-      revelationType: string;
-    };
+    edition: { identifier: string; language: string; name: string; englishName: string; format: string; type: string };
+    surah: { number: number; name: string; englishName: string; englishNameTranslation: string; numberOfAyahs: number; revelationType: string };
     numberInSurah: number;
     juz: number;
     manzil: number;
@@ -38,17 +23,17 @@ interface AlQuranCloudAyahResponse {
   };
 }
 
-// Circuit breaker to prevent cascading failures
+// Circuit breaker
 class CircuitBreaker {
   private failures = 0;
   private lastFailTime = 0;
   private readonly threshold = 5;
-  private readonly timeout = 30000; // 30 seconds
+  private readonly timeout = 30000;
 
   canExecute(): boolean {
     if (this.failures >= this.threshold) {
       if (Date.now() - this.lastFailTime > this.timeout) {
-        this.failures = 0; // Reset after timeout
+        this.failures = 0;
         return true;
       }
       return false;
@@ -56,197 +41,115 @@ class CircuitBreaker {
     return true;
   }
 
-  onSuccess(): void {
-    this.failures = 0;
-  }
-
-  onFailure(): void {
-    this.failures++;
-    this.lastFailTime = Date.now();
-  }
+  onSuccess(): void { this.failures = 0; }
+  onFailure(): void { this.failures++; this.lastFailTime = Date.now(); }
 }
 
 const circuitBreaker = new CircuitBreaker();
-
-// Cache transliteration availability per language code to avoid repeated failures
 const transliterationAvailability: Record<string, boolean | undefined> = {};
 
-async function fetchTransliterationText(
-  surahNumber: number,
-  verseNumber: number,
-  preferredLangCode: string
-): Promise<string | undefined> {
-  try {
-    // Default to English unless we KNOW preferred language is available
-    const preferEnglish = preferredLangCode !== 'en' && transliterationAvailability[preferredLangCode] !== true;
-    if (preferEnglish) {
-      const enResp = await fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/en.transliteration`);
-      if (enResp.ok) {
-        const enData: AlQuranCloudAyahResponse = await enResp.json();
-        return enData?.data?.text || undefined;
-      }
-      // If English failed (rare), try preferred once
-      const fallbackPreferredEdition = `${preferredLangCode}.transliteration`;
-      const fallbackResp = await fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${fallbackPreferredEdition}`);
-      if (fallbackResp.ok) {
-        transliterationAvailability[preferredLangCode] = true;
-        const data: AlQuranCloudAyahResponse = await fallbackResp.json();
-        return data?.data?.text || undefined;
-      } else {
-        transliterationAvailability[preferredLangCode] = false;
-      }
-      return undefined;
-    }
-
-    // Known-available preferred language: use it first
-    const preferredEdition = `${preferredLangCode}.transliteration`;
-    let resp = await fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${preferredEdition}`);
-    if (resp.ok) {
-      transliterationAvailability[preferredLangCode] = true;
-      const data: AlQuranCloudAyahResponse = await resp.json();
-      return data?.data?.text || undefined;
-    }
-
-    // If preferred failed, fall back to English and mark unavailable
-    if (preferredLangCode !== 'en') {
-      transliterationAvailability[preferredLangCode] = false;
-      resp = await fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/en.transliteration`);
-      if (resp.ok) {
-        const data: AlQuranCloudAyahResponse = await resp.json();
-        return data?.data?.text || undefined;
-      }
-    }
-  } catch {
-    // Ignore errors; fallback to undefined
-  }
-  return undefined;
-}
-
-// Improved fetch with shorter timeout for lazy loading
+// Helper functions
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout: number = 5000): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
-  
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
+    const response = await fetch(url, { ...options, signal: controller.signal });
     clearTimeout(timeoutId);
     return response;
   } catch (error: any) {
     clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error('Request timeout');
-    }
+    if (error.name === 'AbortError') throw new Error('Request timeout');
     throw error;
   }
 }
 
-// Improved retry logic with better backoff
 async function fetchWithRetry<T>(
   fn: () => Promise<T>,
-  maxRetries: number = 2, // Reduced retries for lazy loading
+  maxRetries: number = 2,
   initialDelay: number = 1000,
   onRetry?: (attempt: number, error: Error) => void
 ): Promise<T> {
   let lastError: Error;
-  
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
+    try { return await fn(); }
+    catch (error) {
       lastError = error instanceof Error ? error : new Error('Unknown error');
-      
-      if (attempt === maxRetries) {
-        throw lastError;
-      }
-      
-      // Exponential backoff with jitter
-      const delay = initialDelay * Math.pow(1.5, attempt - 1);
-      const jitter = Math.random() * 500;
-      const finalDelay = delay + jitter;
-      
-      if (onRetry) {
-        onRetry(attempt, lastError);
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, finalDelay));
+      if (attempt === maxRetries) throw lastError;
+      const delay = initialDelay * Math.pow(1.5, attempt - 1) + Math.random() * 500;
+      onRetry?.(attempt, lastError);
+      await new Promise(r => setTimeout(r, delay));
     }
   }
-  
   throw lastError!;
 }
 
-// Calculate verse ID
-function calculateVerseId(surahNumber: number, verseNumber: number): number {
-  const surahVerseCounts = [
-    7, 286, 200, 176, 120, 165, 206, 75, 129, 109,
-    123, 111, 43, 52, 99, 128, 111, 110, 98, 135,
-    112, 78, 118, 64, 77, 227, 93, 88, 69, 60,
-    34, 30, 73, 54, 45, 83, 182, 88, 75, 85,
-    54, 53, 89, 59, 37, 35, 38, 29, 18, 45,
-    60, 49, 62, 55, 78, 96, 29, 22, 24, 13,
-    14, 11, 11, 18, 12, 12, 30, 52, 52, 44,
-    28, 28, 20, 56, 40, 31, 50, 40, 46, 42,
-    29, 19, 36, 25, 22, 17, 19, 26, 30, 20,
-    15, 21, 11, 8, 8, 19, 5, 8, 8, 11,
-    11, 8, 3, 9, 5, 4, 7, 3, 6, 3,
-    5, 4, 5, 6
-  ];
-  
-  let id = 0;
-  for (let i = 1; i < surahNumber; i++) {
-    if (i <= surahVerseCounts.length) {
-      id += surahVerseCounts[i - 1];
+async function fetchTransliterationText(surahNumber: number, verseNumber: number, langCode: string): Promise<string | undefined> {
+  try {
+    const preferEnglish = langCode !== 'en' && transliterationAvailability[langCode] !== true;
+    if (preferEnglish) {
+      const enResp = await fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/en.transliteration`);
+      if (enResp.ok) {
+        const enData: AlQuranCloudAyahResponse = await enResp.json();
+        return enData?.data?.text;
+      }
+      const fallbackResp = await fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${langCode}.transliteration`);
+      if (fallbackResp.ok) {
+        transliterationAvailability[langCode] = true;
+        const data: AlQuranCloudAyahResponse = await fallbackResp.json();
+        return data?.data?.text;
+      } else transliterationAvailability[langCode] = false;
+    } else {
+      const resp = await fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${langCode}.transliteration`);
+      if (resp.ok) {
+        transliterationAvailability[langCode] = true;
+        const data: AlQuranCloudAyahResponse = await resp.json();
+        return data?.data?.text;
+      }
     }
-  }
-  return id + verseNumber;
+  } catch {}
+  return undefined;
 }
 
-// Improved request queue for lazy loading
-class LazyLoadingQueue {
-  private activeRequests = new Map<string, Promise<any>>();
-  private readonly maxConcurrent = 3; // Allow some concurrency for lazy loading
+function calculateVerseId(surahNumber: number, verseNumber: number): number {
+  const counts = [
+    7, 286, 200, 176, 120, 165, 206, 75, 129, 109, 123, 111, 43, 52, 99, 128, 111, 110, 98, 135,
+    112, 78, 118, 64, 77, 227, 93, 88, 69, 60, 34, 30, 73, 54, 45, 83, 182, 88, 75, 85, 54, 53,
+    89, 59, 37, 35, 38, 29, 18, 45, 60, 49, 62, 55, 78, 96, 29, 22, 24, 13, 14, 11, 11, 18, 12,
+    12, 30, 52, 52, 44, 28, 28, 20, 56, 40, 31, 50, 40, 46, 42, 29, 19, 36, 25, 22, 17, 19, 26,
+    30, 20, 15, 21, 11, 8, 8, 19, 5, 8, 8, 11, 11, 8, 3, 9, 5, 4, 7, 3, 6, 3, 5, 4, 5, 6
+  ];
+  return counts.slice(0, surahNumber - 1).reduce((a, b) => a + b, 0) + verseNumber;
+}
+
+// Lazy queue
+class LazyQueue {
+  private active = new Map<string, Promise<any>>();
+  private readonly maxConcurrent = 3;
   private readonly delayBetweenRequests = 800;
 
-  async add<T>(key: string, requestFn: () => Promise<T>): Promise<T> {
-    // Return existing request if already in progress
-    if (this.activeRequests.has(key)) {
-      return this.activeRequests.get(key) as Promise<T>;
-    }
-
-    // Wait if too many concurrent requests
-    while (this.activeRequests.size >= this.maxConcurrent) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-
-    const promise = this.executeRequest(key, requestFn);
-    this.activeRequests.set(key, promise);
-    
-    return promise;
+  async add<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    if (this.active.has(key)) return this.active.get(key) as Promise<T>;
+    while (this.active.size >= this.maxConcurrent) await new Promise(r => setTimeout(r, 100));
+    const p = this.execute(key, fn);
+    this.active.set(key, p);
+    return p;
   }
 
-  private async executeRequest<T>(key: string, requestFn: () => Promise<T>): Promise<T> {
+  private async execute<T>(key: string, fn: () => Promise<T>): Promise<T> {
     try {
-      const result = await requestFn();
-      
-      // Add delay before removing from active requests
-      setTimeout(() => {
-        this.activeRequests.delete(key);
-      }, this.delayBetweenRequests);
-      
+      const result = await fn();
+      setTimeout(() => this.active.delete(key), this.delayBetweenRequests);
       return result;
-    } catch (error) {
-      this.activeRequests.delete(key);
-      throw error;
+    } catch (e) {
+      this.active.delete(key);
+      throw e;
     }
   }
 }
 
-const lazyQueue = new LazyLoadingQueue();
+const lazyQueue = new LazyQueue();
 
-// Improved single verse fetch with fallback editions
+// --- Fetch Single Verse ---
 export async function fetchSingleVerse(
   surahNumber: number,
   verseNumber: number,
@@ -254,331 +157,158 @@ export async function fetchSingleVerse(
   reciterIdentifier: string = 'ar.alafasy'
 ): Promise<Verse | null> {
   const key = `${surahNumber}:${verseNumber}`;
-  
-  // Check circuit breaker
-  if (!circuitBreaker.canExecute()) {
-    console.warn(`Circuit breaker open for ${key}`);
-    return null;
-  }
-  
-  return lazyQueue.add(key, () => 
-    fetchWithRetry(
-      async () => {
-        // Check if Tajweed mode is enabled
+  if (!circuitBreaker.canExecute()) return null;
+
+  return lazyQueue.add(key, async () =>
+    fetchWithRetry(async () => {
+      try {
         const arabicFont = useSettingsStore.getState().arabicFont;
         const useTajweed = arabicFont === 'tajweed';
-        
-        // Primary editions
-        let arabicEdition = useTajweed ? 'quran-tajweed' : 'ar.alafasy';
-        let translationEdition = translationLanguage;
         const wantTransliteration = !!useSettingsStore.getState().showTransliteration;
-        // Use translation language for transliteration, fallback to English if unavailable (cached)
-        const preferredLangCode = (translationLanguage.split('.')[0] || 'en').toLowerCase();
-        
-        try {
-          const [arabicResponse, translationResponse] = await Promise.all([
-            fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${arabicEdition}`),
-            fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${translationEdition}`)
-          ]);
-          
-          if (!arabicResponse.ok || !translationResponse.ok) {
-            throw new Error(`HTTP error: ${arabicResponse.status} or ${translationResponse.status}`);
-          }
-          
-          const arabicData: AlQuranCloudAyahResponse = await arabicResponse.json();
-          const translationData: AlQuranCloudAyahResponse = await translationResponse.json();
-          let transliterationText: string | undefined = undefined;
+        const preferredLang = (translationLanguage.split('.')[0] || 'en').toLowerCase();
 
-          if (wantTransliteration) {
-            transliterationText = await fetchTransliterationText(surahNumber, verseNumber, preferredLangCode);
-          }
-          
-          if (!arabicData.data || !translationData.data) {
-            throw new Error('No verse data returned');
-          }
-          
-          const verseId = calculateVerseId(surahNumber, verseNumber);
-          
-          // For Tajweed mode, we need to fetch both regular and Tajweed text
-          let arabicTextPlain = '';
-          if (useTajweed) {
-            // Fetch plain Arabic text as fallback
-            try {
-              const plainResponse = await fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/ar.alafasy`);
-              if (plainResponse.ok) {
-                const plainData: AlQuranCloudAyahResponse = await plainResponse.json();
-                arabicTextPlain = plainData.data?.text || '';
-              }
-            } catch (e) {
-              console.warn('Failed to fetch plain Arabic text for Tajweed fallback');
-            }
-          }
-          
-          const verse: Verse = {
-            id: verseId,
-            surahId: surahNumber,
-            verseNumber: verseNumber,
-            arabicText: useTajweed ? arabicTextPlain : (arabicData.data.text || ''),
-            tajweedText: useTajweed ? (arabicData.data.text || '') : undefined,
-            translation: translationData.data.text || '',
-            transliteration: transliterationText,
-            audioUrl: generateSharedAudioUrl(surahNumber, verseNumber, reciterIdentifier),
-            juzNumber: arabicData.data.juz || 1,
-            hizbNumber: Math.ceil((arabicData.data.hizbQuarter || 1) / 4),
-            pageNumber: arabicData.data.page || 1,
-          };
-          
-          circuitBreaker.onSuccess();
-          return verse;
-          
-        } catch (primaryError) {
-          console.warn(`Primary editions failed for ${key}, trying fallbacks:`, primaryError);
-          
-          // Fallback editions
-          arabicEdition = 'ar.asad'; // Different Arabic edition
-          translationEdition = 'en.sahih'; // Different translation (fallback)
-          // Transliteration handled via helper with cached availability
-          
-          try {
-            const [arabicResponse, translationResponse] = await Promise.all([
-              fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${arabicEdition}`),
-              fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${translationEdition}`)
-            ]);
-            
-            if (!arabicResponse.ok || !translationResponse.ok) {
-              throw new Error(`Fallback HTTP error: ${arabicResponse.status} or ${translationResponse.status}`);
-            }
-            
-            const arabicData: AlQuranCloudAyahResponse = await arabicResponse.json();
-            const translationData: AlQuranCloudAyahResponse = await translationResponse.json();
-            let transliterationText: string | undefined = undefined;
-            if (wantTransliteration) {
-              transliterationText = await fetchTransliterationText(surahNumber, verseNumber, preferredLangCode);
-            }
-            
-            if (!arabicData.data || !translationData.data) {
-              throw new Error('No fallback verse data returned');
-            }
-            
-            const verseId = calculateVerseId(surahNumber, verseNumber);
-            
-            const verse: Verse = {
-              id: verseId,
-              surahId: surahNumber,
-              verseNumber: verseNumber,
-              arabicText: arabicData.data.text || '',
-              tajweedText: undefined, // Tajweed not available in fallback
-              translation: translationData.data.text || '',
-              transliteration: transliterationText,
-              audioUrl: generateSharedAudioUrl(surahNumber, verseNumber, reciterIdentifier),
-              juzNumber: arabicData.data.juz || 1,
-              hizbNumber: Math.ceil((arabicData.data.hizbQuarter || 1) / 4),
-              pageNumber: arabicData.data.page || 1,
-            };
-            
-            circuitBreaker.onSuccess();
-            return verse;
-            
-          } catch (fallbackError) {
-            console.error(`Both primary and fallback failed for ${key}:`, fallbackError);
-            throw fallbackError;
-          }
-        }
-      },
-      2, // Reduced retries for lazy loading
-      1000,
-      (attempt, error) => {
-        console.warn(`Retry ${attempt}/2 for ${key}: ${error.message}`);
+        const [arabicResp, translationResp] = await Promise.all([
+          fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${useTajweed ? 'quran-tajweed' : 'ar.alafasy'}`),
+          fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${translationLanguage}`)
+        ]);
+        const arabicData: AlQuranCloudAyahResponse = await arabicResp.json();
+        const translationData: AlQuranCloudAyahResponse = await translationResp.json();
+
+        const transliterationText = wantTransliteration
+          ? await fetchTransliterationText(surahNumber, verseNumber, preferredLang)
+          : undefined;
+
+        const audioUrl = await generateVerseUrl(reciterIdentifier, surahNumber, verseNumber);
+
+        const verse: Verse = {
+          id: calculateVerseId(surahNumber, verseNumber),
+          surahId: surahNumber,
+          verseNumber,
+          arabicText: arabicData.data.text || '',
+          tajweedText: useTajweed ? arabicData.data.text || '' : undefined,
+          translation: translationData.data.text || '',
+          transliteration: transliterationText,
+          audioUrl,
+          juzNumber: arabicData.data.juz || 1,
+          hizbNumber: Math.ceil((arabicData.data.hizbQuarter || 1) / 4),
+          pageNumber: arabicData.data.page || 1
+        };
+
+        circuitBreaker.onSuccess();
+        return verse;
+      } catch (err) {
+        circuitBreaker.onFailure();
+        addFailedVerse(surahNumber, verseNumber);
+        console.error(`Failed fetching verse ${key}:`, err);
+        return null;
       }
-    ).catch(error => {
-      console.error(`Failed to fetch ${key}:`, error);
-      circuitBreaker.onFailure();
-      addFailedVerse(surahNumber, verseNumber);
-      return null;
-    })
+    }, 2)
   );
 }
 
-// Improved lazy loading with partial success handling
+// --- Fetch multiple verses by surah ---
 export async function fetchVersesBySurah(
   surahId: number,
   page: number = 1,
   pageSize: number = 10,
   translationLanguage: string = 'en.asad'
-): Promise<{ verses: Verse[], total: number, errors: string[] }> {
-  console.log(`[LAZY] Fetching surah ${surahId}, page ${page}, pageSize ${pageSize}`);
-  
+): Promise<{ verses: Verse[]; total: number; errors: string[] }> {
   const surahVerseCounts = [
-    7, 286, 200, 176, 120, 165, 206, 75, 129, 109,
-    123, 111, 43, 52, 99, 128, 111, 110, 98, 135,
-    112, 78, 118, 64, 77, 227, 93, 88, 69, 60,
-    34, 30, 73, 54, 45, 83, 182, 88, 75, 85,
-    54, 53, 89, 59, 37, 35, 38, 29, 18, 45,
-    60, 49, 62, 55, 78, 96, 29, 22, 24, 13,
-    14, 11, 11, 18, 12, 12, 30, 52, 52, 44,
-    28, 28, 20, 56, 40, 31, 50, 40, 46, 42,
-    29, 19, 36, 25, 22, 17, 19, 26, 30, 20,
-    15, 21, 11, 8, 8, 19, 5, 8, 8, 11,
-    11, 8, 3, 9, 5, 4, 7, 3, 6, 3,
-    5, 4, 5, 6
+    7, 286, 200, 176, 120, 165, 206, 75, 129, 109, 123, 111, 43, 52, 99, 128, 111, 110, 98, 135,
+    112, 78, 118, 64, 77, 227, 93, 88, 69, 60, 34, 30, 73, 54, 45, 83, 182, 88, 75, 85, 54, 53,
+    89, 59, 37, 35, 38, 29, 18, 45, 60, 49, 62, 55, 78, 96, 29, 22, 24, 13, 14, 11, 11, 18, 12,
+    12, 30, 52, 52, 44, 28, 28, 20, 56, 40, 31, 50, 40, 46, 42, 29, 19, 36, 25, 22, 17, 19, 26,
+    30, 20, 15, 21, 11, 8, 8, 19, 5, 8, 8, 11, 11, 8, 3, 9, 5, 4, 7, 3, 6, 3, 5, 4, 5, 6
   ];
-  
-  const totalVersesInSurah = surahVerseCounts[surahId - 1] || 0;
-  
-  if (totalVersesInSurah === 0) {
-    return { verses: [], total: 0, errors: ['Invalid surah ID'] };
-  }
-  
-  const startVerse = (page - 1) * pageSize + 1;
-  const endVerse = Math.min(startVerse + pageSize - 1, totalVersesInSurah);
-  
-  if (startVerse > totalVersesInSurah) {
-    return { verses: [], total: totalVersesInSurah, errors: [] };
-  }
-  
+  const total = surahVerseCounts[surahId - 1] || 0;
+  if (total === 0) return { verses: [], total: 0, errors: ['Invalid surah ID'] };
+
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(start + pageSize - 1, total);
+  if (start > total) return { verses: [], total, errors: [] };
+
   const verses: Verse[] = [];
   const errors: string[] = [];
-  
-  // Use Promise.all instead of Promise.allSettled for better compatibility
-  const promises = [];
-  for (let verseNumber = startVerse; verseNumber <= endVerse; verseNumber++) {
-    promises.push(
-      fetchSingleVerse(surahId, verseNumber, translationLanguage, useSettingsStore.getState().reciterIdentifier)
-        .then(verse => ({ verseNumber, verse, error: null }))
-        .catch(error => ({ verseNumber, verse: null, error: error instanceof Error ? error.message : 'Unknown error' }))
-    );
-  }
-  
-  const results = await Promise.all(
-    promises.map(p => p.catch(error => ({ 
-      verseNumber: 0, 
-      verse: null, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
-    })))
+  await Promise.all(
+    Array.from({ length: end - start + 1 }, (_, i) =>
+      fetchSingleVerse(surahId, start + i, translationLanguage, useSettingsStore.getState().reciterIdentifier)
+        .then(v => (v ? verses.push(v) : errors.push(`Verse ${surahId}:${start + i} failed`)))
+    )
   );
-  
-  for (const result of results) {
-    if (result.verse) {
-      verses.push(result.verse);
-    } else if (result.error) {
-      errors.push(`Verse ${surahId}:${result.verseNumber} - ${result.error}`);
-    }
-  }
-  
-  // Sort verses by verse number
+
   verses.sort((a, b) => a.verseNumber - b.verseNumber);
-  
-  // Cache successfully fetched verses in batches to avoid database locks
-  if (verses.length > 0) {
-    try {
-      await cacheVerses(verses);
-    } catch (cacheError) {
-      console.warn('Failed to cache verses:', cacheError);
-      errors.push('Caching failed');
-    }
-  }
-  
-  console.log(`[LAZY] Fetched ${verses.length}/${endVerse - startVerse + 1} verses for surah ${surahId}, page ${page}`);
-  
-  return {
-    verses,
-    total: totalVersesInSurah,
-    errors
-  };
+  if (verses.length) await cacheVerses(verses).catch(err => errors.push('Caching failed: ' + err.message));
+  return { verses, total, errors };
 }
 
-// Network connectivity check
-export async function checkNetworkConnectivity(): Promise<boolean> {
-  try {
-    const response = await fetchWithTimeout(`${ALQURAN_CLOUD_API}/meta`, {
-      method: 'HEAD',
-    }, 3000);
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-// Batch download with better error recovery
-export async function smartDownloadSurah(
+// Optimized smartDownloadSurah with parallel batches
+export async function smartDownloadSurahOptimized(
   surahId: number,
   onProgress?: (completed: number, total: number, currentVerse?: string) => void,
   signal?: AbortSignal
 ): Promise<{ success: boolean; downloadedCount: number; totalCount: number; errors: string[] }> {
-  console.log(`Starting smart download for surah ${surahId}...`);
-  
+
   const surahVerseCounts = [
-    7, 286, 200, 176, 120, 165, 206, 75, 129, 109,
-    123, 111, 43, 52, 99, 128, 111, 110, 98, 135,
-    112, 78, 118, 64, 77, 227, 93, 88, 69, 60,
-    34, 30, 73, 54, 45, 83, 182, 88, 75, 85,
-    54, 53, 89, 59, 37, 35, 38, 29, 18, 45,
-    60, 49, 62, 55, 78, 96, 29, 22, 24, 13,
-    14, 11, 11, 18, 12, 12, 30, 52, 52, 44,
-    28, 28, 20, 56, 40, 31, 50, 40, 46, 42,
-    29, 19, 36, 25, 22, 17, 19, 26, 30, 20,
-    15, 21, 11, 8, 8, 19, 5, 8, 8, 11,
-    11, 8, 3, 9, 5, 4, 7, 3, 6, 3,
-    5, 4, 5, 6
+    7, 286, 200, 176, 120, 165, 206, 75, 129, 109, 123, 111, 43, 52, 99, 128, 111, 110, 98, 135,
+    112, 78, 118, 64, 77, 227, 93, 88, 69, 60, 34, 30, 73, 54, 45, 83, 182, 88, 75, 85, 54, 53,
+    89, 59, 37, 35, 38, 29, 18, 45, 60, 49, 62, 55, 78, 96, 29, 22, 24, 13, 14, 11, 11, 18, 12,
+    12, 30, 52, 52, 44, 28, 28, 20, 56, 40, 31, 50, 40, 46, 42, 29, 19, 36, 25, 22, 17, 19, 26,
+    30, 20, 15, 21, 11, 8, 8, 19, 5, 8, 8, 11, 11, 8, 3, 9, 5, 4, 7, 3, 6, 3, 5, 4, 5, 6
   ];
-  
+
   const totalCount = surahVerseCounts[surahId - 1] || 0;
-  let downloadedCount = 0;
+  const downloadedVerses: Verse[] = [];
   const errors: string[] = [];
-  const batchSize = 5; // Process in small batches
-  
+  const batchSize = 5;
+
   for (let startVerse = 1; startVerse <= totalCount; startVerse += batchSize) {
-    if (signal?.aborted) {
-      break;
-    }
-    
+    if (signal?.aborted) break;
+
     const endVerse = Math.min(startVerse + batchSize - 1, totalCount);
     const batchPromises = [];
-    
+
     for (let verseNumber = startVerse; verseNumber <= endVerse; verseNumber++) {
       batchPromises.push(
-        fetchSingleVerse(surahId, verseNumber, 'en.asad', useSettingsStore.getState().reciterIdentifier)
-          .then(verse => {
-            if (verse) {
-              downloadedCount++;
-              if (onProgress) {
-                onProgress(downloadedCount, totalCount, `${surahId}:${verseNumber}`);
-              }
-              // Cache individual verses immediately
-              return cacheVerses([verse]).catch((err: Error) => {
-                errors.push(`Cache error for ${surahId}:${verseNumber}: ${err.message}`);
-              });
-            }
-          })
-          .catch((error: unknown) => {
-            errors.push(`Download error for ${surahId}:${verseNumber}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-            if (onProgress) {
-              onProgress(downloadedCount, totalCount, `${surahId}:${verseNumber}`);
-            }
-          })
+        fetchSingleVerse(
+          surahId,
+          verseNumber,
+          useSettingsStore.getState().translationLanguage,
+          useSettingsStore.getState().reciterIdentifier
+        ).then(verse => {
+          if (verse) {
+            downloadedVerses.push(verse);
+            onProgress?.(downloadedVerses.length, totalCount, `${surahId}:${verseNumber}`);
+          } else {
+            errors.push(`Verse ${surahId}:${verseNumber} failed`);
+          }
+        }).catch(err => {
+          errors.push(`Verse ${surahId}:${verseNumber} error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          onProgress?.(downloadedVerses.length, totalCount, `${surahId}:${verseNumber}`);
+        })
       );
     }
-    
-    await Promise.all(
-      batchPromises.map(p => p.catch((error: unknown) => {
-        if (error instanceof Error) {
-          errors.push(error.message);
-        } else {
-          errors.push('Unknown error occurred');
-        }
-      }))
-    );
-    
-    // Longer delay between batches
-    if (endVerse < totalCount) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Wait for the batch to finish
+    await Promise.all(batchPromises);
+
+    // Cache batch immediately
+    if (downloadedVerses.length > 0) {
+      try {
+        await cacheVerses(downloadedVerses);
+      } catch (cacheError: any) {
+        errors.push(`Caching error: ${cacheError.message}`);
+      }
     }
+
+    // Small delay between batches to reduce API load
+    if (endVerse < totalCount) await new Promise(resolve => setTimeout(resolve, 800));
   }
-  
+
   return {
-    success: downloadedCount > 0,
-    downloadedCount,
+    success: downloadedVerses.length > 0,
+    downloadedCount: downloadedVerses.length,
     totalCount,
     errors
   };
 }
+

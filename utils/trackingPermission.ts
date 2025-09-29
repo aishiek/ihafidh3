@@ -1,9 +1,9 @@
-import { 
-  requestTrackingPermissionsAsync, 
-  getTrackingPermissionsAsync,
-  TrackingPermissionStatus 
-} from 'react-native-app-tracking-transparency';
 import { Platform } from 'react-native';
+import {
+    getTrackingPermissionsAsync,
+    requestTrackingPermissionsAsync,
+    TrackingPermissionStatus
+} from 'react-native-app-tracking-transparency';
 
 export interface TrackingPermissionResult {
   status: TrackingPermissionStatus;

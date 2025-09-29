@@ -1,7 +1,6 @@
-import React, { useEffect, useRef } from 'react';
-import { Modal, View, Text, StyleSheet, Dimensions, Animated } from 'react-native';
 import { useSettingsStore } from '@/store/settingsStore';
-import { Platform } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, Dimensions, Modal, Platform, StyleSheet, Text, View } from 'react-native';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 

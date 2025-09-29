@@ -1,7 +1,7 @@
 import { useProgressStore } from '@/store/progressStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { Verse } from '@/types';
-import { pauseAudio, playVerseWithOptionalBismillah } from '@/utils/audioUtils';
+import { pauseAudio, playVerseWithOptionalBismillah, type AudioStatus } from '@/utils/audioUtils';
 import { getArabicFontFamily } from '@/utils/fontUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
 import { Pause, Play, Repeat } from 'lucide-react-native';
@@ -77,18 +77,18 @@ const VerseItem = ({
       if (isPlaying) {
         await pauseAudio();
       } else {
-        // Let onStatus handle setting the UI state
+        // Pass repeatCount from user selection
         await playVerseWithOptionalBismillah(verse, repeatCount, onStatus);
       }
     } catch (error) {
       console.error('Audio playback error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       setAudioError(errorMessage);
-      setIsPlaying(false); // Ensure we are not in playing state on error
+      setIsPlaying(false);
     }
   }, [verse, repeatCount, isPlaying, onStatus]);
 
-  const onStatus = useCallback((status: any) => {
+  const onStatus = useCallback((status: AudioStatus) => {
     // isPlaying from the audio engine is the source of truth
     if (typeof status.isPlaying === 'boolean') {
       setIsPlaying(status.isPlaying);

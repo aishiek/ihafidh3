@@ -1,9 +1,9 @@
+import { surahsData } from '@/data/surahs';
+import { Surah, Verse } from '@/types';
+import { QueueItem } from '@/utils/WriteBackQueue';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SQLite from 'expo-sqlite';
 import { Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Surah, Verse } from '@/types';
-import { surahsData } from '@/data/surahs';
-import { QueueItem } from '@/utils/WriteBackQueue';
 
 let db: SQLite.SQLiteDatabase | null = null;
 

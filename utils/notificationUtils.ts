@@ -1,5 +1,4 @@
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
 
 // Safe accessor helpers
 function has(fn: any): fn is Function { return typeof fn === 'function'; }

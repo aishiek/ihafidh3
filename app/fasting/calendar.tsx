@@ -1,22 +1,22 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ActivityIndicator,
-  TouchableOpacity,
-  RefreshControl,
-  ScrollView,
-  Dimensions,
-  SafeAreaView,
-} from 'react-native';
-import { useFastingCalendar } from '@/components/fasting/context/FastingCalendarContext';
-import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
 import Calendar from '@/components/fasting/Calendar';
+import { useFastingCalendar } from '@/components/fasting/context/FastingCalendarContext';
 import LocationSelector from '@/components/fasting/LocationSelector';
-import { CalendarDay, FastingIntention } from '@/types/fasting';
+import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
+import { FastingIntention } from '@/types/fasting';
 import { Stack, useRouter } from 'expo-router';
 import { ArrowLeft } from 'lucide-react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Dimensions,
+    RefreshControl,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 
 const { width } = Dimensions.get('window');
 
