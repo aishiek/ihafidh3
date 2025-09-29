@@ -263,18 +263,34 @@ function mapStatus(status: any) {
   };
 }
 
-function onPlaybackStatusUpdateHandler(status: any) {
-  if (!onPlaybackStatusUpdate) return;
-  onPlaybackStatusUpdate({ isPlaying, currentUrl: currentAudioUrl, ...status });
+async function onPlaybackStatusUpdateHandler(status: any) {
+  // Sync our global isPlaying state with the player's actual status
+  if (typeof status.isPlaying === 'boolean') {
+    isPlaying = status.isPlaying;
+  }
+
+  // Notify the UI with the most up-to-date, merged state
+  if (onPlaybackStatusUpdate) {
+    onPlaybackStatusUpdate({ ...status, isPlaying, currentUrl: currentAudioUrl });
+  }
+
   if (status?.didJustFinish) {
     repeatCount++;
     if (repeatCount < maxRepeats) {
       try {
-        player?.seek(0);
-        player?.play();
-      } catch (e) { console.error(e); }
+        if (!player) {
+          throw new Error("Player is not available for repeat.");
+        }
+        await player.seek(0);
+        await player.play();
+        // Manually update state after successfully starting playback
+        isPlaying = true;
+      } catch (e) {
+        console.error('Failed to repeat audio:', e);
+        await stopAudio(); // Clean up on error
+      }
     } else {
-      // Audio has finished all repeats, notify completion before stopping
+      // Final repeat has finished. Notify the UI before stopping.
       if (onPlaybackStatusUpdate) {
         onPlaybackStatusUpdate({ 
           isPlaying: false, 
@@ -283,6 +299,7 @@ function onPlaybackStatusUpdateHandler(status: any) {
           ...status 
         });
       }
+      // Clean up the player and all state variables.
       stopAudio().catch(console.error);
     }
   }

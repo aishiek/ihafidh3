@@ -74,41 +74,39 @@ const VerseItem = ({
 
   const handlePlayAudio = useCallback(async () => {
     try {
-      setAudioError(null);
-      setAudioFallback(false);
-
       if (isPlaying) {
         await pauseAudio();
-        setIsPlaying(false);
       } else {
+        // Let onStatus handle setting the UI state
         await playVerseWithOptionalBismillah(verse, repeatCount, onStatus);
       }
     } catch (error) {
       console.error('Audio playback error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       setAudioError(errorMessage);
-      setIsPlaying(false);
+      setIsPlaying(false); // Ensure we are not in playing state on error
     }
-  }, [verse, repeatCount, isPlaying]);
+  }, [verse, repeatCount, isPlaying, onStatus]);
 
   const onStatus = useCallback((status: any) => {
-    if (status?.isPlaying) {
-      setIsPlaying(true);
-      setAudioError(null);
+    // isPlaying from the audio engine is the source of truth
+    if (typeof status.isPlaying === 'boolean') {
+      setIsPlaying(status.isPlaying);
     }
-    if (status?.isPaused || status?.didJustFinish || status?.playbackComplete) {
-      setIsPlaying(false);
-    }
+
+    // Handle errors
     if (status?.error) {
-      setIsPlaying(false);
       setAudioError(status.error);
       setAudioFallback(false);
-    }
-    if (status?.fallbackUsed) {
-      setAudioFallback(true);
+    } else {
       setAudioError(null);
     }
-  }, []);
+
+    // Handle fallback UI
+    if (status?.fallbackUsed) {
+      setAudioFallback(true);
+    }
+  }, [setIsPlaying, setAudioError, setAudioFallback]);
 
   useEffect(() => {
     return () => { pauseAudio().catch(console.error); };
