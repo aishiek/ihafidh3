@@ -249,31 +249,39 @@ export const useProgressStore = create<ProgressState>()(
       updateDailyStreak: () => {
         set((state) => {
           const today = formatDate(new Date());
-          const currentDate = new Date(today);
 
           let newStreak = state.dailyStreak;
           let newLastOpenDate = state.lastOpenDate;
 
-          // Handle daily streak logic
+          // Handle daily streak logic based on calendar dates
           if (state.lastOpenDate === today) {
-            // Same day, maintain streak
+            // Same day, maintain current streak
             newStreak = state.dailyStreak;
             newLastOpenDate = today;
           } else if (!state.lastOpenDate) {
-            // First time opening the app
-            newStreak = 0;
+            // First time opening the app - start streak at 1
+            newStreak = 1;
             newLastOpenDate = today;
           } else {
-            const lastDate = new Date(state.lastOpenDate);
-            const diffTime = Math.abs(currentDate.getTime() - lastDate.getTime());
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            // Calculate the difference in calendar days
+            const lastDate = new Date(state.lastOpenDate + 'T00:00:00'); // Ensure consistent timezone
+            const currentDate = new Date(today + 'T00:00:00');
+            
+            // Calculate difference in days using calendar dates
+            const diffTime = currentDate.getTime() - lastDate.getTime();
+            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+            
             if (diffDays === 1) {
-              // Consecutive day
+              // Consecutive day - increment streak
               newStreak = state.dailyStreak + 1;
               newLastOpenDate = today;
             } else if (diffDays > 1) {
-              // Streak broken
-              newStreak = 0;
+              // Missed one or more days - reset streak to 1 (today is the new start)
+              newStreak = 1;
+              newLastOpenDate = today;
+            } else {
+              // This shouldn't happen if dates are properly formatted, but handle gracefully
+              newStreak = state.dailyStreak;
               newLastOpenDate = today;
             }
           }
@@ -296,7 +304,7 @@ export const useProgressStore = create<ProgressState>()(
           let newWeeklyRevisedSurahsCompleted = state.weeklyRevisedSurahsCompleted;
           let newLastWeeklyRevisedSurahsReset = lastWeeklyResetDate;
           let newWeeklyRevisedVerses = state.weeklyRevisedVerses;
-          const todayDayOfWeek = currentDate.getDay(); // 0 for Sunday
+          const todayDayOfWeek = new Date(today).getDay(); // 0 for Sunday
           
           // Condition to reset weekly: today is Sunday AND it hasn't been reset today yet
           const shouldResetWeekly = todayDayOfWeek === 0 && lastWeeklyResetDate !== today;

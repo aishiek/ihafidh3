@@ -93,7 +93,7 @@ export interface AppSettings {
   fontSizeArabic: number;
   fontSizeTransliteration: number;
   fontSizeTranslation: number;
-  arabicFont: 'default' | 'scheherazade' | 'scheherazade-bold' | 'tajweed' | 'indo-pak' | 'amiri-quran';
+  arabicFont: 'default' | 'uthman-taha' | 'scheherazade' | 'scheherazade-bold' | 'tajweed' | 'indo-pak' | 'amiri-quran';
   showTranslation: boolean;
   showTransliteration?: boolean;
   autoPlayAudio: boolean;

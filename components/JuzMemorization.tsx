@@ -28,14 +28,14 @@ export default function JuzMemorization() {
 
   const data = useMemo(() => Array.from({ length: 30 }, (_, i) => i + 1), []);
 
-  const getJuzProgress = useCallback((juz: number) => {
-    return calculateJuzProgress(juz, memorizedVerses);
+  // Precompute progress for all 30 Juz once per memorizedVerses change
+  const juzProgressData = useMemo(() => {
+    const map: Record<number, { progress: number; total: number; memorized: number }> = {};
+    for (let j = 1; j <= 30; j++) {
+      map[j] = calculateJuzProgress(j, memorizedVerses);
+    }
+    return map;
   }, [memorizedVerses]);
-
-  const isJuzComplete = useCallback((juz: number) => {
-    const p = getJuzProgress(juz);
-    return p.total > 0 && p.memorized === p.total;
-  }, [getJuzProgress]);
 
   const bulkToggleJuz = useCallback(async (juz: number, enable: boolean) => {
     setModalText(enable ? `Marking Juz ${juz} memorized` : `Unmarking Juz ${juz}`);
@@ -43,7 +43,10 @@ export default function JuzMemorization() {
     setModalProgress(0);
     try {
       const range = getJuzVerseRange(juz);
-      if (!range.totalVerses) return;
+      if (!range.totalVerses) {
+        setModalVisible(false);
+        return;
+      }
       const startId = Math.max(1, range.startVerseId);
       const endId = Math.max(startId, range.endVerseId);
 
@@ -58,35 +61,55 @@ export default function JuzMemorization() {
 
       if (idsToApply.length === 0) {
         setModalVisible(false);
+        setModalProgress(0);
+        setModalTotal(0);
         return;
       }
 
-      // Animate progress while preparing bulk update (avoid per-verse store writes that freeze the UI)
-      const BATCH = 100;
+      // Simulate progress in ~10 smooth steps over ~1 second
       setModalTotal(idsToApply.length);
-      for (let i = 0; i < idsToApply.length; i += BATCH) {
-        const sliceCount = Math.min(BATCH, idsToApply.length - i);
-        await new Promise<void>((resolve) => {
-          requestAnimationFrame(() => {
-            setModalProgress((prev) => Math.min(idsToApply.length, prev + sliceCount));
-            resolve();
-          });
+      const total = idsToApply.length;
+      const steps = 10;
+      const increment = Math.max(1, Math.ceil(total / steps));
+      let timer: any = null;
+      timer = setInterval(() => {
+        setModalProgress((prev) => {
+          const next = Math.min(total, prev + increment);
+          if (next >= total && timer) {
+            clearInterval(timer);
+            timer = null;
+          }
+          return next;
         });
-        // tiny pause to keep UI responsive on very large ranges
-        await new Promise((res) => setTimeout(res, 8));
-      }
+      }, 100);
 
-      // Apply bulk change in a single store write
-      const newSet = new Set(memorizedSet);
-      if (enable) {
-        idsToApply.forEach((id) => newSet.add(id));
-      } else {
-        idsToApply.forEach((id) => newSet.delete(id));
-      }
-      updateMemorizedVerses(Array.from(newSet));
-      // Update badges after bulk update
-      setTimeout(() => updateBadges(), 0);
-    } finally {
+      // Schedule heavy work slightly after modal render; jump to 100% just before applying
+      setTimeout(() => {
+        if (timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+        setModalProgress(total);
+
+        // Apply bulk change in a single store write
+        const newSet = new Set(memorizedSet);
+        if (enable) {
+          idsToApply.forEach((id) => newSet.add(id));
+        } else {
+          idsToApply.forEach((id) => newSet.delete(id));
+        }
+        updateMemorizedVerses(Array.from(newSet));
+        setTimeout(() => updateBadges(), 0);
+
+        // Let user see 100% for a brief moment before closing
+        setTimeout(() => {
+          setModalVisible(false);
+          setModalProgress(0);
+          setModalTotal(0);
+        }, 300);
+      }, 50);
+    } catch (e) {
+      // On error, ensure modal is closed cleanly
       setModalVisible(false);
       setModalProgress(0);
       setModalTotal(0);
@@ -95,8 +118,8 @@ export default function JuzMemorization() {
 
   const renderItem = ({ item: juz }: { item: number }) => {
     const info = JUZ_MAPPING[juz];
-    const { progress, total, memorized } = getJuzProgress(juz);
-    const enabled = isJuzComplete(juz);
+    const { progress, total, memorized } = juzProgressData[juz] || { progress: 0, total: 0, memorized: 0 };
+    const enabled = total > 0 && memorized === total;
     const startText = info.start.replace(':', ':');
     const endText = info.end.replace(':', ':');
 

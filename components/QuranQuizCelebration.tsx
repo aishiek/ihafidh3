@@ -133,6 +133,8 @@ export default function QuranQuizCelebration({ visible, onComplete }: { visible:
   // Helper function to get Arabic font family (same as VerseItem)
   const getArabicFontFamily = () => {
     switch (arabicFont) {
+      case 'uthman-taha':
+        return 'UthmanTaha-Ver10';
       case 'amiri-quran':
         return 'AmiriQuran-Regular';
       case 'scheherazade':
@@ -140,16 +142,11 @@ export default function QuranQuizCelebration({ visible, onComplete }: { visible:
       case 'scheherazade-bold':
         return 'ScheherazadeNew-Bold';
       case 'tajweed':
-        return 'ScheherazadeNew-Regular'; // Use Scheherazade for Tajweed mode
+        return 'ScheherazadeNew-Regular';
       case 'indo-pak':
         return 'NooreHuda-Regular';
       default:
-        // For system default, provide fallback Arabic fonts that are commonly available
-        return Platform.select({
-          ios: 'Arial, Helvetica Neue, Helvetica', // iOS has good Arabic support with these fonts
-          android: 'Roboto, Noto Sans Arabic, Arial', // Android's fonts with good Arabic support
-          default: 'Arial, Helvetica, sans-serif' // Fallback for other platforms
-        });
+        return 'UthmanTaha-Ver10';
     }
   };
 

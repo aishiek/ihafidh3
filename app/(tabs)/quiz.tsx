@@ -5,6 +5,7 @@ import { useProgressStore } from '@/store/progressStore';
 import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useThemeColor } from '@/utils/useThemeColor';
+import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { Brain, CheckCircle, Eye, Target, X } from 'lucide-react-native';
@@ -96,28 +97,8 @@ export default function QuizScreen() {
   const router = useRouter();
   const quranStore = useQuranStore();
 
-  // Helper function to get Arabic font family (same as VerseItem)
-  const getArabicFontFamily = () => {
-    switch (arabicFont) {
-      case 'amiri-quran':
-        return 'AmiriQuran-Regular';
-      case 'scheherazade':
-        return 'ScheherazadeNew-Regular';
-      case 'scheherazade-bold':
-        return 'ScheherazadeNew-Bold';
-      case 'tajweed':
-        return 'ScheherazadeNew-Regular'; // Use Scheherazade for Tajweed mode
-      case 'indo-pak':
-        return 'NooreHuda-Regular';
-      default:
-        // For system default, provide fallback Arabic fonts that are commonly available
-        return Platform.select({
-          ios: 'Arial, Helvetica Neue, Helvetica', // iOS has good Arabic support with these fonts
-          android: 'Roboto, Noto Sans Arabic, Arial', // Android's fonts with good Arabic support
-          default: 'Arial, Helvetica, sans-serif' // Fallback for other platforms
-        });
-    }
-  };
+  // Get proper Arabic typography settings
+  const arabicTypography = getArabicTypographySizing(fontSizeArabic);
 
   // Load quiz results on mount
   useEffect(() => {
@@ -429,10 +410,9 @@ export default function QuizScreen() {
               <View style={styles.verseHeader}>
                 <Text style={[styles.verseNumber, { color: primary }]}>Start from Verse {currentQuiz.verses[0].verseNumber}</Text>
               </View>
-              <Text style={[styles.arabicText, { 
-                fontFamily: getArabicFontFamily(),
-                fontSize: fontSizeArabic,
-                lineHeight: fontSizeArabic * 1.5
+              <Text style={[styles.arabicText, {
+                fontFamily: getArabicFontFamily(arabicFont),
+                ...arabicTypography
               }]}>{currentQuiz.verses[0].arabicText}</Text>
               <Text style={styles.translationText}>{currentQuiz.verses[0].translation}</Text>
             </View>
@@ -456,10 +436,9 @@ export default function QuizScreen() {
                     <View style={styles.verseHeader}>
                       <Text style={[styles.verseNumber, { color: primary }]}>Verse {verse.verseNumber}</Text>
                     </View>
-                    <Text style={[styles.arabicText, { 
-                      fontFamily: getArabicFontFamily(),
-                      fontSize: fontSizeArabic,
-                      lineHeight: fontSizeArabic * 1.5
+                    <Text style={[styles.arabicText, {
+                      fontFamily: getArabicFontFamily(arabicFont),
+                      ...arabicTypography
                     }]}>{verse.arabicText}</Text>
                     <Text style={styles.translationText}>{verse.translation}</Text>
                     <View style={styles.answerButtons}>
@@ -665,7 +644,7 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: 20,
-    paddingTop: 40,
+    paddingTop: 12,
   },
   title: {
     fontSize: 28,

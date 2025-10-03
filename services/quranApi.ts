@@ -1,7 +1,47 @@
+/**
+ * Fetch a Surah and its verses by ID
+ * Example: getSurahById(1) → Surah Al-Fatihah
+ */
+export async function getSurahById(surahNumber: number) {
+  try {
+    const response = await fetch(`${ALQURAN_CLOUD_API}/surah/${surahNumber}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch surah ${surahNumber}`);
+    }
+
+    const json = await response.json();
+    const surahData = json?.data;
+
+    return {
+      id: surahData.number,
+      name: surahData.name,
+      englishName: surahData.englishName,
+      versesCount: surahData.numberOfAyahs,
+      verses: surahData.ayahs.map((ayah: any) => ({
+        id: ayah.number,
+        surahId: surahData.number,
+        verseNumber: ayah.numberInSurah,
+        arabicText: ayah.text,
+      })),
+    };
+  } catch (err) {
+    console.error("[getSurahById] Error:", err);
+    return null;
+  }
+}
+
+/**
+ * Dummy placeholder until caching is implemented.
+ * Always returns false.
+ */
+export async function isSurahFullyCached(_surahNumber: number): Promise<boolean> {
+  return false;
+}
 import { addFailedVerse, cacheVerses } from '@/database/QuranDatabase';
 import { useSettingsStore } from '@/store/settingsStore';
 import { Verse } from '@/types';
 import { generateVerseUrl } from '@/utils/audioUtils';
+import NetInfo from '@react-native-community/netinfo';
 
 const ALQURAN_CLOUD_API = 'https://api.alquran.cloud/v1';
 
@@ -148,6 +188,20 @@ class LazyQueue {
 }
 
 const lazyQueue = new LazyQueue();
+
+/**
+ * Checks if the device has an active network connection
+ * @returns Promise<boolean> - True if connected, false otherwise
+ */
+export async function checkNetworkConnectivity(): Promise<boolean> {
+  try {
+    const state = await NetInfo.fetch();
+    return state.isConnected ?? false;
+  } catch (error) {
+    console.warn('Network connectivity check failed:', error);
+    return false; // Default to offline mode if check fails
+  }
+}
 
 // --- Fetch Single Verse ---
 export async function fetchSingleVerse(

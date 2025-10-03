@@ -12,12 +12,14 @@ import { calculateJuzProgress, calculateOverallJuzStats } from '@/utils/juzCalcu
 import { saveLastRead } from '@/utils/lastReadUtils';
 import { findVerseById } from '@/utils/verseUtils';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import {
     Award,
     BookOpen,
     CheckCircle,
     Clock,
+    Info,
     Play,
     RotateCcw,
     Target,
@@ -27,6 +29,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
     AppState,
     Dimensions,
+    Modal,
     Pressable,
     ScrollView,
     StyleSheet,
@@ -129,6 +132,7 @@ export default function HomeScreen() {
   const quranStore = useQuranStore.getState();
 
   const [activeReadingTime, setActiveReadingTime] = useState(0);
+  const [showStreakTooltip, setShowStreakTooltip] = useState(false);
 
   // --- Time tracking lifecycle ---
   useEffect(() => {
@@ -217,8 +221,12 @@ export default function HomeScreen() {
   const mustahabbahRemaining = mustahabbahItems.length - mustahabbahMemorized;
   const getSurahStatus = (it: typeof mustahabbahItems[0]) => it.isMemorized ? 'memorized' : it.inProgress ? 'in-progress' : 'not-started';
 
-  const getBackgroundColors = (status: string) => status === 'memorized' ? ['#16a34a', '#15803d'] : status === 'in-progress' ? ['#f59e0b', '#d97706'] : ['#374151', '#4b5563'];
-  const getTextColor = (status: string) => status === 'memorized' ? '#fff' : status === 'in-progress' ? '#000' : '#d1d5db';
+  const getBackgroundColors = (status: string) => {
+    if (status === 'memorized') return ['#7dd3a0', '#4ade80', '#22c55e', '#166534', '#2d3748'];
+    if (status === 'in-progress') return ['#fde68a', '#fbbf24', '#f59e0b', '#92400e', '#374151'];
+    return ['#64748b', '#475569', '#1e293b', '#0f172a']; // 4-stop for not-started
+  };
+  const getTextColor = (status: string) => '#ffffff'; // White text for all states for better readability
 
   // Juz info
   const [juzProgressList, setJuzProgressList] = useState<{juz:number, memorized:number, total:number, progress:number}[]>([]);
@@ -350,7 +358,7 @@ export default function HomeScreen() {
         action: async () => {
           if (surah) {
             await saveLastRead(surah.id, verseDetails.verseNumber);
-            router.push(`/surah/${surah.id}`);
+            router.push(`/(tabs)/read?surahId=${surah.id}&verseId=${verseDetails.verseNumber}`);
           }
         },
       });
@@ -412,6 +420,25 @@ export default function HomeScreen() {
     </View>
   );
 
+  const StreakCard = ({ title, value, subtitle, icon:Icon, color='#2196F3' }:{title:string; value:string|number; subtitle?:string; icon:any; color?:string;}) => (
+    <View style={styles.statCard}>
+      <Icon size={28} color={color} style={{ marginBottom:4 }} />
+      <Text style={styles.statTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{title}</Text>
+      <Text style={[styles.statValue, { color }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{value}</Text>
+      {subtitle ? <Text style={styles.statSubtitle}>{subtitle}</Text> : null}
+      <Pressable 
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setShowStreakTooltip(true);
+        }}
+        style={styles.infoButton}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Info size={14} color="#888" />
+      </Pressable>
+    </View>
+  );
+
   const ActionCard = ({ title, subtitle, icon:Icon, color, action }:{title:string; subtitle:string; icon:any; color:string; action:()=>void;}) => (
     <Pressable
       onPress={action}
@@ -434,14 +461,30 @@ export default function HomeScreen() {
     const textColor = getTextColor(item.status);
     const icon = item.status === 'memorized' 
       ? { symbol: '✓', color: '#ffffff' } 
-      : item.status === 'in-progress' 
-      ? { symbol: '◐', color: '#000000' } 
-      : { symbol: '✕', color: '#ef4444' };
+      : { symbol: '○', color: '#d64545' };
 
-    // Dynamic base font size with auto-fit to guarantee full name visibility within two lines
-    const getFontSize = (_label: string) => {
-      return 15;
+    // Smart text formatting for hyphenated names
+    const formatSurahName = (name: string) => {
+      // Check if name contains hyphen and should be split
+      if (name.includes('-') && name.length >= 7) {
+        const parts = name.split('-');
+        if (parts.length === 2) {
+          return {
+            firstLine: parts[0] + '-',
+            secondLine: parts[1],
+            isMultiLine: true
+          };
+        }
+      }
+      return {
+        firstLine: name,
+        secondLine: '',
+        isMultiLine: false
+      };
     };
+
+    const textFormat = formatSurahName(item.label);
+    const baseFontSize = textFormat.isMultiLine ? 13 : (item.label.length > 10 ? 12 : 14);
 
     return (
       <TouchableOpacity 
@@ -458,36 +501,72 @@ export default function HomeScreen() {
             item.status === 'not-started' && styles.notStartedBorder
           ]}
         >
-          <Text 
-            style={[
-              styles.cardTitle, 
-              { 
-                color: textColor,
-                fontSize: getFontSize(item.label),
-                lineHeight: getFontSize(item.label) + 3
-              }
-            ]}
-            numberOfLines={2}
-            ellipsizeMode="tail"
-            adjustsFontSizeToFit
-            minimumFontScale={0.7}
-          >
-            {item.label}
-          </Text>
+          <View style={styles.cardContent}>
+            {textFormat.isMultiLine ? (
+              <>
+                <Text 
+                  style={[
+                    styles.cardTitle, 
+                    { 
+                      color: textColor,
+                      fontSize: baseFontSize,
+                      lineHeight: baseFontSize + 1,
+                      marginBottom: 1
+                    }
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                >
+                  {textFormat.firstLine}
+                </Text>
+                <Text 
+                  style={[
+                    styles.cardTitle, 
+                    { 
+                      color: textColor,
+                      fontSize: baseFontSize,
+                      lineHeight: baseFontSize + 1
+                    }
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                >
+                  {textFormat.secondLine}
+                </Text>
+              </>
+            ) : (
+              <Text 
+                style={[
+                  styles.cardTitle, 
+                  { 
+                    color: textColor,
+                    fontSize: baseFontSize,
+                    lineHeight: baseFontSize + 2
+                  }
+                ]}
+                numberOfLines={2}
+                ellipsizeMode="tail"
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
+                {item.label}
+              </Text>
+            )}
+          </View>
           
           <View style={[
             styles.iconContainer,
             {
               backgroundColor: item.status === 'memorized' 
-                ? 'rgba(255, 255, 255, 0.2)'
-                : item.status === 'in-progress'
-                ? 'rgba(0, 0, 0, 0.2)'
-                : 'rgba(239, 68, 68, 0.2)',
-              borderColor: item.status === 'not-started' ? '#ef4444' : 'transparent',
-              borderWidth: item.status === 'not-started' ? 1.5 : 0,
+                ? 'rgba(255, 255, 255, 0.25)'
+                : 'rgba(214, 69, 69, 0.25)',
+              borderColor: item.status === 'memorized' ? 'transparent' : '#d64545',
+              borderWidth: item.status === 'memorized' ? 0 : 1,
             }
           ]}>
-            <Text style={[styles.iconText, { color: icon.color }]}> {icon.symbol} </Text>
+            <Text style={[styles.iconText, { color: icon.color }]}>{icon.symbol}</Text>
           </View>
         </LinearGradient>
       </TouchableOpacity>
@@ -512,7 +591,8 @@ export default function HomeScreen() {
   function formatTotalTime(totalSeconds:number){ if(!totalSeconds||totalSeconds<0) return '0m'; const d=Math.floor(totalSeconds/86400); const h=Math.floor((totalSeconds%86400)/3600); const m=Math.floor((totalSeconds%3600)/60); return `${d>0?d+'d ':''}${(h>0||d>0)?h+'h ':''}${m}m`.trim(); }
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
         <MinimalTopStrip style={{}} />
         <Text style={styles.greeting}>Assalamu Alaikkum{userName ? `, ${userName}` : ''}</Text>
@@ -590,7 +670,7 @@ export default function HomeScreen() {
         <Text style={styles.sectionTitle}>Usage Overview</Text>
         <View style={styles.statsGrid}>
           <StatCard title="Quran Time" value={formatTotalTime(activeReadingTime)} subtitle="Active time spent" icon={Clock} color="#4CAF50" />
-          <StatCard title="Streak" value={stats.currentStreak} subtitle="Day streak" icon={FireStreakIcon} color="#FF9800" />
+          <StreakCard title="Streak" value={stats.currentStreak} subtitle="Day streak" icon={FireStreakIcon} color="#FF9800" />
         </View>
       </View>
 
@@ -631,12 +711,54 @@ export default function HomeScreen() {
         </View>
       </View>
     </ScrollView>
+
+    {/* Streak Tooltip Modal */}
+    <Modal
+      visible={showStreakTooltip}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowStreakTooltip(false)}
+    >
+      <Pressable 
+        style={styles.tooltipOverlay} 
+        onPress={() => setShowStreakTooltip(false)}
+      >
+        <View style={styles.tooltipContainer}>
+          <View style={styles.tooltipHeader}>
+            <FireStreakIcon size={24} />
+            <Text style={styles.tooltipTitle}>Daily Streak</Text>
+          </View>
+          <Text style={styles.tooltipText}>
+            Your streak counts consecutive days of opening iHafidh.
+          </Text>
+          <Text style={styles.tooltipText}>
+            📅 <Text style={styles.tooltipBold}>Day 1:</Text> Open app → Streak = 1{"\n"}
+            📅 <Text style={styles.tooltipBold}>Day 2:</Text> Open app → Streak = 2{"\n"}
+            📅 <Text style={styles.tooltipBold}>Day 3:</Text> Skip day{"\n"}
+            📅 <Text style={styles.tooltipBold}>Day 4:</Text> Open app → Streak = 1 (resets)
+          </Text>
+          <View style={styles.tooltipNote}>
+            <Info size={16} color="#FFD700" />
+            <Text style={styles.tooltipNoteText}>
+              Streak resets to 1 when you miss a day to open iHafidh
+            </Text>
+          </View>
+          <Pressable 
+            style={styles.tooltipCloseButton}
+            onPress={() => setShowStreakTooltip(false)}
+          >
+            <Text style={styles.tooltipCloseText}>Got it!</Text>
+          </Pressable>
+        </View>
+      </Pressable>
+    </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex:1, backgroundColor:'#1a1a1a' },
-  header: { paddingTop:48, paddingBottom:24, paddingHorizontal:20, backgroundColor:'#1a1a1a', borderBottomWidth:1, borderBottomColor:'#333' },
+  header: { paddingTop:16, paddingBottom:16, paddingHorizontal:20, backgroundColor:'#1a1a1a', borderBottomWidth:1, borderBottomColor:'#333' },
   greeting: { fontSize:18, fontWeight:'600', color:'#fff', marginTop:8 },
   welcomeText: { fontSize:14, color:'#ccc', marginTop:4 },
   section: { paddingHorizontal:20, paddingVertical:16 },
@@ -667,21 +789,56 @@ const styles = StyleSheet.create({
   statSubtitle: { fontSize:13, color:'#aaa', textAlign:'center' },
   mustahabbahCard: { backgroundColor:'#2a2a2a', borderRadius:12, padding:12 },
   mustahabbahGrid: { marginTop:8 },
-  mustahabbahRow: { flexDirection:'row', justifyContent:'space-between', marginBottom:8 },
-  cardWrapper: { width:(width-56)/3 },
+  mustahabbahRow: { flexDirection:'row', justifyContent:'space-between', alignItems: 'stretch', marginBottom:10 },
+  cardWrapper: { 
+    flexBasis: '30%',
+    maxWidth: '32%',
+    marginHorizontal: '1%',
+  },
   cardWrapperSmall: { },
-  card: { backgroundColor:'#2b2b2b', borderRadius:10, padding:10, position:'relative' },
+  card: { 
+    backgroundColor:'#2b2b2b', 
+    borderRadius:12, 
+    padding:12, 
+    position:'relative',
+    minHeight: 85,
+    justifyContent: 'space-between',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255, 255, 255, 0.1)'
+  },
+  cardContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingRight: 8, // Space for icon
+    paddingTop: 8, // Space for top icon
+  },
   compactCard: { paddingVertical:8, paddingHorizontal:8 },
-  cardTitle: { color:'#fff', fontSize:14, fontWeight:'600' },
+  cardTitle: { 
+    color:'#fff', 
+    fontSize:14, 
+    fontWeight:'600',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
   compactCardTitle: { fontSize:13, fontWeight:'600' },
   cardTitleSmall: { fontSize:12 },
-  iconContainer: { width:20, height:20, borderRadius:10, justifyContent:'center', alignItems:'center', position:'absolute', top:4, right:4 },
+  iconContainer: { 
+    width:18, 
+    height:18, 
+    borderRadius:9, 
+    justifyContent:'center', 
+    alignItems:'center', 
+    position:'absolute', 
+    top:8, 
+    right:8 
+  },
   progressTextContainer: { position:'absolute', top:0, left:0, right:0, bottom:0, alignItems:'center', justifyContent:'center' },
   progressPercentage: { color:'#fff', fontSize:12, fontWeight:'700' },
-  notStartedBorder: { borderLeftWidth:3, borderLeftColor:'#666' },
+  notStartedBorder: { borderWidth:1, borderColor:'#d64545' },
   compactIconContainer: { width:18, height:18, borderRadius:9 },
   iconContainerSmall: { width:16, height:16, borderRadius:8 },
-  iconText: { color:'#fff', fontSize:10, fontWeight:'700', lineHeight:12 },
+  iconText: { color:'#fff', fontSize:11, fontWeight:'700', lineHeight:11 },
   compactIconText: { fontSize:9, lineHeight:11 },
   iconTextSmall: { fontSize:8, lineHeight:10 },
   progressSummary: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingTop:16, borderTopWidth:1, borderTopColor:'#3a3a3a', marginTop:8 },
@@ -757,5 +914,79 @@ const styles = StyleSheet.create({
   quizSubtitle: {
     fontSize: 14,
     color: '#888',
+  },
+  infoButton: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    padding: 4,
+  },
+  tooltipOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  tooltipContainer: {
+    backgroundColor: '#2a2a2a',
+    borderRadius: 16,
+    padding: 20,
+    maxWidth: '90%',
+    minWidth: 280,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  tooltipHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  tooltipTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#fff',
+    marginLeft: 8,
+  },
+  tooltipText: {
+    fontSize: 14,
+    color: '#ccc',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  tooltipBold: {
+    fontWeight: '600',
+    color: '#fff',
+  },
+  tooltipNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 8,
+  },
+  tooltipNoteText: {
+    fontSize: 13,
+    color: '#FFD700',
+    marginLeft: 8,
+    flex: 1,
+    fontWeight: '500',
+  },
+  tooltipCloseButton: {
+    backgroundColor: '#FF9800',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  tooltipCloseText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

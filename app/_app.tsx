@@ -14,6 +14,7 @@ export default function App() {
         const memorizedIds = await getAllMemorizedVerseIds();
         const revisedIds = await getAllRevisedVerseIds();
         MemorizationCache.warmUp(memorizedIds, revisedIds);
+        
         await requestNotificationPermissions();
         await scheduleRevisionReminders({
           dailyIncomplete: !isDailyRevisionGoalMet(),

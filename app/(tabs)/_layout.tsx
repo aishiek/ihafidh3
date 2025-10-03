@@ -21,6 +21,7 @@ export default function TabLayout() {
             backgroundColor: "#1a1a1a",
           },
           headerTintColor: "#ffffff",
+          headerRight: () => <EnhancedHamburgerMenu inline />,
         }}
       >
         <Tabs.Screen
@@ -74,8 +75,7 @@ export default function TabLayout() {
         />
       </Tabs>
 
-      {/* Render hamburger menu once so it's visible on all tab screens */}
-      <EnhancedHamburgerMenu />
+      {/* Inline headerRight renders menu on all tabs; no absolute overlay needed */}
     </>
   );
 }

@@ -4,8 +4,10 @@ import { runTurboModuleProbe } from '@/utils/turboModuleProbe';
 import * as Font from 'expo-font';
 import { Stack } from 'expo-router';
 import React, { Component, ReactNode } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, AppStateStatus, Platform, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { closeDatabase, initDatabase, logBasicStats, runIntegrityCheck } from '@/database/QuranDatabase';
+import { initPersistenceGuard } from '../utils/persistenceGuard';
 
 // Initialize global handlers ASAP
 initGlobalErrorHandlers();
@@ -61,6 +63,7 @@ async function loadAppFontsOnce() {
     'ScheherazadeNew-Regular': require('../assets/fonts/ScheherazadeNew-Regular.ttf'),
     'ScheherazadeNew-Bold': require('../assets/fonts/ScheherazadeNew-Bold.ttf'),
     'NooreHuda-Regular': require('../assets/fonts/NooreHuda-Regular.ttf'),
+    'UthmanTaha-Ver10': require('../assets/fonts/UthmanTaha-Ver10.otf'),
   };
   if (amiriAsset) {
     fontMap['AmiriQuran-Regular'] = amiriAsset;
@@ -126,6 +129,32 @@ export default function RootLayout() {
       runTurboModuleProbe().catch(e => console.log('[probe] unexpected failure', e));
     }, 500); // allow initial bridge setup
     return () => clearTimeout(t);
+  }, []);
+
+  // Persistence guard and DB lifecycle management
+  React.useEffect(() => {
+    // Initialize guard to snapshot and monitor critical persisted stores
+    initPersistenceGuard();
+
+    // Ensure DB is initialized once app is ready (native only)
+    if (Platform.OS !== 'web') {
+      initDatabase().catch(e => console.log('[db] init failed', e));
+    }
+
+    const onStateChange = async (next: AppStateStatus) => {
+      try {
+        if (Platform.OS === 'web') return;
+        if (next === 'active') {
+          await initDatabase();
+          await runIntegrityCheck('[foreground]');
+          await logBasicStats('[foreground]');
+        }
+      } catch (e) {
+        console.log('[db] lifecycle handler error', e);
+      }
+    };
+    const sub = AppState.addEventListener('change', onStateChange);
+    return () => { try { sub.remove(); } catch {} };
   }, []);
 
   try {

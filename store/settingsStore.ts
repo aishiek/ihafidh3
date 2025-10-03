@@ -4,19 +4,27 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+export type PlaybackSpeed = 0.5 | 0.75 | 1 | 1.25 | 1.5 | 1.75 | 2 | 2.5 | 3 | 3.5 | 4 | 5 | 7;
+
+export const DEFAULT_PLAYBACK_SPEED: PlaybackSpeed = 1;
+
+export const PLAYBACK_SPEED_OPTIONS: PlaybackSpeed[] = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4, 5, 7];
+
 interface SettingsState extends AppSettings {
   userName: string;
   quizVerseCount: number;
   translationLanguage: string;
   reciterIdentifier: string;
   showTransliteration: boolean;
-  arabicFont: 'default' | 'scheherazade' | 'scheherazade-bold' | 'tajweed' | 'indo-pak' | 'amiri-quran';
+  arabicFont: 'default' | 'uthman-taha' | 'scheherazade' | 'scheherazade-bold' | 'tajweed' | 'indo-pak' | 'amiri-quran';
+  playbackSpeed: PlaybackSpeed;
+  infiniteLoop: boolean;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
   setRepeatMode: (mode: number) => void;
   setFontSizeArabic: (size: number) => void;
   setFontSizeTransliteration: (size: number) => void;
   setFontSizeTranslation: (size: number) => void;
-  setArabicFont: (font: 'default' | 'scheherazade' | 'scheherazade-bold' | 'tajweed' | 'indo-pak' | 'amiri-quran') => void;
+  setArabicFont: (font: 'default' | 'uthman-taha' | 'scheherazade' | 'scheherazade-bold' | 'tajweed' | 'indo-pak' | 'amiri-quran') => void;
   setShowTranslation: (show: boolean) => void;
   setShowTransliteration: (show: boolean) => void;
   setAutoPlayAudio: (autoPlay: boolean) => void;
@@ -26,6 +34,8 @@ interface SettingsState extends AppSettings {
   setQuizVerseCount: (count: number) => void;
   setTranslationLanguage: (language: string) => void;
   setReciterIdentifier: (identifier: string) => void;
+  setPlaybackSpeed: (speed: PlaybackSpeed) => void;
+  setInfiniteLoop: (enabled: boolean) => void;
 }
 
 // Initialize store with values from AsyncStorage
@@ -61,13 +71,15 @@ export const useSettingsStore = create<SettingsState>()(
       showTranslation: true,
       showTransliteration: false,
       autoPlayAudio: false,
-        notificationsEnabled: false,
-        reminderTime: '09:00',
+      notificationsEnabled: false,
+      reminderTime: '09:00',
       userName: '',
       quizVerseCount: 5,
       translationLanguage: 'en.sahih',
       reciterIdentifier: 'ar.alafasy',
-      arabicFont: 'amiri-quran',
+  arabicFont: 'uthman-taha',
+      playbackSpeed: DEFAULT_PLAYBACK_SPEED,
+      infiniteLoop: false,
       
       setTheme: (theme) => set({ theme }),
       setRepeatMode: (repeatMode) => set({ repeatMode }),
@@ -90,6 +102,8 @@ export const useSettingsStore = create<SettingsState>()(
         set({ reciterIdentifier });
         clearAudioCache();
       },
+      setPlaybackSpeed: (playbackSpeed) => set({ playbackSpeed }),
+      setInfiniteLoop: (infiniteLoop) => set({ infiniteLoop }),
       };
     },
     {
@@ -107,7 +121,7 @@ export const useSettingsStore = create<SettingsState>()(
           // @ts-ignore add new field default
           (state as any).fontSizeTransliteration = (state as any).fontSizeTransliteration || 14;
           // @ts-ignore extend persisted state
-          (state as any).arabicFont = (state as any).arabicFont || 'amiri-quran';
+          (state as any).arabicFont = (state as any).arabicFont || 'uthman-taha';
           state.showTranslation = state.showTranslation ?? true;
           // @ts-ignore extend persisted state
           (state as any).showTransliteration = (state as any).showTransliteration ?? false;
@@ -119,6 +133,9 @@ export const useSettingsStore = create<SettingsState>()(
           // Default reciter
           // @ts-ignore - extend persisted state
           (state as any).reciterIdentifier = (state as any).reciterIdentifier || 'ar.alafasy';
+          // Default playback settings
+          state.playbackSpeed = state.playbackSpeed || DEFAULT_PLAYBACK_SPEED;
+          state.infiniteLoop = state.infiniteLoop || false;
         }
       },
     }

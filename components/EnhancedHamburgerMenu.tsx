@@ -7,12 +7,15 @@ import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
 import { StateMigrationUtils, useContextAwareTheme } from '@/utils/stateManagementBridge';
 import { router } from 'expo-router';
 import {
-    Calendar,
-    MapPin,
-    Menu,
-    Moon,
-    X
+  Calendar,
+  MapPin,
+  Menu,
+  Moon,
+  X,
+  Bookmark as BookmarkIcon,
 } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
+import { useBookmarkStore } from '@/store/bookmarkStore';
 import React, { useState } from 'react';
 import {
     Modal,
@@ -35,13 +38,17 @@ interface MenuItem {
 
 interface EnhancedHamburgerMenuProps {
   fastingContext?: any; // FastingCalendar context when available
+  inline?: boolean; // when true, render as headerRight button (no absolute positioning)
 }
 
 export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
-  fastingContext
+  fastingContext,
+  inline = false,
 }) => {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [selectedFeature, setSelectedFeature] = useState<'fasting' | 'quran' | 'general'>('general');
+  // Use a stable selector to avoid re-renders from new array instances
+  const bookmarksCount = useBookmarkStore(state => state.bookmarks.length);
 
   // Use unified theme with automatic detection
   const { theme, isDark, setTheme, setColorScheme, raw } = useUnifiedTheme('auto', fastingContext);
@@ -76,6 +83,20 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
         setSelectedFeature('general');
         setIsMenuVisible(false);
         router.push('/qibla');
+      }
+    },
+    {
+      id: 'bookmarks',
+      title: 'Bookmarks',
+      subtitle: 'Your saved verses',
+      icon: BookmarkIcon,
+      color: '#9C27B0',
+      feature: 'quran',
+      onPress: async () => {
+        try { await Haptics.selectionAsync(); } catch {}
+        setSelectedFeature('quran');
+        setIsMenuVisible(false);
+        router.push('/bookmarks');
       }
     },
     {
@@ -125,7 +146,7 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
   const styles = StyleSheet.create({
     hamburgerButton: {
       position: 'absolute',
-      top: 50,
+      top: 12,
       right: 20,
       width: 44,
       height: 44,
@@ -140,19 +161,36 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
       elevation: 4,
       zIndex: 1000,
     },
+    inlineButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: theme.surface,
+      justifyContent: 'center',
+      alignItems: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
+      elevation: 2,
+      marginRight: 8,
+    },
     modalOverlay: {
       flex: 1,
       backgroundColor: 'rgba(0, 0, 0, 0.5)',
-      justifyContent: 'flex-end',
+      justifyContent: 'flex-start',
+      alignItems: 'flex-end',
+      paddingTop: 64, // leave room for status/header; keep simple without additional deps
+      paddingHorizontal: 8,
     },
     menuContainer: {
       backgroundColor: theme.background,
-      borderTopLeftRadius: 20,
-      borderTopRightRadius: 20,
-      paddingTop: 20,
-      paddingHorizontal: 20,
-      paddingBottom: 40,
+      borderRadius: 16,
+      paddingVertical: 16,
+      paddingHorizontal: 16,
+      width: '92%',
       maxHeight: '80%',
+      zIndex: 2,
     },
     menuHeader: {
       flexDirection: 'row',
@@ -189,6 +227,7 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
       borderRadius: 12,
       marginBottom: 12,
       borderLeftWidth: 4,
+      position: 'relative',
     },
     menuIconContainer: {
       width: 48,
@@ -245,13 +284,27 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
       fontSize: 12,
       color: theme.textMuted,
     },
+    badge: {
+      position: 'absolute',
+      top: 10,
+      right: 10,
+      backgroundColor: '#FFD700',
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 12,
+    },
+    badgeText: {
+      color: '#1a1a1a',
+      fontSize: 12,
+      fontWeight: '700',
+    },
   });
 
   return (
     <>
       {/* Hamburger Menu Button */}
       <TouchableOpacity
-        style={styles.hamburgerButton}
+        style={inline ? styles.inlineButton : styles.hamburgerButton}
         onPress={() => setIsMenuVisible(true)}
         activeOpacity={0.8}
       >
@@ -266,13 +319,7 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
         onRequestClose={() => setIsMenuVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <TouchableOpacity
-            style={{ flex: 1 }}
-            onPress={() => setIsMenuVisible(false)}
-            activeOpacity={1}
-          />
-          
-          <View style={[styles.menuContainer, { alignSelf: 'center', justifyContent: 'center' }]}>
+          <View style={styles.menuContainer}>
             {/* Header */}
             <View style={styles.menuHeader}>
               <View>
@@ -289,7 +336,10 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 8 }}
+            >
               {/* Menu Items */}
               {menuItems.map((item) => {
                 const isSelected = selectedFeature === item.feature;
@@ -310,20 +360,34 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
                     <View
                       style={[
                         styles.menuIconContainer,
-                        { backgroundColor: item.color + '20' }
+                        { backgroundColor: item.id === 'bookmarks' ? '#9C27B0' : item.color + '20' }
                       ]}
                     >
-                      <item.icon size={24} color={item.color} />
+                      <item.icon size={item.id === 'bookmarks' ? 32 : 24} color={item.id === 'bookmarks' ? '#FFFFFF' : item.color} />
                     </View>
                     <View style={styles.menuItemContent}>
                       <Text style={styles.menuItemTitle}>{item.title}</Text>
                       <Text style={styles.menuItemSubtitle}>{item.subtitle}</Text>
                     </View>
+                    {item.id === 'bookmarks' && bookmarksCount > 0 && (
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>
+                          {bookmarksCount > 99 ? '99+' : String(bookmarksCount)}
+                        </Text>
+                      </View>
+                    )}
                   </TouchableOpacity>
                 );
               })}
             </ScrollView>
           </View>
+
+          {/* Backdrop area to dismiss (fills remaining space) */}
+          <TouchableOpacity
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+            onPress={() => setIsMenuVisible(false)}
+            activeOpacity={1}
+          />
         </View>
       </Modal>
     </>

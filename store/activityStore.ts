@@ -192,18 +192,33 @@ export const useActivityStore = create<ActivityState>()(
           return; // Already updated today
         }
         
+        // Calculate yesterday's date properly
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStr = yesterday.toISOString().split('T')[0];
         
         let newStreak = currentStreak;
         
-        if (lastActivityDate === yesterdayStr) {
-          // Continue streak
-          newStreak = currentStreak + 1;
-        } else if (!lastActivityDate || lastActivityDate < yesterdayStr) {
-          // Break streak
+        if (!lastActivityDate) {
+          // First time - start streak at 1
           newStreak = 1;
+        } else if (lastActivityDate === yesterdayStr) {
+          // Continue streak - consecutive day
+          newStreak = currentStreak + 1;
+        } else {
+          // Calculate days difference for streak break detection
+          const lastDate = new Date(lastActivityDate + 'T00:00:00');
+          const currentDate = new Date(today + 'T00:00:00');
+          const diffTime = currentDate.getTime() - lastDate.getTime();
+          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+          
+          if (diffDays === 1) {
+            // Consecutive day (shouldn't reach here due to yesterday check, but for safety)
+            newStreak = currentStreak + 1;
+          } else {
+            // Streak broken - reset to 1 (today is new start)
+            newStreak = 1;
+          }
         }
         
         set({

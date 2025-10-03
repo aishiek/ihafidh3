@@ -32,10 +32,29 @@ export const initDatabase = async (): Promise<void> => {
       return;
     }
     db = SQLite.openDatabaseSync(DATABASE_NAME);
+    await applyPragmas();
     await createTables();
+    await runIntegrityCheck('[init]');
+    await logBasicStats('[init]');
     console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
+  }
+};
+
+// Best-effort pragmas to improve reliability/perf
+const applyPragmas = async (): Promise<void> => {
+  if (!db) return;
+  try {
+    if (!db.execAsync) return;
+    await db.execAsync(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA synchronous = NORMAL;
+      PRAGMA foreign_keys = ON;
+      PRAGMA temp_store = MEMORY;
+    `);
+  } catch (e) {
+    console.warn('[sqlite] Failed to apply PRAGMAs', e);
   }
 };
 
@@ -64,9 +83,18 @@ const createTables = async (): Promise<void> => {
         lastReviewed DATETIME,
         PRIMARY KEY (surahId, verseNumber)
       );
+      CREATE TABLE IF NOT EXISTS audio_cache (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        localPath TEXT NOT NULL,
+        remoteUrl TEXT NOT NULL,
+        downloadedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        fileSize INTEGER
+      );
       CREATE INDEX IF NOT EXISTS idx_verses_surah ON verses(surahId);
       CREATE INDEX IF NOT EXISTS idx_verses_juz ON verses(juzNumber);
       CREATE INDEX IF NOT EXISTS idx_memorization_surah ON memorization_status(surahId);
+      CREATE INDEX IF NOT EXISTS idx_audio_cache_type ON audio_cache(type);
     `);
     console.log('Database tables and indexes created successfully');
   } catch (error) {
@@ -326,6 +354,39 @@ export const closeDatabase = async (): Promise<void> => {
   }
 };
 
+// Integrity and diagnostics
+export const runIntegrityCheck = async (tag: string = ''): Promise<boolean> => {
+  if (!db || Platform.OS === 'web') return false;
+  try {
+    if (!db.getFirstAsync) return false;
+    const res = await db.getFirstAsync(`PRAGMA integrity_check;`) as any;
+    const value = res?.integrity_check || res?.["integrity_check"] || Object.values(res || {})[0];
+    const ok = String(value).toLowerCase() === 'ok';
+    if (!ok) console.warn(`[sqlite] integrity_check failed ${tag}:`, res);
+    else console.log(`[sqlite] integrity_check ok ${tag}`);
+    return ok;
+  } catch (e) {
+    console.warn('[sqlite] integrity_check threw', e);
+    return false;
+  }
+};
+
+export const logBasicStats = async (tag: string = ''): Promise<void> => {
+  if (!db || Platform.OS === 'web') return;
+  try {
+    if (!db.getFirstAsync) return;
+    const verses = await db.getFirstAsync('SELECT COUNT(*) as c FROM verses');
+    const mem = await db.getFirstAsync('SELECT COUNT(*) as c FROM memorization_status');
+    const aud = await db.getFirstAsync('SELECT COUNT(*) as c FROM audio_cache');
+    const v = (verses as any)?.c ?? (verses as any)?.["c"] ?? 0;
+    const m = (mem as any)?.c ?? (mem as any)?.["c"] ?? 0;
+    const a = (aud as any)?.c ?? (aud as any)?.["c"] ?? 0;
+    console.log(`[sqlite] stats ${tag} verses=${v} memorization=${m} audio=${a}`);
+  } catch (e) {
+    console.warn('[sqlite] logBasicStats failed', e);
+  }
+};
+
 // Get verse memorization status
 export const getVerseMemorizationStatus = async (
   surahId: number,
@@ -518,6 +579,38 @@ export async function getAllMemorizedVerseIds(): Promise<number[]> {
     return res?.[0]?.rows?._array?.map((row: any) => row.id) || [];
   } catch { return []; }
 }
+
+// Audio cache functions
+export const cacheAudioFile = async (id: string, type: 'bismillah' | 'verse', localPath: string, remoteUrl: string, fileSize?: number): Promise<void> => {
+  if (!db || Platform.OS === 'web') return;
+  try {
+    if (!db.runAsync) { console.warn('[sqlite] runAsync unavailable'); return; }
+    await db.runAsync(
+      `INSERT OR REPLACE INTO audio_cache (id, type, localPath, remoteUrl, fileSize) VALUES (?, ?, ?, ?, ?)`,
+      [id, type, localPath, remoteUrl, fileSize || 0]
+    );
+    console.log(`Audio cached: ${id} (${type})`);
+  } catch (error) {
+    console.error('Error caching audio file:', error);
+  }
+};
+
+export const getCachedAudioPath = async (id: string): Promise<string | null> => {
+  if (!db || Platform.OS === 'web') return null;
+  try {
+    if (!db.getFirstAsync) { console.warn('[sqlite] getFirstAsync unavailable'); return null; }
+    const result = await db.getFirstAsync('SELECT localPath FROM audio_cache WHERE id = ?', [id]) as { localPath: string } | null;
+    return result?.localPath || null;
+  } catch (error) {
+    console.error('Error getting cached audio path:', error);
+    return null;
+  }
+};
+
+export const isAudioCached = async (id: string): Promise<boolean> => {
+  const path = await getCachedAudioPath(id);
+  return path !== null;
+};
 
 export async function getAllRevisedVerseIds(): Promise<number[]> {
   const dbInstance = await getDb();

@@ -552,8 +552,8 @@ export default function SettingsScreen() {
           
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
             {[
-              { value: 'default', label: 'System Default' },
-              { value: 'amiri-quran', label: 'Amiri Quran (recommended)' },
+              { value: 'default', label: 'System Default (Uthman Taha)' },
+              { value: 'amiri-quran', label: 'Amiri Quran' },
               { value: 'scheherazade', label: 'Scheherazade New' },
               { value: 'scheherazade-bold', label: 'Scheherazade Bold' },
               { value: 'tajweed', label: 'Tajweed Colors' },

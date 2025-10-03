@@ -7,7 +7,7 @@ import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import type { Surah } from '@/types';
 import { Verse } from '@/types';
-import { generateSurahAudioUrl, pauseAudio, playAudio, playSurahAudioWithFallback } from '@/utils/audioUtils';
+import { pauseAudio, pauseSurahAudio, playAudio, playSurahAudioWithFallback, resumeSurahAudio } from '@/utils/audioUtils';
 import { useCustomColors } from '@/utils/themeUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -27,6 +27,30 @@ const getDynamicBatchSize = (surahVerseCount: number, isInitial: boolean = false
 // In-memory cache for verses (scoped by translation language)
 const verseCache = new Map<string, Verse[]>();
 const surahLoadingState = new Map<string, { currentPage: number; hasMore: boolean; totalVerses: number }>();
+
+// LRU helpers to cap cache size and avoid unbounded growth
+const MAX_CACHE_SIZE = 50; // limit to ~50 pages
+const cacheAccessOrder: string[] = [];
+const touchCacheKey = (key: string) => {
+  const idx = cacheAccessOrder.indexOf(key);
+  if (idx !== -1) cacheAccessOrder.splice(idx, 1);
+  cacheAccessOrder.push(key);
+};
+const setCacheWithLimit = (key: string, data: Verse[]) => {
+  if (!verseCache.has(key) && verseCache.size >= MAX_CACHE_SIZE) {
+    const oldest = cacheAccessOrder.shift();
+    if (oldest) verseCache.delete(oldest);
+  }
+  verseCache.set(key, data);
+  touchCacheKey(key);
+};
+const removeKeyFromOrder = (key: string) => {
+  const idx = cacheAccessOrder.indexOf(key);
+  if (idx !== -1) cacheAccessOrder.splice(idx, 1);
+};
+
+// Loading locks to dedupe concurrent loads per surah-language key
+const loadingLocks = new Map<string, Promise<any>>();
 
 // Helper function to generate cache key (scoped by language)
 const getCacheKey = (surahId: number, page: number, language: string) => `surah_${surahId}_${language}_page_${page}`;
@@ -69,6 +93,7 @@ export default function ReadScreen() {
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isPlayingSurah, setIsPlayingSurah] = useState(false);
+  const [isSurahPaused, setIsSurahPaused] = useState(false);
   const surahAudioUrlRef = useRef<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMoreVerses, setHasMoreVerses] = useState(true);
@@ -76,6 +101,9 @@ export default function ReadScreen() {
   const [progressModalVisible, setProgressModalVisible] = useState(false);
   const [progressCount, setProgressCount] = useState(0);
   const [progressAction, setProgressAction] = useState<'mark-memorized' | 'unmark-memorized' | 'mark-revised' | 'unmark-revised' | null>(null);
+  
+  // Scroll position restoration without triggering re-renders
+  const scrollOffsetRef = useRef(0);
 
   const {
     memorizedVerses,
@@ -95,9 +123,11 @@ export default function ReadScreen() {
   const versesListRef = useRef<FlatList<Verse>>(null);
   const targetVerseRef = useRef<number | null>(null);
   
-  // Helper function to get Arabic font family (same as VerseItem)
+  // Use centralized font util
   const getArabicFontFamily = () => {
     switch (arabicFont) {
+      case 'uthman-taha':
+        return 'UthmanTaha-Ver10';
       case 'amiri-quran':
         return 'AmiriQuran-Regular';
       case 'scheherazade':
@@ -105,15 +135,11 @@ export default function ReadScreen() {
       case 'scheherazade-bold':
         return 'ScheherazadeNew-Bold';
       case 'tajweed':
-        return 'ScheherazadeNew-Regular'; // Use Scheherazade for Tajweed mode
+        return 'ScheherazadeNew-Regular';
       case 'indo-pak':
         return 'NooreHuda-Regular';
       default:
-        return Platform.select({
-          ios: 'Arial, Helvetica Neue, Helvetica', // iOS has good Arabic support with these fonts
-          android: 'Roboto, Noto Sans Arabic, Arial', // Android's fonts with good Arabic support
-          default: 'Arial, Helvetica, sans-serif' // Fallback for other platforms
-        });
+        return 'UthmanTaha-Ver10';
     }
   };
 
@@ -218,70 +244,79 @@ export default function ReadScreen() {
   };
   
   const loadInitialVerses = useCallback(async (surah: any) => {
-    setIsLoading(true);
-    setLoadingError(null);
-    clearError();
-    setTotalVersesInSurah(surah.versesCount);
-    
-    try {
-      console.log(`Loading initial verses for surah ${surah.id} (${surah.name})`);
+    const lockKey = `surah_${surah.id}_${translationLanguage}`;
+    if (loadingLocks.has(lockKey)) return loadingLocks.get(lockKey);
+
+    const loadPromise = (async () => {
+      setIsLoading(true);
+      setLoadingError(null);
+      clearError();
+      setTotalVersesInSurah(surah.versesCount);
       
-      // Check if we have cached verses for this surah
-      const cachedData = getCachedSurahVerses(surah.id, translationLanguage);
-      const savedState = surahLoadingState.get(`surah_${surah.id}_${translationLanguage}`);
-      
-      if (cachedData.verses.length > 0) {
-        // Use cached verses
-        console.log(`Found ${cachedData.verses.length} cached verses for surah ${surah.id}`);
-        setVerses(cachedData.verses);
-        setLastReadVerse(cachedData.verses[0]);
+      try {
+        console.log(`Loading initial verses for surah ${surah.id} (${surah.name})`);
         
-        // Restore loading state
-        if (savedState) {
-          setCurrentPage(savedState.currentPage);
-          setHasMoreVerses(savedState.hasMore);
-        } else {
-          setCurrentPage(cachedData.maxPage);
-          setHasMoreVerses(cachedData.verses.length < surah.versesCount);
-        }
-      } else {
-        // No cache, load from API
-        setCurrentPage(1);
-        setHasMoreVerses(true);
+        // Check if we have cached verses for this surah
+        const cachedData = getCachedSurahVerses(surah.id, translationLanguage);
+        const savedState = surahLoadingState.get(`surah_${surah.id}_${translationLanguage}`);
         
-        const { verses: fetchedVerses, total } = await fetchVersesBySurah(
-          surah.id,
-          1,
-          getDynamicBatchSize(surah.versesCount, true),
-          translationLanguage
-        );
-        
-        if (fetchedVerses.length > 0) {
-          // Cache the fetched verses
-          verseCache.set(getCacheKey(surah.id, 1, translationLanguage), fetchedVerses);
+        if (cachedData.verses.length > 0) {
+          // Use cached verses
+          console.log(`Found ${cachedData.verses.length} cached verses for surah ${surah.id}`);
+          setVerses(cachedData.verses);
+          setLastReadVerse(cachedData.verses[0]);
           
-          setVerses(fetchedVerses);
-          setLastReadVerse(fetchedVerses[0]);
-          setHasMoreVerses(fetchedVerses.length < total);
-          
-          // Save loading state
-          surahLoadingState.set(`surah_${surah.id}_${translationLanguage}`, {
-            currentPage: 1,
-            hasMore: fetchedVerses.length < total,
-            totalVerses: total
-          });
+          // Restore loading state
+          if (savedState) {
+            setCurrentPage(savedState.currentPage);
+            setHasMoreVerses(savedState.hasMore);
+          } else {
+            setCurrentPage(cachedData.maxPage);
+            setHasMoreVerses(cachedData.verses.length < surah.versesCount);
+          }
         } else {
-          setLoadingError(`Failed to load verses for ${surah.name}. Please check your internet connection.`);
+          // No cache, load from API
+          setCurrentPage(1);
+          setHasMoreVerses(true);
+          
+          const { verses: fetchedVerses, total } = await fetchVersesBySurah(
+            surah.id,
+            1,
+            getDynamicBatchSize(surah.versesCount, true),
+            translationLanguage
+          );
+          
+          if (fetchedVerses.length > 0) {
+            // Cache the fetched verses with LRU
+            setCacheWithLimit(getCacheKey(surah.id, 1, translationLanguage), fetchedVerses);
+            
+            setVerses(fetchedVerses);
+            setLastReadVerse(fetchedVerses[0]);
+            setHasMoreVerses(fetchedVerses.length < total);
+            
+            // Save loading state
+            surahLoadingState.set(`surah_${surah.id}_${translationLanguage}`, {
+              currentPage: 1,
+              hasMore: fetchedVerses.length < total,
+              totalVerses: total
+            });
+          } else {
+            setLoadingError(`Failed to load verses for ${surah.name}. Please check your internet connection.`);
+          }
         }
+      } catch (err) {
+        console.error('Failed to load verses:', err);
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+        setLoadingError(`Failed to load verses for ${surah.name}. ${errorMessage}`);
+        setVerses([]);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err) {
-      console.error('Failed to load verses:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
-      setLoadingError(`Failed to load verses for ${surah.name}. ${errorMessage}`);
-      setVerses([]);
-    } finally {
-      setIsLoading(false);
-    }
+    })();
+
+    loadingLocks.set(lockKey, loadPromise);
+    try { await loadPromise; } finally { loadingLocks.delete(lockKey); }
+    return loadPromise;
   }, [clearError, setLastReadVerse, translationLanguage]);
 
   const loadMoreVerses = useCallback(async () => {
@@ -300,6 +335,8 @@ export default function ReadScreen() {
       if (verseCache.has(cacheKey)) {
         // Use cached verses
         fetchedVerses = verseCache.get(cacheKey)!;
+        // touch for LRU
+        (function(){ const idx = cacheAccessOrder.indexOf(cacheKey); if (idx !== -1) { cacheAccessOrder.splice(idx,1); cacheAccessOrder.push(cacheKey); } })();
         console.log(`Using cached page ${nextPage} for surah ${selectedSurah.id}`);
       } else {
         // Fetch from API
@@ -313,7 +350,7 @@ export default function ReadScreen() {
         
         // Cache the fetched verses
         if (fetchedVerses.length > 0) {
-          verseCache.set(cacheKey, fetchedVerses);
+          setCacheWithLimit(cacheKey, fetchedVerses);
         }
       }
       
@@ -349,6 +386,10 @@ export default function ReadScreen() {
   }, [selectedSurah, currentPage, isLoadingMore, hasMoreVerses, verses.length, totalVersesInSurah, translationLanguage]);
 
   const handleSurahPress = (surah: any) => {
+    // Save current scroll position before navigating
+    surahListRef.current?.getScrollableNode?.()?.scrollTop && 
+      (scrollOffsetRef.current = surahListRef.current.getScrollableNode().scrollTop || 0);
+    
     // In-place navigation: select surah and load verses without leaving tab context
     setSelectedSurah(surah);
     setLastViewedSurahId(surah.id);
@@ -363,6 +404,7 @@ export default function ReadScreen() {
   const handleBackToSurahs = useCallback(() => {
     if (isNavigatingBack.current) return; // Prevent double-tap
     isNavigatingBack.current = true;
+    
     if (selectedSurah) {
       // Keep lastViewedSurahId so list can scroll to it, but suppress auto-open once
       suppressNextAutoOpen.current = true;
@@ -371,9 +413,17 @@ export default function ReadScreen() {
       setLoadingError(null);
       setCurrentPage(1);
       setHasMoreVerses(true);
+      
+      // Restore exact scroll position (no animation)
       setTimeout(() => {
+        if (surahListRef.current) {
+          surahListRef.current.scrollToOffset({ 
+            offset: scrollOffsetRef.current || 0, 
+            animated: false  // THIS STOPS THE ANIMATION
+          });
+        }
         isNavigatingBack.current = false;
-      }, 500); // Reset after animation
+      }, 50);
     } else {
       router.back();
       setTimeout(() => {
@@ -566,34 +616,96 @@ export default function ReadScreen() {
   const handleToggleSurahAudio = useCallback(async () => {
     if (!selectedSurah) return;
     try {
+      console.log('handleToggleSurahAudio called:', { isPlayingSurah, isSurahPaused });
+      
       if (isPlayingSurah) {
-        await pauseAudio();
+        console.log('Currently playing - pausing surah audio');
+        await pauseSurahAudio();
         setIsPlayingSurah(false);
+        setIsSurahPaused(true);
         return;
       }
       
-      // Use the proper surah audio URL with fallback support
-      const reciterIdentifier = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
-      const surahUrl = await generateSurahAudioUrl(reciterIdentifier, selectedSurah.id);
-      surahAudioUrlRef.current = surahUrl;
+      // If paused, resume instead of starting new
+      if (isSurahPaused) {
+        console.log('Currently paused - resuming surah audio');
+        await resumeSurahAudio();
+        setIsPlayingSurah(true);
+        setIsSurahPaused(false);
+        return;
+      }
       
-      await playSurahAudioWithFallback(selectedSurah.id, 1, (status) => {
-        if (status?.didJustFinish || status?.isPlaying === false) {
+      console.log('Starting new surah audio playback for surah:', selectedSurah.id);
+      
+      // Use the playSurah function with proper callback
+      await playSurahAudioWithFallback(selectedSurah.id, 1, (status: any) => {
+        console.log('Surah audio status update:', status);
+        
+        // Handle when audio finishes completely
+        if (status?.didJustFinish) {
+          console.log('Surah playback finished');
           setIsPlayingSurah(false);
+          setIsSurahPaused(false);
+          return;
         }
+        
+        // Handle when audio starts playing or resumes
+        if (status?.isPlaying === true) {
+          console.log('Surah playback started/resumed');
+          setIsPlayingSurah(true);
+          setIsSurahPaused(false);
+          return;
+        }
+        
+        // Only handle pause/stop if we explicitly know it's paused
+        if (status?.isPaused === true && status?.isPlaying === false) {
+          console.log('Surah playback paused');
+          setIsPlayingSurah(false);
+          setIsSurahPaused(true);
+          return;
+        }
+        
+        // Handle errors
         if (status?.error) {
+          console.error('Surah playback error:', status.error);
           setIsPlayingSurah(false);
+          setIsSurahPaused(false);
         }
+        
+        // Log fallback usage
         if (status?.fallbackUsed) {
           console.log('Using fallback reciter for surah audio');
         }
       });
+      
+      // Set playing state immediately after starting
       setIsPlayingSurah(true);
+      setIsSurahPaused(false);
+      console.log('Surah audio started successfully');
     } catch (e) {
       console.error('Surah audio playback failed:', e);
       setIsPlayingSurah(false);
+      setIsSurahPaused(false);
     }
-  }, [selectedSurah, isPlayingSurah]);
+  }, [selectedSurah, isPlayingSurah, isSurahPaused]);
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      try { pauseAudio(); } catch {}
+      try { pauseSurahAudio(); } catch {}
+    };
+  }, []);
+
+  // Pause surah audio when switching to another surah
+  useEffect(() => {
+    if (!selectedSurah) return;
+    (async () => {
+      try { await pauseSurahAudio(); } catch {}
+      setIsPlayingSurah(false);
+      setIsSurahPaused(false);
+    })();
+  }, [selectedSurah?.id]);
 
   const renderVerse = ({ item: verse }: { item: Verse }) => (
     <VerseItem
@@ -782,16 +894,9 @@ export default function ReadScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!selectedSurah && surahListRef.current && lastViewedSurahId) {
-      const index = filteredSurahs.findIndex(s => s.id === lastViewedSurahId);
-      if (index >= 0) {
-        setTimeout(() => {
-          surahListRef.current?.scrollToIndex({ index, animated: true });
-        }, 300);
-      }
-    }
-  }, [selectedSurah, filteredSurahs, lastViewedSurahId]);
+
+
+
     
     // On mount, if lastViewedSurahId is set, open that surah directly
   useEffect(() => {
@@ -817,57 +922,31 @@ export default function ReadScreen() {
       setHasMoreVerses(true);
       loadInitialVerses(selectedSurah);
     }
-  }, [translationLanguage]);
+  }, [translationLanguage, selectedSurah, loadInitialVerses]);
 
-  // Smart re-fetch when switching to Tajweed mode
+  // Consolidated font/tajweed cache invalidation and conditional refetch
   useEffect(() => {
-    if (selectedSurah && arabicFont === 'tajweed') {
-      // Only re-fetch if we don't already have Tajweed text for the current verses
-      const hasTajweedText = verses.length > 0 && verses.every(verse => verse.tajweedText);
-      
-      if (!hasTajweedText) {
-        console.log('Switching to Tajweed mode - re-fetching verses with Tajweed text');
-        clearSurahCache(selectedSurah.id, translationLanguage);
-        setVerses([]);
-        setCurrentPage(1);
-        setHasMoreVerses(true);
-        loadInitialVerses(selectedSurah);
-      }
-    }
-  }, [arabicFont, selectedSurah, translationLanguage, clearSurahCache]);
-
-  // Smart re-fetch when switching away from Tajweed mode
-  useEffect(() => {
-    if (selectedSurah && arabicFont !== 'tajweed') {
-      // Only re-fetch if we currently have Tajweed text but need regular Arabic
-      const hasTajweedText = verses.length > 0 && verses.some(verse => verse.tajweedText);
-      
-      if (hasTajweedText) {
-        console.log('Switching away from Tajweed mode - re-fetching verses with regular Arabic text');
-        clearSurahCache(selectedSurah.id, translationLanguage);
-        setVerses([]);
-        setCurrentPage(1);
-        setHasMoreVerses(true);
-        loadInitialVerses(selectedSurah);
-      }
-    }
-  }, [arabicFont, selectedSurah, translationLanguage, clearSurahCache]);
-
-  // Clear cache when arabicFont changes (for any font change)
-  useEffect(() => {
-    if (selectedSurah) {
-      // Clear cache to ensure fresh data with new font settings
-      clearSurahCache(selectedSurah.id, translationLanguage);
-    } else {
-      // If no surah is selected, clear all caches for the current language
-      // This ensures that when user opens a surah later, they get fresh data
+    if (!selectedSurah) {
       for (const [key] of verseCache.entries()) {
         if (key.includes(`_${translationLanguage}_`)) {
           verseCache.delete(key);
+          removeKeyFromOrder(key);
         }
       }
+      return;
     }
-  }, [arabicFont, selectedSurah, translationLanguage, clearSurahCache]);
+    const hasVerses = verses.length > 0;
+    const hasTajweedText = hasVerses && verses.every(v => !!(v as any).tajweedText);
+    const shouldUseTajweed = arabicFont === 'tajweed';
+    const needsRefetch = (shouldUseTajweed && !hasTajweedText) || (!shouldUseTajweed && hasTajweedText);
+    if (needsRefetch) {
+      clearSurahCache(selectedSurah.id, translationLanguage);
+      setVerses([]);
+      setCurrentPage(1);
+      setHasMoreVerses(true);
+      loadInitialVerses(selectedSurah);
+    }
+  }, [arabicFont, selectedSurah, translationLanguage, verses, clearSurahCache, loadInitialVerses]);
 
   // Handle deep-link style params from Home: open surah and optionally scroll to verse
   useEffect(() => {
@@ -938,7 +1017,8 @@ export default function ReadScreen() {
               <Text style={[styles.headerSubtitle, { 
                 fontFamily: getArabicFontFamily(),
                 fontSize: fontSizeArabic * 0.9,
-                lineHeight: fontSizeArabic * 1.4
+                lineHeight: fontSizeArabic * 1.4,
+                letterSpacing: -0.2,
               }]}>{selectedSurah.arabicName}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
                 <Text style={{
@@ -1089,10 +1169,11 @@ export default function ReadScreen() {
               keyExtractor={(item) => item.id.toString()}
               contentContainerStyle={[styles.surahListContent, { backgroundColor: '#1a1a1a' }]}
               style={{ backgroundColor: '#1a1a1a' }}
-              getItemLayout={(_data, index) => ({ length: 76, offset: 76 * index, index })}
-              onScrollToIndexFailed={({ index }) => {
-                setTimeout(() => { surahListRef.current?.scrollToIndex({ index, animated: true }); }, 500);
+              onScroll={(e) => {
+                // Track scroll position without state updates
+                scrollOffsetRef.current = e.nativeEvent.contentOffset.y;
               }}
+              scrollEventThrottle={400} // Only update every 400ms to avoid performance issues
             />
           ) : (
             <JuzMemorization />
@@ -1109,7 +1190,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a1a',
   },
   headerContainer: {
-    paddingTop: 44,
+    paddingTop: 12,
     paddingBottom: 12,
     paddingHorizontal: 16,
     backgroundColor: '#1a1a1a',
