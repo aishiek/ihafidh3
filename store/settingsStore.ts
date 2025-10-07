@@ -8,7 +8,7 @@ export type PlaybackSpeed = 0.5 | 0.75 | 1 | 1.25 | 1.5 | 1.75 | 2 | 2.5 | 3 | 3
 
 export const DEFAULT_PLAYBACK_SPEED: PlaybackSpeed = 1;
 
-export const PLAYBACK_SPEED_OPTIONS: PlaybackSpeed[] = [1, 1.25];
+export const PLAYBACK_SPEED_OPTIONS: PlaybackSpeed[] = [0.5, 0.75, 1, 1.25];
 
 interface SettingsState extends AppSettings {
   userName: string;
