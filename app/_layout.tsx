@@ -1,4 +1,6 @@
 import { FastingCalendarProvider } from '@/components/fasting/context/FastingCalendarContext';
+import { initDatabase, logBasicStats, runIntegrityCheck } from '@/database/QuranDatabase';
+import { initializeAudio } from '@/utils/audioUtils';
 import { initGlobalErrorHandlers } from '@/utils/globalErrorHandlers';
 import { runTurboModuleProbe } from '@/utils/turboModuleProbe';
 import * as Font from 'expo-font';
@@ -6,7 +8,6 @@ import { Stack } from 'expo-router';
 import React, { Component, ReactNode } from 'react';
 import { ActivityIndicator, AppState, AppStateStatus, Platform, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { closeDatabase, initDatabase, logBasicStats, runIntegrityCheck } from '@/database/QuranDatabase';
 import { initPersistenceGuard } from '../utils/persistenceGuard';
 
 // Initialize global handlers ASAP
@@ -122,6 +123,11 @@ export default function RootLayout() {
     }, 4000);
     return () => { mounted = false; clearTimeout(to); };
   }, [fontsLoaded]);
+
+  // Initialize audio session early to honor iOS background audio settings
+  React.useEffect(() => {
+    initializeAudio().catch(e => console.log('[audio] init failed', e));
+  }, []);
 
   React.useEffect(() => {
     // Kick off probe shortly after mount (non-blocking)

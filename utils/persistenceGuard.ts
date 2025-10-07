@@ -1,6 +1,6 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useProgressStore } from '@/store/progressStore';
 import { useActivityStore } from '@/store/activityStore';
+import { useProgressStore } from '@/store/progressStore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Simple persistence guard that snapshots critical stores and restores if they are unexpectedly empty.
 // This is a defensive layer against rare storage wipes or migrations gone wrong.

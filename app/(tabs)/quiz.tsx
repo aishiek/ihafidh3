@@ -4,13 +4,13 @@ import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
 import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
-import { useThemeColor } from '@/utils/useThemeColor';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
+import { useThemeColor } from '@/utils/useThemeColor';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { Brain, CheckCircle, Eye, Target, X } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 interface QuizVerse {
   verseId: number;
@@ -93,6 +93,7 @@ export default function QuizScreen() {
     }
   });
   const [showCelebration, setShowCelebration] = useState(false);
+  const [showSpecificModal, setShowSpecificModal] = useState(false);
 
   const router = useRouter();
   const quranStore = useQuranStore();
@@ -303,6 +304,79 @@ export default function QuizScreen() {
     }
   };
 
+  // Generate quiz for a specific surah
+  const generateQuizForSurah = async (surahId: number) => {
+    try {
+      const surah = surahsData.find(s => s.id === surahId);
+      if (!surah) {
+        Alert.alert('Invalid Surah', 'Please choose a valid surah.');
+        return;
+      }
+
+      setLoading(true);
+      setShowSpecificModal(false);
+
+      // Decide how many verses to quiz
+      const minVerses = 3;
+      const baseMaxVerses = surah.versesCount >= 50 ? 50 : 25;
+      const maxVerses = Math.min(baseMaxVerses, surah.versesCount);
+      const numVersesToQuiz = Math.max(minVerses, Math.floor(Math.random() * (maxVerses - minVerses + 1)) + minVerses);
+      const boundedNum = Math.min(numVersesToQuiz, surah.versesCount); // safety bound
+
+      // Random start so that the segment is continuous
+      const maxStartPoint = Math.max(1, surah.versesCount - boundedNum + 1);
+      const startVerse = Math.floor(Math.random() * maxStartPoint) + 1;
+      const selectedVerseNumbers = Array.from({ length: boundedNum }, (_, i) => startVerse + i);
+
+      // Fetch verse data similar to random quiz
+      const verses: QuizVerse[] = [];
+      for (const verseNumber of selectedVerseNumbers) {
+        try {
+          const page = Math.ceil(verseNumber / 10);
+          const verseData = await quranStore.fetchVersesBySurah(surah.id, page, 10);
+          const verse = verseData.find((v: any) => v.verseNumber === verseNumber);
+          if (verse) {
+            verses.push({
+              verseId: getVerseId(surah.id, verseNumber),
+              verseNumber,
+              surahId: surah.id,
+              surahName: surah.name,
+              surahArabicName: surah.arabicName,
+              arabicText: verse.arabicText,
+              translation: verse.translation
+            });
+          }
+        } catch (e) {
+          console.error(`Error fetching verse ${verseNumber} for surah ${surah.id}:`, e);
+        }
+      }
+
+      if (verses.length === 0) {
+        Alert.alert('Error', 'Failed to load verses. Please try again.');
+        return;
+      }
+
+      const verseAnswers: Record<number, 'correct' | 'incorrect' | null> = {};
+      verses.forEach(v => { verseAnswers[v.verseNumber] = null; });
+
+      setCurrentQuiz({
+        surahName: surah.name,
+        surahArabicName: surah.arabicName,
+        surahId: surah.id,
+        verses,
+        verseAnswers,
+        showingAnswer: false,
+        startTime: new Date()
+      });
+      setQuizCompleted(false);
+    } catch (error) {
+      console.error('Error generating specific quiz:', error);
+      Alert.alert('Error', 'Failed to generate specific quiz. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const markVerse = (verseId: string, status: 'correct' | 'incorrect') => {
     setCurrentQuiz(prev => {
       if (!prev) return prev;
@@ -372,6 +446,11 @@ export default function QuizScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: '#1a1a1a' }]}>
+      <SpecificSurahPicker
+        visible={showSpecificModal}
+        onClose={() => setShowSpecificModal(false)}
+        onPick={(sid) => generateQuizForSurah(sid)}
+      />
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#4CAF50" />
@@ -597,10 +676,19 @@ export default function QuizScreen() {
               ) : (
                 <View style={styles.noQuizzesCard}>
                   <Text style={styles.noQuizzesText}>
-                    Fully memorize at least one surah to unlock quizzes!
+                    Fully memorize at least one surah to unlock random quizzes.
                   </Text>
                 </View>
               )}
+
+              {/* Start Specific Quiz (always available) */}
+              <Pressable
+                style={[styles.startQuizButton, { backgroundColor: '#6A5ACD', marginTop: 12 }]}
+                onPress={() => setShowSpecificModal(true)}
+              >
+                <Target size={24} color="#ffffff" />
+                <Text style={styles.startQuizText}>Start Specific Quiz</Text>
+              </Pressable>
             </View>
           </ScrollView>
         </View>
@@ -930,3 +1018,89 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+// Specific Surah Picker Modal
+export function SpecificSurahPicker({
+  visible,
+  onClose,
+  onPick,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onPick: (surahId: number) => void;
+}) {
+  const { primary } = useThemeColor();
+  const [query, setQuery] = React.useState('');
+  const filtered = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return surahsData;
+    return surahsData.filter(s =>
+      s.name.toLowerCase().includes(q) ||
+      s.englishName.toLowerCase().includes(q)
+    );
+  }, [query]);
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}>
+        <View style={{ backgroundColor: '#1a1a1a', borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: '70%' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#333' }}>
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>Choose a Surah</Text>
+            <Pressable onPress={onClose} style={{ padding: 8 }}>
+              <X size={20} color="#fff" />
+            </Pressable>
+          </View>
+          {/* Search Input */}
+          <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+            <Text style={{ color: '#bbb', fontSize: 12, marginBottom: 6 }}>Surah Name</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#2a2a2a', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 }}>
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Type to filter…"
+                placeholderTextColor="#777"
+                style={{ flex: 1, color: '#fff', fontSize: 14 }}
+                autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="search"
+              />
+              {query.length > 0 && (
+                <Pressable onPress={() => setQuery('')} hitSlop={8} style={{ marginLeft: 8 }}>
+                  <X size={16} color="#aaa" />
+                </Pressable>
+              )}
+            </View>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 12, paddingTop: 8 }}>
+            {filtered.length === 0 && (
+              <Text style={{ color: '#888', fontSize: 13, textAlign: 'center', paddingVertical: 16 }}>No matching surahs</Text>
+            )}
+            {filtered.map(s => (
+              <TouchableOpacity
+                key={s.id}
+                onPress={() => onPick(s.id)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: 12,
+                  borderRadius: 8,
+                  backgroundColor: '#2a2a2a',
+                  marginBottom: 8,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={{ color: primary, fontWeight: '700', width: 28 }}>{s.id}</Text>
+                  <View style={{ marginLeft: 8 }}>
+                    <Text style={{ color: '#fff', fontWeight: '600' }}>{s.name}</Text>
+                    <Text style={{ color: '#888', fontSize: 12 }}>{s.englishName}</Text>
+                  </View>
+                </View>
+                <Text style={{ color: '#888', fontSize: 12 }}>{s.versesCount} verses</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}

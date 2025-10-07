@@ -11,9 +11,9 @@ import { pauseAudio, pauseSurahAudio, playAudio, playSurahAudioWithFallback, res
 import { useCustomColors } from '@/utils/themeUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ArrowLeft, CheckCircle, Pause, Play, RefreshCw, Search } from 'lucide-react-native';
+import { ArrowLeft, CheckCircle, Pause, Play, RefreshCw, Search, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, InteractionManager, Modal, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, InteractionManager, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View, ViewStyle } from 'react-native';
 
 // Dynamic batch size based on surah length
 const getDynamicBatchSize = (surahVerseCount: number, isInitial: boolean = false) => {
@@ -119,6 +119,89 @@ export default function ReadScreen() {
   const lastViewedSurahId = useQuranStore(state => state.lastViewedSurahId);
   const { autoPlayAudio, translationLanguage, arabicFont, fontSizeArabic } = useSettingsStore();
 
+  // ✅ OPTIMIZED: Stable callback references
+  const isVerseMemorizedCallback = useCallback((verseId: number) => {
+    return memorizedVerses.includes(verseId);
+  }, [memorizedVerses]);
+
+  const isVerseRevisedCallback = useCallback((verseId: number) => {
+    return revisedVerses.some(revised => revised.verseId === verseId);
+  }, [revisedVerses]);
+
+  const handleVerseMemorizeToggle = useCallback((verseId: number) => {
+    if (memorizedVerses.includes(verseId)) {
+      unmarkVerseAsMemorized(verseId);
+    } else {
+      markVerseAsMemorized(verseId);
+    }
+  }, [memorizedVerses, unmarkVerseAsMemorized, markVerseAsMemorized]);
+
+  const handleVerseRevisionToggle = useCallback((verseId: number) => {
+    const isRevised = revisedVerses.some(rv => rv.verseId === verseId);
+    if (isRevised) {
+      useProgressStore.setState((state) => ({
+        revisedVerses: state.revisedVerses.filter((rv) => rv.verseId !== verseId),
+        dailyRevisedVerses: state.dailyRevisedVerses.filter((rv) => rv.verseId !== verseId),
+        weeklyRevisedVerses: state.weeklyRevisedVerses.filter((rv) => rv.verseId !== verseId),
+      }));
+    } else {
+      markVerseAsRevised(verseId);
+    }
+  }, [revisedVerses, markVerseAsRevised]);
+
+  const handleVersePlayAudio = useCallback(async (verse: Verse) => {
+    try {
+      if (isPlayingAudio) {
+        await pauseAudio();
+        setIsPlayingAudio(false);
+      } else {
+        if (verse.audioUrl) {
+          await playAudio(
+            verse.audioUrl,
+            autoPlayAudio ? 1 : 0,
+            (status) => {
+              if (status.isPlaying === false && !status.didJustFinish) {
+                setIsPlayingAudio(false);
+              }
+            }
+          );
+          setIsPlayingAudio(true);
+        } else {
+          Alert.alert(
+            "Audio Not Available",
+            "Audio is not available for this verse.",
+            [{ text: "OK" }]
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Audio playback error:', error);
+      Alert.alert(
+        "Playback Error",
+        "Failed to play audio. Please try again.",
+        [{ text: "OK" }]
+      );
+      setIsPlayingAudio(false);
+    }
+  }, [isPlayingAudio, autoPlayAudio]);
+
+  // ✅ OPTIMIZED: Memoized renderVerse with stable props (used in FlatList at line 1155)
+  const renderVerseOptimized = useCallback(({ item: verse }: { item: Verse }) => (
+    <VerseItem
+      verse={verse}
+      isMemorized={isVerseMemorizedCallback}
+      isRevised={isVerseRevisedCallback}
+      onMemorizeToggle={handleVerseMemorizeToggle}
+      onRevisionToggle={handleVerseRevisionToggle}
+      onPlayAudio={handleVersePlayAudio}
+    />
+  ), [
+    isVerseMemorizedCallback,
+    isVerseRevisedCallback,
+    handleVerseMemorizeToggle,
+    handleVerseRevisionToggle,
+    handleVersePlayAudio
+  ]);
   const surahListRef = useRef<FlatList>(null);
   const versesListRef = useRef<FlatList<Verse>>(null);
   const targetVerseRef = useRef<number | null>(null);
@@ -432,14 +515,6 @@ export default function ReadScreen() {
     }
   }, [selectedSurah, router]);
 
-  const isVerseMemorized = (verseId: number) => {
-    return memorizedVerses.includes(verseId);
-  };
-
-  const isVerseRevised = (verseId: number) => {
-    return revisedVerses.some(revised => revised.verseId === verseId);
-  };
-
   // Handle marking all verses as memorized or unmarking them (work on ALL verses in surah)
   const handleMarkAllMemorized = async () => {
     if (!selectedSurah) return;
@@ -576,41 +651,6 @@ export default function ReadScreen() {
     });
   };
 
-  const handlePlayAudio = async (verse: Verse) => {
-    try {
-      if (isPlayingAudio) {
-        await pauseAudio();
-        setIsPlayingAudio(false);
-      } else {
-        if (verse.audioUrl) {
-          await playAudio(
-            verse.audioUrl,
-            autoPlayAudio ? 1 : 0,
-            (status) => {
-              if (status.isPlaying === false && !status.didJustFinish) {
-                setIsPlayingAudio(false);
-              }
-            }
-          );
-          setIsPlayingAudio(true);
-        } else {
-          Alert.alert(
-            "Audio Not Available",
-            "Audio is not available for this verse.",
-            [{ text: "OK" }]
-          );
-      }
-      }
-    } catch (error) {
-      console.error('Audio playback error:', error);
-      Alert.alert(
-        "Playback Error",
-        "Failed to play audio. Please try again.",
-        [{ text: "OK" }]
-      );
-      setIsPlayingAudio(false);
-    }
-  };
   
   // Full Surah audio (single continuous stream via islamic.network high quality)
   const handleToggleSurahAudio = useCallback(async () => {
@@ -689,11 +729,10 @@ export default function ReadScreen() {
     }
   }, [selectedSurah, isPlayingSurah, isSurahPaused]);
 
-  // Cleanup audio on unmount
+  // Cleanup behavior: don't force-pause on unmount to allow iOS background playback
   useEffect(() => {
     return () => {
-      try { pauseAudio(); } catch {}
-      try { pauseSurahAudio(); } catch {}
+      // Intentionally not forcing pause here; background playback should continue
     };
   }, []);
 
@@ -707,33 +746,8 @@ export default function ReadScreen() {
     })();
   }, [selectedSurah?.id]);
 
-  const renderVerse = ({ item: verse }: { item: Verse }) => (
-    <VerseItem
-      verse={verse}
-      isMemorized={() => isVerseMemorized(verse.id)}
-      isRevised={() => isVerseRevised(verse.id)}
-      onMemorizeToggle={() => {
-        if (isVerseMemorized(verse.id)) {
-          unmarkVerseAsMemorized(verse.id);
-        } else {
-          markVerseAsMemorized(verse.id);
-        }
-      }}
-      onRevisionToggle={() => {
-        if (isVerseRevised(verse.id)) {
-          // Remove from revised verses
-          useProgressStore.setState((state) => ({
-            revisedVerses: state.revisedVerses.filter((rv) => rv.verseId !== verse.id),
-            dailyRevisedVerses: state.dailyRevisedVerses.filter((rv) => rv.verseId !== verse.id),
-            weeklyRevisedVerses: state.weeklyRevisedVerses.filter((rv) => rv.verseId !== verse.id),
-          }));
-        } else {
-          markVerseAsRevised(verse.id);
-        }
-      }}
-      onPlayAudio={() => handlePlayAudio(verse)}
-    />
-  );
+  // Old renderVerse removed - now using optimized version above
+  // renderVerseOptimized is defined with stable callback references above
 
   const formatDate = (date: Date) => {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1110,6 +1124,15 @@ export default function ReadScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
               />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => setSearchQuery('')}
+                  style={styles.clearButton}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <X size={18} color="#888888" />
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </>
@@ -1139,8 +1162,8 @@ export default function ReadScreen() {
               <FlatList
                 ref={versesListRef}
                 data={verses}
-                renderItem={renderVerse}
-                keyExtractor={(item, index) => `verse-${item.id}-${item.verseNumber}-${index}`}
+                renderItem={renderVerseOptimized}
+                keyExtractor={(item, index) => `verse-${item.id}-${index}`}
                 contentContainerStyle={[styles.versesContent, { backgroundColor: '#1a1a1a' }]}
                 onEndReached={loadMoreVerses}
                 onEndReachedThreshold={0.5}
@@ -1148,9 +1171,10 @@ export default function ReadScreen() {
                 ListEmptyComponent={renderEmpty}
                 showsVerticalScrollIndicator={true}
                 removeClippedSubviews={true}
-                maxToRenderPerBatch={3}
-                windowSize={8}
-                initialNumToRender={getDynamicBatchSize(selectedSurah.versesCount, true)}
+                maxToRenderPerBatch={5}
+                windowSize={5}
+                initialNumToRender={5}
+                updateCellsBatchingPeriod={50}
                 style={{ backgroundColor: '#1a1a1a' }}
                 onScrollToIndexFailed={({ index }) => {
                   setTimeout(() => {
@@ -1406,6 +1430,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     paddingVertical: 8,
     color: '#ffffff',
+  },
+  clearButton: {
+    marginLeft: 8,
+    padding: 2,
   },
   tabButton: {
     paddingVertical: 8,

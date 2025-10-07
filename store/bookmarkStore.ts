@@ -1,6 +1,6 @@
-import { create } from 'zustand';
 import * as SQLite from 'expo-sqlite';
 import { Platform } from 'react-native';
+import { create } from 'zustand';
 
 export interface BookmarkItem {
   id?: number; // row id (autoincrement)

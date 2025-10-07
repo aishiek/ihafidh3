@@ -1,23 +1,23 @@
+import { useBookmarkStore } from '@/store/bookmarkStore';
 import { useProgressStore } from '@/store/progressStore';
 import { PLAYBACK_SPEED_OPTIONS, useSettingsStore, type PlaybackSpeed } from '@/store/settingsStore';
 import { Verse } from '@/types';
 import { pauseAudio, playVerseWithOptionalBismillah, setPlaybackSpeed, type AudioStatus } from '@/utils/audioUtils';
 import { getArabicFontFamily } from '@/utils/fontUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
-import { Infinity as InfinityIcon, Pause, Play, Repeat, Bookmark as BookmarkIcon } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { useBookmarkStore } from '@/store/bookmarkStore';
+import { Bookmark as BookmarkIcon, Infinity as InfinityIcon, Pause, Play, Repeat } from 'lucide-react-native';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import TajweedVerse from 'rn-tajweed-verse';
 
 interface VerseItemProps {
   verse: Verse;
-  isMemorized: () => boolean;
-  isRevised: () => boolean;
-  onMemorizeToggle: () => void;
-  onRevisionToggle: () => void;
-  onPlayAudio: () => void;
+  isMemorized: (verseId: number) => boolean;
+  isRevised: (verseId: number) => boolean;
+  onMemorizeToggle: (verseId: number) => void;
+  onRevisionToggle: (verseId: number) => void;
+  onPlayAudio: (verse: Verse) => void;
 }
 
 const VerseItem = ({
@@ -83,11 +83,15 @@ const VerseItem = ({
   }, [revisedVerses, verse.id]);
 
   useEffect(() => {
-    setMemorized(isMemorized());
-    setRevised(isRevised());
+    // Only sync from store state, not from function calls that might be stale
+    const storeMemorized = persistedMemDate !== null;
+    const storeRevised = persistedRevDate !== null;
+    
+    setMemorized(storeMemorized);
+    setRevised(storeRevised);
     setMemorizedDateLocal(toPrettyDate(persistedMemDate));
     setRevisedDateLocal(toPrettyDate(persistedRevDate));
-  }, [verse, isMemorized, isRevised, persistedMemDate, persistedRevDate, toPrettyDate]);
+  }, [verse.id, persistedMemDate, persistedRevDate, toPrettyDate]);
 
   const onStatus = useCallback((status: AudioStatus) => {
     // isPlaying from the audio engine is the source of truth
@@ -170,32 +174,30 @@ const VerseItem = ({
   };
 
   const handleMarkMemorized = useCallback(() => {
-  // Update UI immediately
-  setMemorized(prev => {
-    const next = !prev;
-    setMemorizedDateLocal(next ? formatDate(new Date()) : null);
-    return next;
-  });
+    // Get current store state to make decision
+    const currentlyMemorized = persistedMemDate !== null;
+    const newMemorizedState = !currentlyMemorized;
+    
+    // Update UI immediately for responsiveness
+    setMemorized(newMemorizedState);
+    setMemorizedDateLocal(newMemorizedState ? formatDate(new Date()) : null);
 
-  // Trigger store update asynchronously to avoid blocking UI
-  setTimeout(() => {
-    onMemorizeToggle();
-  }, 0);
-}, [onMemorizeToggle]);
+    // Update store immediately (not in setTimeout to avoid race conditions)
+    onMemorizeToggle(verse.id);
+  }, [onMemorizeToggle, verse.id, persistedMemDate]);
 
 const handleMarkRevised = useCallback(() => {
-  // Update UI immediately
-  setRevised(prev => {
-    const next = !prev;
-    setRevisedDateLocal(next ? formatDate(new Date()) : null);
-    return next;
-  });
+  // Get current store state to make decision
+  const currentlyRevised = persistedRevDate !== null;
+  const newRevisedState = !currentlyRevised;
+  
+  // Update UI immediately for responsiveness
+  setRevised(newRevisedState);
+  setRevisedDateLocal(newRevisedState ? formatDate(new Date()) : null);
 
-  // Trigger store update asynchronously
-  setTimeout(() => {
-    onRevisionToggle();
-  }, 0);
-}, [onRevisionToggle]);
+  // Update store immediately (not in setTimeout to avoid race conditions)
+  onRevisionToggle(verse.id);
+}, [onRevisionToggle, verse.id, persistedRevDate]);
 
   const handlePlaybackSpeedPress = useCallback(async (speed: PlaybackSpeed) => {
     setStorePlaybackSpeed(speed);

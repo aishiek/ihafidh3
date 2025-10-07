@@ -11,8 +11,8 @@ import { calculateCurrentBadge } from '@/utils/badgeUtils';
 import { calculateJuzProgress, calculateOverallJuzStats } from '@/utils/juzCalculator';
 import { saveLastRead } from '@/utils/lastReadUtils';
 import { findVerseById } from '@/utils/verseUtils';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import {
     Award,
@@ -136,16 +136,28 @@ export default function HomeScreen() {
 
   // --- Time tracking lifecycle ---
   useEffect(() => {
-    initializeActiveTimeManager();
-    if (!sessionStartTime) startSession();
+    try {
+      initializeActiveTimeManager();
+      // Ensure a session is started when screen mounts and app is active
+      const currentState = AppState.currentState;
+      if (!sessionStartTime && currentState === 'active') {
+        startSession();
+      }
+    } catch (e) {
+      console.warn('[home] init time manager failed:', e);
+    }
     const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'active' && !sessionStartTime) startSession();
-      if (s !== 'active' && sessionStartTime) endSession();
+      try {
+        if (s === 'active' && !sessionStartTime) startSession();
+        if (s !== 'active' && sessionStartTime) endSession();
+      } catch (e) {
+        console.warn('[home] AppState handler error:', e);
+      }
     });
     return () => {
-      sub.remove();
-      if (sessionStartTime) endSession();
-      activeTimeManager?.cleanup();
+      try { sub.remove(); } catch {}
+      try { if (sessionStartTime) endSession(); } catch {}
+      try { activeTimeManager?.cleanup(); } catch {}
     };
   }, [sessionStartTime, startSession, endSession, initializeActiveTimeManager, activeTimeManager]);
 
@@ -156,6 +168,7 @@ export default function HomeScreen() {
   };
   useEffect(() => {
     const i = setInterval(() => setActiveReadingTime(getCurrentActiveTime()), 1000);
+    // Immediately reflect any active manager time to avoid showing 0 until first tick
     setActiveReadingTime(getCurrentActiveTime());
     return () => clearInterval(i);
   }, [sessionStartTime, activeTimeManager, timeSpent.total]);

@@ -1,11 +1,11 @@
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, Platform, Pressable, RefreshControl, StyleSheet, Text, TextInput, View, TouchableOpacity } from 'react-native';
+import { surahsData } from '@/data/surahs';
 import { useBookmarkStore } from '@/store/bookmarkStore';
 import { useThemeColor } from '@/utils/useThemeColor';
-import { Bookmark as BookmarkIcon, ArrowLeft, Trash2 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { surahsData } from '@/data/surahs';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { ArrowLeft, Bookmark as BookmarkIcon, Trash2 } from 'lucide-react-native';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // Build a static map of surahId -> display name for fast lookup
 const SURAH_NAME_MAP = new Map<number, string>(surahsData.map(s => [s.id, s.name]));

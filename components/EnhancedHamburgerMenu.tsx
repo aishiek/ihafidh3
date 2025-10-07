@@ -4,18 +4,18 @@
  */
 
 import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
+import { useBookmarkStore } from '@/store/bookmarkStore';
 import { StateMigrationUtils, useContextAwareTheme } from '@/utils/stateManagementBridge';
+import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import {
-  Calendar,
-  MapPin,
-  Menu,
-  Moon,
-  X,
-  Bookmark as BookmarkIcon,
+    Bookmark as BookmarkIcon,
+    Calendar,
+    MapPin,
+    Menu,
+    Moon,
+    X,
 } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
-import { useBookmarkStore } from '@/store/bookmarkStore';
 import React, { useState } from 'react';
 import {
     Modal,

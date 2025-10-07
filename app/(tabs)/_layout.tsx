@@ -1,8 +1,8 @@
-import React from "react";
-import { Tabs } from "expo-router";
-import { Home, BookOpen, Brain, RefreshCw, BarChart, Settings as SettingsIcon } from "lucide-react-native";
-import { useThemeColor } from "@/utils/useThemeColor";
 import { EnhancedHamburgerMenu } from '@/components/EnhancedHamburgerMenu';
+import { useThemeColor } from "@/utils/useThemeColor";
+import { Tabs } from "expo-router";
+import { BarChart, BookOpen, Brain, Home, RefreshCw, Settings as SettingsIcon } from "lucide-react-native";
+import React from "react";
 
 export default function TabLayout() {
   const { primary } = useThemeColor();

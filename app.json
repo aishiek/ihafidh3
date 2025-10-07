@@ -47,8 +47,27 @@
         "NSPhotoLibraryAddUsageDescription": "Needed if you choose to save images from the app.",
         "NSPhotoLibraryUsageDescription": "Allows selecting or saving images related to your progress.",
         "UIBackgroundModes": [
+          "audio",
           "fetch"
         ],
+        "NSAppTransportSecurity": {
+          "NSExceptionDomains": {
+            "cdn.islamic.network": {
+              "NSExceptionAllowsInsecureHTTPLoads": false,
+              "NSIncludesSubdomains": true,
+              "NSTemporaryExceptionAllowsInsecureHTTPLoads": true,
+              "NSExceptionMinimumTLSVersion": "TLSv1.0",
+              "NSExceptionRequiresForwardSecrecy": false
+            },
+            "everyayah.com": {
+              "NSExceptionAllowsInsecureHTTPLoads": false,
+              "NSIncludesSubdomains": true,
+              "NSTemporaryExceptionAllowsInsecureHTTPLoads": true,
+              "NSExceptionMinimumTLSVersion": "TLSv1.0",
+              "NSExceptionRequiresForwardSecrecy": false
+            }
+          }
+        },
         "CFBundleAllowMixedLocalizations": true,
         "UIRequiresFullScreen": false,
         "UISupportedInterfaceOrientations": [

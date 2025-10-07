@@ -1,7 +1,7 @@
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QuranActiveTimeManager } from '@/utils/activeTimeTracker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 interface TimeSpent {
   daily: number; // seconds
@@ -42,9 +42,10 @@ interface ActivityState {
   weeklyRevisionSurahs: number[]; // surah IDs
   
   // Actions
-  initializeActiveTimeManager: () => void;
+  initializeActiveTimeManager: () => QuranActiveTimeManager | null;
   startSession: () => void;
   endSession: () => void;
+  forceClearSession: () => void;
   updateStreak: () => void;
   recordActivity: (versesRead: number) => void;
   setDailyRevisionTarget: (target: number) => void;
@@ -99,19 +100,21 @@ export const useActivityStore = create<ActivityState>()(
       
       initializeActiveTimeManager: () => {
         const state = get();
-        if (!state.activeTimeManager) {
+        if (state.activeTimeManager) return state.activeTimeManager;
+        try {
           const manager = new QuranActiveTimeManager();
           set({ activeTimeManager: manager });
+          return manager;
+        } catch (e) {
+          console.warn('[activity] Failed to init active time manager:', e);
+          return null;
         }
       },
       
       startSession: () => {
         const state = get();
-        
-        // Initialize active time manager if not exists
-        if (!state.activeTimeManager) {
-          state.initializeActiveTimeManager();
-        }
+        // Ensure manager exists and capture the instance to avoid races
+        const manager = state.activeTimeManager ?? state.initializeActiveTimeManager();
         
         const today = getTodayDate();
         const weekStart = getWeekStart();
@@ -138,9 +141,11 @@ export const useActivityStore = create<ActivityState>()(
           });
         }
         
-        // Start active time tracking
-        if (state.activeTimeManager) {
-          state.activeTimeManager.startReading();
+        // Start active time tracking (ensure manager exists now)
+        try {
+          manager?.startReading();
+        } catch (e) {
+          console.warn('[activity] startReading failed:', e);
         }
         
         set({ sessionStartTime: Date.now() });
@@ -152,14 +157,18 @@ export const useActivityStore = create<ActivityState>()(
         
         // Stop active time tracking and get the actual active time
         let activeTimeInSeconds = 0;
-        if (state.activeTimeManager) {
-          const stats = state.activeTimeManager.getStats();
-          activeTimeInSeconds = stats.totalTimeSeconds;
-          
-          // Stop the tracking and commit time to store
-          state.activeTimeManager.stopReading((timeInSeconds: number) => {
-            activeTimeInSeconds = timeInSeconds;
-          });
+        try {
+          if (state.activeTimeManager) {
+            // Read current stats just before stopping
+            const stats = state.activeTimeManager.getStats();
+            activeTimeInSeconds = stats.totalTimeSeconds;
+            // Stop the tracking and commit time to store synchronously
+            state.activeTimeManager.stopReading((timeInSeconds: number) => {
+              activeTimeInSeconds = timeInSeconds;
+            });
+          }
+        } catch (e) {
+          console.warn('[activity] endSession stop/commit failed:', e);
         }
         
         // Use active time instead of total session time
@@ -182,6 +191,14 @@ export const useActivityStore = create<ActivityState>()(
         
         // Update daily activity
         get().recordActivity(0);
+      },
+
+      // In case we detect an orphaned session on startup or error conditions
+      forceClearSession: () => {
+        const s = get();
+        if (s.sessionStartTime) {
+          set({ sessionStartTime: null });
+        }
       },
       
       updateStreak: () => {
@@ -341,8 +358,8 @@ export const useActivityStore = create<ActivityState>()(
       name: 'activity-storage',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => {
-        // Exclude activeTimeManager from persistence since it's a class instance
-        const { activeTimeManager, ...persistedState } = state;
+        // Exclude activeTimeManager (class instance) and sessionStartTime (runtime-only) from persistence
+        const { activeTimeManager, sessionStartTime, ...persistedState } = state as any;
         return persistedState;
       },
     }

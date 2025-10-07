@@ -1,11 +1,11 @@
-import React, { useMemo, useState, useCallback } from 'react';
-import { StyleSheet, Text, View, FlatList, Pressable, Modal, ActivityIndicator, TouchableOpacity } from 'react-native';
-import { useThemeColor } from '@/utils/useThemeColor';
-import { useCustomColors } from '@/utils/themeUtils';
-import { surahsData } from '@/data/surahs';
 import JUZ_MAPPING from '@/data/juzMapping';
+import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
-import { getJuzVerseRange, calculateJuzProgress } from '@/utils/juzCalculator';
+import { calculateJuzProgress, getJuzVerseRange } from '@/utils/juzCalculator';
+import { useCustomColors } from '@/utils/themeUtils';
+import { useThemeColor } from '@/utils/useThemeColor';
+import React, { useCallback, useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 function getSurahIdByName(name: string): number | null {
   const surah = surahsData.find(s => s.name === name || s.englishName === name || s.arabicName === name);
