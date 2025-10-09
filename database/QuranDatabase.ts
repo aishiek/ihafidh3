@@ -1,5 +1,6 @@
 import { surahsData } from '@/data/surahs';
 import { Surah, Verse } from '@/types';
+import { getOrSetInstallDate } from '@/utils/installDate';
 import { QueueItem } from '@/utils/WriteBackQueue';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SQLite from 'expo-sqlite';
@@ -35,6 +36,11 @@ export const initDatabase = async (): Promise<void> => {
     await applyPragmas();
     await createTables();
     await runIntegrityCheck('[init]');
+    
+    // Run backfill for existing users (will auto-skip if already done)
+    console.log('[init] Checking for activity data backfill...');
+    await backfillVerseActivitiesFromMemorization();
+    
     await logBasicStats('[init]');
     console.log('Database initialized successfully');
   } catch (error) {
@@ -95,6 +101,19 @@ const createTables = async (): Promise<void> => {
       CREATE INDEX IF NOT EXISTS idx_verses_juz ON verses(juzNumber);
       CREATE INDEX IF NOT EXISTS idx_memorization_surah ON memorization_status(surahId);
       CREATE INDEX IF NOT EXISTS idx_audio_cache_type ON audio_cache(type);
+      -- Verse activities: log every memorized or revised action with date
+      CREATE TABLE IF NOT EXISTS verse_activities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        verseId INTEGER NOT NULL,
+        surahId INTEGER NOT NULL,
+        verseNumber INTEGER NOT NULL,
+        activityType TEXT NOT NULL CHECK(activityType IN ('memorized','revised')),
+        activityDate TEXT NOT NULL,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_va_date ON verse_activities(activityDate);
+      CREATE INDEX IF NOT EXISTS idx_va_type ON verse_activities(activityType);
+      CREATE INDEX IF NOT EXISTS idx_va_verse ON verse_activities(verseId);
     `);
     console.log('Database tables and indexes created successfully');
   } catch (error) {
@@ -110,6 +129,305 @@ export const getAllSurahs = async (): Promise<Surah[]> => {
 // Get surah by ID
 export const getSurahById = async (id: number): Promise<Surah | null> => {
   return surahsData.find(s => s.id === id) || null;
+};
+
+// Compute global verse id from surah and verse number (1-indexed)
+function computeGlobalVerseId(surahId: number, verseNumber: number): number {
+  let start = 0;
+  for (let i = 1; i < surahId; i++) {
+    const s = surahsData.find(ss => ss.id === i);
+    if (s) start += s.versesCount;
+  }
+  return start + verseNumber;
+}
+
+// Parse global verse ID back to surah and verse number
+function parseGlobalVerseId(globalVerseId: number): { surahId: number; verseNumber: number } {
+  let accumulated = 0;
+  for (let i = 1; i <= 114; i++) {
+    const surah = surahsData.find(s => s.id === i);
+    if (!surah) continue;
+    
+    if (globalVerseId <= accumulated + surah.versesCount) {
+      return {
+        surahId: i,
+        verseNumber: globalVerseId - accumulated
+      };
+    }
+    accumulated += surah.versesCount;
+  }
+  return { surahId: 1, verseNumber: 1 }; // Fallback
+}
+
+// One-time backfill: create verse_activities rows for already memorized verses
+const BACKFILL_FLAG = 'va_backfill_done_v3'; // Updated flag to force re-run with better debugging
+async function backfillVerseActivitiesFromMemorization(): Promise<void> {
+  if (!db || Platform.OS === 'web') return;
+  try {
+    const done = await AsyncStorage.getItem(BACKFILL_FLAG);
+    if (done === '1') {
+      console.log('[backfill] Already completed, skipping');
+      return;
+    }
+    if (!db.getAllAsync || !db.getFirstAsync || !db.runAsync || !db.withTransactionAsync) return;
+
+    console.log('[backfill] Starting verse activities backfill...');
+    const installDate = await getOrSetInstallDate(); // YYYY-MM-DD
+    console.log('[backfill] Install date:', installDate);    // Try to read per-verse memorization dates persisted by progress store
+    let memDates: Record<number, string> = {};
+    try {
+      const raw = await AsyncStorage.getItem('progress-storage');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const maybe = parsed?.state?.memorizedVerseDates;
+        if (maybe && typeof maybe === 'object') memDates = maybe as Record<number, string>;
+      }
+    } catch {}
+
+    const rows = await db!.getAllAsync(
+      `SELECT surahId, verseNumber, isMemorized, lastReviewed
+       FROM memorization_status
+       WHERE isMemorized = 1`
+    ).catch(() => [] as any[]);
+
+    console.log(`[backfill] Found ${(rows as any[]).length} memorized verses in memorization_status`);
+
+    if (!rows || (rows as any[]).length === 0) {
+      console.log('[backfill] No memorized verses found, marking as done');
+      await AsyncStorage.setItem(BACKFILL_FLAG, '1');
+      return;
+    }
+
+    // Pre-compute per-surah completion and khatam date (latest per-verse date if available)
+    const bySurah: Record<number, number[]> = {};
+    for (const r of rows as any[]) {
+      const s = Number(r.surahId); const v = Number(r.verseNumber);
+      if (!s || !v) continue;
+      (bySurah[s] ||= []).push(v);
+    }
+    const surahKhatamDate: Record<number, string | undefined> = {};
+    for (const sIdStr of Object.keys(bySurah)) {
+      const sId = Number(sIdStr);
+      const surahMeta = surahsData.find(s => s.id === sId);
+      if (!surahMeta) continue;
+      const memCount = bySurah[sId].length;
+      if (memCount === surahMeta.versesCount) {
+        // Determine latest date among memDates for verses in this surah
+        let latest: string | undefined;
+        let latestTs = -Infinity;
+        // find the starting global id for this surah
+        let start = 0;
+        for (let i = 1; i < sId; i++) { const s = surahsData.find(ss => ss.id === i); if (s) start += s.versesCount; }
+        for (let vn = 1; vn <= surahMeta.versesCount; vn++) {
+          const gid = start + vn;
+          const ds = memDates[gid];
+          if (ds) {
+            const ts = Date.parse(ds);
+            if (!isNaN(ts) && ts > latestTs) { latestTs = ts; latest = ds; }
+          }
+        }
+        surahKhatamDate[sId] = latest; // may be undefined if no per-verse dates
+      }
+    }
+
+    await db!.withTransactionAsync(async () => {
+      let processedCount = 0;
+      let skippedCount = 0;
+      
+      for (const r of rows as any[]) {
+        const surahId = Number(r.surahId);
+        const verseNumber = Number(r.verseNumber);
+        if (!surahId || !verseNumber) continue;
+        const verseId = computeGlobalVerseId(surahId, verseNumber);
+
+        const exists = await db!.getFirstAsync(
+          `SELECT id FROM verse_activities WHERE verseId = ? AND activityType = 'memorized' LIMIT 1`,
+          [verseId]
+        ).catch(() => null as any);
+        if (exists) {
+          skippedCount++;
+          continue;
+        }
+
+        // Determine activityDate priority:
+        // 1) Per-verse memorized date from progress store
+        // 2) Surah khatam date (latest date among verses in surah)
+        // 3) lastReviewed from DB
+        // 4) Install date
+        let activityDate = memDates[verseId] || '';
+        if (!activityDate) activityDate = surahKhatamDate[surahId] || '';
+        if (!activityDate && r.lastReviewed) {
+          try {
+            const d = new Date(r.lastReviewed);
+            if (!isNaN(d.getTime())) {
+              const yyyy = d.getFullYear();
+              const mm = String(d.getMonth() + 1).padStart(2, '0');
+              const dd = String(d.getDate()).padStart(2, '0');
+              activityDate = `${yyyy}-${mm}-${dd}`;
+            }
+          } catch {}
+        }
+        if (!activityDate) activityDate = installDate;
+
+        await db!.runAsync(
+          `INSERT INTO verse_activities (verseId, surahId, verseNumber, activityType, activityDate)
+           VALUES (?, ?, ?, 'memorized', ?)`,
+          [verseId, surahId, verseNumber, activityDate]
+        ).catch(() => {});
+        
+        processedCount++;
+      }
+      
+      console.log(`[backfill] Processed ${processedCount} verses, skipped ${skippedCount} existing`);
+    });
+
+    // Verify final counts
+    const finalCount = await db!.getFirstAsync(
+      `SELECT COUNT(*) as count FROM verse_activities WHERE activityType = 'memorized'`
+    ).catch(() => ({ count: 0 }));
+    console.log(`[backfill] Final verse_activities count: ${(finalCount as any).count}`);
+
+    await AsyncStorage.setItem(BACKFILL_FLAG, '1');
+    console.log('[backfill] Backfill completed successfully');
+  } catch (e) {
+    console.warn('[sqlite] backfillVerseActivitiesFromMemorization failed', e);
+  }
+}
+
+// Debug function to check data consistency (can be called from console)
+export const debugVerseActivityCounts = async (): Promise<void> => {
+  if (!db || Platform.OS === 'web') return;
+  try {
+    const memCount = await db.getFirstAsync(
+      `SELECT COUNT(*) as count FROM memorization_status WHERE isMemorized = 1`
+    ).catch(() => ({ count: 0 }));
+    const activityCount = await db.getFirstAsync(
+      `SELECT COUNT(*) as count FROM verse_activities WHERE activityType = 'memorized'`
+    ).catch(() => ({ count: 0 }));
+    const revisionCount = await db.getFirstAsync(
+      `SELECT COUNT(*) as count FROM verse_activities WHERE activityType = 'revised'`
+    ).catch(() => ({ count: 0 }));
+    const todayCount = await db.getFirstAsync(
+      `SELECT COUNT(*) as count FROM verse_activities WHERE activityDate = ?`,
+      [fmtDate(new Date())]
+    ).catch(() => ({ count: 0 }));
+    const todayMem = await db.getFirstAsync(
+      `SELECT COUNT(*) as count FROM verse_activities WHERE activityDate = ? AND activityType = 'memorized'`,
+      [fmtDate(new Date())]
+    ).catch(() => ({ count: 0 }));
+    const todayRev = await db.getFirstAsync(
+      `SELECT COUNT(*) as count FROM verse_activities WHERE activityDate = ? AND activityType = 'revised'`,
+      [fmtDate(new Date())]
+    ).catch(() => ({ count: 0 }));
+    const recentDates = await db.getAllAsync(
+      `SELECT DISTINCT activityDate, activityType, COUNT(*) as count FROM verse_activities 
+       WHERE activityDate >= date('now', '-7 days') 
+       GROUP BY activityDate, activityType 
+       ORDER BY activityDate DESC`
+    ).catch(() => []);
+    const backfillFlag = await AsyncStorage.getItem(BACKFILL_FLAG);
+    
+    console.log('=== VERSE ACTIVITY DEBUG ===');
+    console.log('Memorized verses in memorization_status:', (memCount as any).count);
+    console.log('Memorized activities in verse_activities:', (activityCount as any).count);
+    console.log('Revision activities in verse_activities:', (revisionCount as any).count);
+    console.log('Today\'s total activities:', (todayCount as any).count);
+    console.log('Today\'s memorized activities:', (todayMem as any).count);
+    console.log('Today\'s revision activities:', (todayRev as any).count);
+    console.log('Recent activities by date:');
+    (recentDates as any[]).forEach(row => {
+      console.log(`  ${row.activityDate}: ${row.activityType} = ${row.count}`);
+    });
+    console.log('Backfill flag status:', backfillFlag);
+    console.log('Install date:', await getOrSetInstallDate());
+    console.log('Current date:', fmtDate(new Date()));
+    console.log('===========================');
+  } catch (e) {
+    console.error('Debug check failed:', e);
+  }
+};
+
+// Debug function to reset backfill flag and trigger re-run
+export const resetBackfillFlag = async (): Promise<void> => {
+  try {
+    await AsyncStorage.removeItem(BACKFILL_FLAG);
+    console.log('Backfill flag reset. Call initializeDatabase() to re-run backfill.');
+  } catch (e) {
+    console.error('Failed to reset backfill flag:', e);
+  }
+};
+
+// Force backfill to run immediately (for debugging)
+export const forceBackfillNow = async (): Promise<void> => {
+  try {
+    console.log('[force-backfill] Forcing backfill to run now...');
+    await AsyncStorage.removeItem(BACKFILL_FLAG);
+    await backfillVerseActivitiesFromMemorization();
+    console.log('[force-backfill] Backfill force-run completed');
+  } catch (e) {
+    console.error('[force-backfill] Failed:', e);
+  }
+};
+
+// Debug function to test revision activity logging
+export const testRevisionLogging = async (): Promise<void> => {
+  try {
+    console.log('Testing revision activity logging...');
+    
+    // Log a few test revisions for the first 5 verses
+    const testVerseIds = [1, 2, 3, 4, 5];
+    await bulkLogRevisions(testVerseIds);
+    
+    // Check if they were inserted
+    const count = await db?.getFirstAsync(
+      `SELECT COUNT(*) as count FROM verse_activities WHERE activityType = 'revised'`
+    ).catch(() => ({ count: 0 }));
+    
+    console.log(`Test complete. Total revision activities: ${(count as any).count}`);
+  } catch (e) {
+    console.error('Test revision logging failed:', e);
+  }
+};
+
+// Optimized bulk operation for marking multiple verses as memorized with batch activity logging
+export const bulkMarkVersesMemorized = async (verseIds: number[], isMemorized: boolean = true): Promise<void> => {
+  if (!db || Platform.OS === 'web' || verseIds.length === 0) return;
+  try {
+    const activityDate = fmtDate(new Date());
+    
+    await db.withTransactionAsync(async () => {
+      // Batch update memorization_status
+      for (const verseId of verseIds) {
+        const { surahId, verseNumber } = parseGlobalVerseId(verseId);
+        await db!.runAsync(
+          `INSERT OR REPLACE INTO memorization_status (surahId, verseNumber, isMemorized, lastReviewed)
+           VALUES (?, ?, ?, ?)`,
+          [surahId, verseNumber, isMemorized ? 1 : 0, activityDate]
+        );
+        
+        // Batch insert activity logs only for memorization (not unmarking)
+        if (isMemorized) {
+          // Check if activity already exists for this specific date to avoid duplicates
+          const exists = await db!.getFirstAsync(
+            `SELECT id FROM verse_activities WHERE verseId = ? AND activityType = 'memorized' AND activityDate = ? LIMIT 1`,
+            [verseId, activityDate]
+          );
+          
+          if (!exists) {
+            await db!.runAsync(
+              `INSERT INTO verse_activities (verseId, surahId, verseNumber, activityType, activityDate)
+               VALUES (?, ?, ?, 'memorized', ?)`,
+              [verseId, surahId, verseNumber, activityDate]
+            );
+          }
+        }
+      }
+    });
+    
+    console.log(`[bulk] Successfully processed ${verseIds.length} verses (memorized: ${isMemorized})`);
+  } catch (e) {
+    console.error('[bulk] bulkMarkVersesMemorized failed:', e);
+  }
 };
 
 // Cache verses
@@ -378,13 +696,107 @@ export const logBasicStats = async (tag: string = ''): Promise<void> => {
     const verses = await db.getFirstAsync('SELECT COUNT(*) as c FROM verses');
     const mem = await db.getFirstAsync('SELECT COUNT(*) as c FROM memorization_status');
     const aud = await db.getFirstAsync('SELECT COUNT(*) as c FROM audio_cache');
+  const act = await db.getFirstAsync('SELECT COUNT(*) as c FROM verse_activities');
     const v = (verses as any)?.c ?? (verses as any)?.["c"] ?? 0;
     const m = (mem as any)?.c ?? (mem as any)?.["c"] ?? 0;
     const a = (aud as any)?.c ?? (aud as any)?.["c"] ?? 0;
-    console.log(`[sqlite] stats ${tag} verses=${v} memorization=${m} audio=${a}`);
+    const ac = (act as any)?.c ?? (act as any)?.["c"] ?? 0;
+    console.log(`[sqlite] stats ${tag} verses=${v} memorization=${m} audio=${a} activities=${ac}`);
   } catch (e) {
     console.warn('[sqlite] logBasicStats failed', e);
   }
+};
+
+// ---- Verse activity logging and querying ----
+export type VerseActivityType = 'memorized' | 'revised';
+
+const fmtDate = (d: Date) => {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+function computeSurahAndNumber(verseId: number): { surahId: number; verseNumber: number } {
+  let start = 0;
+  for (let i=0;i<surahsData.length;i++){
+    const s = surahsData[i];
+    if (verseId <= start + s.versesCount) {
+      return { surahId: s.id, verseNumber: verseId - start };
+    }
+    start += s.versesCount;
+  }
+  return { surahId: 1, verseNumber: verseId };
+}
+
+export const logVerseActivity = async (verseId: number, activityType: VerseActivityType, date?: string): Promise<void> => {
+  if (!db || Platform.OS === 'web') return;
+  try {
+    if (!db.runAsync) return;
+    const { surahId, verseNumber } = computeSurahAndNumber(verseId);
+    const activityDate = date || fmtDate(new Date());
+    await db.runAsync(
+      `INSERT INTO verse_activities (verseId, surahId, verseNumber, activityType, activityDate) VALUES (?, ?, ?, ?, ?)`,
+      [verseId, surahId, verseNumber, activityType, activityDate]
+    ).catch(e => console.warn('[sqlite] logVerseActivity insert failed', e));
+  } catch (e) {
+    console.warn('[sqlite] logVerseActivity failed', e);
+  }
+};
+
+// Helper function for logging individual verse revisions
+export const logVerseRevision = async (verseId: number, date?: string): Promise<void> => {
+  await logVerseActivity(verseId, 'revised', date);
+};
+
+// Optimized bulk revision logging for multiple verses
+export const bulkLogRevisions = async (verseIds: number[], date?: string): Promise<void> => {
+  if (!db || Platform.OS === 'web' || verseIds.length === 0) return;
+  try {
+    const activityDate = date || fmtDate(new Date());
+    
+    await db.withTransactionAsync(async () => {
+      for (const verseId of verseIds) {
+        const { surahId, verseNumber } = parseGlobalVerseId(verseId);
+        
+        await db!.runAsync(
+          `INSERT INTO verse_activities (verseId, surahId, verseNumber, activityType, activityDate)
+           VALUES (?, ?, ?, 'revised', ?)`,
+          [verseId, surahId, verseNumber, activityDate]
+        ).catch(() => {}); // Allow duplicates for revisions (can revise multiple times per day)
+      }
+    });
+    
+    console.log(`[bulk] Successfully logged ${verseIds.length} verse revisions`);
+  } catch (e) {
+    console.error('[bulk] bulkLogRevisions failed:', e);
+  }
+};
+
+export const getVerseActivitiesBetween = async (startDate: string, endDate: string): Promise<{ activityDate: string; activityType: VerseActivityType; count: number }[]> => {
+  if (!db || Platform.OS === 'web') return [];
+  try {
+    if (!db.getAllAsync) return [];
+    const rows = await db.getAllAsync(
+      `SELECT activityDate, activityType, COUNT(*) as count
+       FROM verse_activities
+       WHERE activityDate >= ? AND activityDate <= ?
+       GROUP BY activityDate, activityType
+       ORDER BY activityDate ASC`,
+      [startDate, endDate]
+    ).catch(() => []);
+    return (rows as any[]).map(r => ({ activityDate: r.activityDate, activityType: r.activityType as VerseActivityType, count: Number(r.count) }));
+  } catch (e) {
+    console.warn('[sqlite] getVerseActivitiesBetween failed', e);
+    return [];
+  }
+};
+
+export const getVerseActivityBreakdown = async (startDate: string, endDate: string): Promise<{ memorized: number; revised: number }> => {
+  const rows = await getVerseActivitiesBetween(startDate, endDate);
+  let memorized = 0, revised = 0;
+  rows.forEach(r => { if (r.activityType === 'memorized') memorized += r.count; else if (r.activityType === 'revised') revised += r.count; });
+  return { memorized, revised };
 };
 
 // Get verse memorization status
@@ -407,7 +819,7 @@ export const getVerseMemorizationStatus = async (
   }
 };
 
-// Set verse memorization status
+// Set verse memorization status with proper activity logging
 export const setVerseMemorizationStatus = async (
   surahId: number,
   verseNumber: number,
@@ -416,11 +828,26 @@ export const setVerseMemorizationStatus = async (
   if (!db || Platform.OS === 'web') return;
   
   try {
+    // Check if verse was already memorized to distinguish new memorization vs revision
+    const wasAlreadyMemorized = await getVerseMemorizationStatus(surahId, verseNumber);
+    
     await db.runAsync(
       `INSERT OR REPLACE INTO memorization_status (surahId, verseNumber, isMemorized, lastReviewed)
        VALUES (?, ?, ?, datetime('now'))`,
       [surahId, verseNumber, isMemorized ? 1 : 0]
     );
+    
+    // Log appropriate activity
+    const verseId = computeGlobalVerseId(surahId, verseNumber);
+    if (isMemorized && !wasAlreadyMemorized) {
+      // New memorization
+      await logVerseActivity(verseId, 'memorized');
+    } else if (isMemorized && wasAlreadyMemorized) {
+      // This is a revision of already memorized verse
+      await logVerseActivity(verseId, 'revised');
+    }
+    // Note: If unmarking (isMemorized = false), we don't log any activity
+    
   } catch (error) {
     console.error('Error setting verse memorization status:', error);
   }
@@ -436,6 +863,7 @@ export const markAllVersesMemorized = async (surahId: number, isMemorized: boole
 
     // Create a list of all verse numbers for the surah
     const verseNumbers = Array.from({ length: surah.versesCount }, (_, i) => i + 1);
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
     // Batch insert/replace operations
     await db.withTransactionAsync(async () => {
@@ -446,6 +874,23 @@ export const markAllVersesMemorized = async (surahId: number, isMemorized: boole
            VALUES (?, ?, ?, datetime('now'))`,
           [surahId, verseNumber, isMemorized ? 1 : 0]
         );
+        
+        // Also log activity if marking as memorized
+        if (isMemorized) {
+          const verseId = computeGlobalVerseId(surahId, verseNumber);
+          // Check if activity already exists to avoid duplicates
+          const exists = await db.getFirstAsync(
+            `SELECT id FROM verse_activities WHERE verseId = ? AND activityType = 'memorized' AND activityDate = ? LIMIT 1`,
+            [verseId, today]
+          ).catch(() => null);
+          if (!exists) {
+            await db.runAsync(
+              `INSERT INTO verse_activities (verseId, surahId, verseNumber, activityType, activityDate)
+               VALUES (?, ?, ?, 'memorized', ?)`,
+              [verseId, surahId, verseNumber, today]
+            ).catch(() => {});
+          }
+        }
       }
     });
 

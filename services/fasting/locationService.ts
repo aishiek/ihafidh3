@@ -71,8 +71,8 @@ export class LocationService {
       console.error('Error reverse geocoding:', error);
       // Fallback to default location
       return {
-        city: 'Mecca',
-        country: 'Saudi Arabia',
+        city: 'Singapore',
+        country: 'Singapore',
         latitude,
         longitude
       };
@@ -129,7 +129,7 @@ export class LocationService {
     }
     
     // Default fallback
-    return { city: 'Mecca', country: 'Saudi Arabia' };
+    return { city: 'Singapore', country: 'Singapore' };
   }
 
   /**

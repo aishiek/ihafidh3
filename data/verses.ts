@@ -1,7 +1,7 @@
-import { Verse } from '@/types';
-import { fetchVersesBySurah, fetchSingleVerse } from '@/services/quranApi';
+import { cacheVerses, getCachedVerses, isSurahCached } from '@/database/QuranDatabase';
+import { fetchSingleVerse, fetchVersesBySurah } from '@/services/quranApi';
 import { useSettingsStore } from '@/store/settingsStore';
-import { getCachedVerses, cacheVerses, isSurahCached } from '@/database/QuranDatabase';
+import { Verse } from '@/types';
 
 // Constants for Bismillah
 const BISMILLAH_ARABIC = 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';
@@ -21,7 +21,8 @@ function getBismillahAudioUrl(): string {
 // Utility: Create a standalone Bismillah verse
 function createBismillahVerse(surahId: number): Verse {
   return {
-    id: `bismillah-${surahId}`,
+    // Use a negative sentinel ID to avoid clashing with real verse IDs (which are positive)
+    id: -surahId,
     surahId,
     verseNumber: 0, // Virtual verse (not from API)
     arabicText: BISMILLAH_ARABIC,

@@ -135,7 +135,7 @@ export class FastingApiService {
     if (latitude >= 6 && latitude <= 37 && longitude >= 60 && longitude <= 97) return { city: 'Karachi', country: 'Pakistan' };
     if (latitude >= 35 && latitude <= 71 && longitude >= -25 && longitude <= 45) return { city: 'London', country: 'United Kingdom' };
     if (latitude >= 14 && latitude <= 83 && longitude >= -179 && longitude <= -52) return { city: 'New York', country: 'United States' };
-    return { city: 'Mecca', country: 'Saudi Arabia' };
+    return { city: 'Singapore', country: 'Singapore' };
   }
 
   /** Clear cache */

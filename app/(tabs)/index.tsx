@@ -1,9 +1,11 @@
+import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View, ViewStyle, Platform, AppState, Dimensions, ScrollView, Pressable, Modal } from 'react-native';
 import MinimalTopStrip from '@/components/MinimalTopStrip';
 import { QuranProgressTracker } from '@/data/quranProgress';
 import { surahsData } from '@/data/surahs';
 import { getJuzProgress } from '@/database/QuranDatabase';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useActivityStore } from '@/store/activityStore';
+import { usePlannerStore } from '@/store/plannerStore';
 import { useProgressStore } from '@/store/progressStore';
 import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -17,6 +19,7 @@ import { router } from 'expo-router';
 import {
     Award,
     BookOpen,
+    Calendar,
     CheckCircle,
     Clock,
     Info,
@@ -26,17 +29,7 @@ import {
     XCircle
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-    AppState,
-    Dimensions,
-    Modal,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
-} from 'react-native';
+import AyahOfTheDayCard from '@/components/AyahOfTheDayCard';
 import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
@@ -108,6 +101,7 @@ const FireStreakIcon = ({ size = 32 }) => (
 
 export default function HomeScreen() {
   const primary = useThemeColor({}, 'tint');
+  const { plansByDate } = usePlannerStore();
   const {
     memorizedVerses,
     revisedVerses,
@@ -133,15 +127,106 @@ export default function HomeScreen() {
 
   const [activeReadingTime, setActiveReadingTime] = useState(0);
   const [showStreakTooltip, setShowStreakTooltip] = useState(false);
+  const [showPlannerInfo, setShowPlannerInfo] = useState(false);
 
-  // --- Time tracking lifecycle ---
+  // --- Helpers for planner verse id mapping ---
+  const getGlobalStartIdForSurah = (surahId: number) => {
+    let total = 0;
+    for (let i = 1; i < surahId; i++) {
+      const s = surahsData.find(x => x.id === i);
+      if (s) total += s.versesCount;
+    }
+    return total + 1;
+  };
+  const toVerseId = (surahId: number, verseNumber: number) => getGlobalStartIdForSurah(surahId) + (verseNumber - 1);
+  const parseDMY = (s: string): Date | null => {
+    const m = /^([0-3]\d)-([0-1]\d)-(\d{4})$/.exec(s);
+    if (!m) return null;
+    const dd = Number(m[1]);
+    const mm = Number(m[2]);
+    const yyyy = Number(m[3]);
+    const d = new Date(yyyy, mm - 1, dd);
+    return d.getFullYear() === yyyy && d.getMonth() === mm - 1 && d.getDate() === dd ? d : null;
+  };
+
+  // --- Monthly Hifdh Planner summary (current month) ---
+  const plannerSummary = useMemo(() => {
+    const now = new Date();
+    const month = now.getMonth();
+    const year = now.getFullYear();
+    const monthName = now.toLocaleDateString(undefined, { month: 'long' });
+
+    const allPlannedVerseIds = new Set<number>();
+    const plannedBySurah = new Map<number, Set<number>>();
+
+    // Collect all planned verses for keys in this month
+    Object.entries(plansByDate).forEach(([key, entries]) => {
+      const d = parseDMY(key);
+      if (!d || d.getMonth() !== month || d.getFullYear() !== year) return;
+      (entries as any[]).forEach((p: any) => {
+        const sId = toVerseId(p.surahId, p.startVerse);
+        const eId = toVerseId(p.surahId, p.endVerse);
+        for (let id = sId; id <= eId; id++) {
+          allPlannedVerseIds.add(id);
+          if (!plannedBySurah.has(p.surahId)) plannedBySurah.set(p.surahId, new Set<number>());
+          plannedBySurah.get(p.surahId)!.add(id);
+        }
+      });
+    });
+
+    if (allPlannedVerseIds.size === 0) {
+      return {
+        monthName,
+        totalPlannedVerses: 0,
+        completedPlannedVerses: 0,
+        inProgressSurahs: 0,
+        totalPlannedSurahs: 0,
+        percent: 0,
+      };
+    }
+
+    const isRevised = (id: number) => revisedVerses.some((rv) => rv.verseId === id);
+
+    let completedPlannedVerses = 0;
+    allPlannedVerseIds.forEach((id) => {
+      if (memorizedVerses.includes(id) || isRevised(id)) completedPlannedVerses++;
+    });
+
+    // Surah in-progress: some of its planned verses are done but not all
+    let inProgressSurahs = 0;
+    plannedBySurah.forEach((ids) => {
+      let done = 0; const total = ids.size;
+      ids.forEach((id) => { if (memorizedVerses.includes(id) || isRevised(id)) done++; });
+      if (done > 0 && done < total) inProgressSurahs++;
+    });
+
+    const totalPlannedVerses = allPlannedVerseIds.size;
+    const totalPlannedSurahs = plannedBySurah.size;
+    const percent = totalPlannedVerses > 0 ? Math.round((completedPlannedVerses / totalPlannedVerses) * 100) : 0;
+    return { monthName, totalPlannedVerses, completedPlannedVerses, inProgressSurahs, totalPlannedSurahs, percent };
+  }, [plansByDate, memorizedVerses, revisedVerses]);
+
+  // --- Time tracking lifecycle (resilient) ---
   useEffect(() => {
+    let retryTimer: NodeJS.Timeout | null = null;
+    let androidDeferred: NodeJS.Timeout | null = null;
     try {
-      initializeActiveTimeManager();
-      // Ensure a session is started when screen mounts and app is active
+      const mgr = initializeActiveTimeManager();
       const currentState = AppState.currentState;
-      if (!sessionStartTime && currentState === 'active') {
-        startSession();
+      // Some Android builds report 'unknown' initially; treat as active after short delay
+      if (!sessionStartTime) {
+        if (currentState === 'active') {
+          startSession();
+        } else if (Platform.OS === 'android' && (currentState === 'unknown' || currentState === 'background')) {
+          androidDeferred = setTimeout(() => {
+            if (!useActivityStore.getState().sessionStartTime) {
+              try { startSession(); } catch {}
+            }
+          }, 1200);
+        }
+      }
+      if (!mgr) {
+        retryTimer = setTimeout(() => { try { initializeActiveTimeManager(); } catch {}; }, 1500);
       }
     } catch (e) {
       console.warn('[home] init time manager failed:', e);
@@ -155,23 +240,28 @@ export default function HomeScreen() {
       }
     });
     return () => {
+      if (retryTimer) clearTimeout(retryTimer);
+      if (androidDeferred) clearTimeout(androidDeferred);
       try { sub.remove(); } catch {}
       try { if (sessionStartTime) endSession(); } catch {}
       try { activeTimeManager?.cleanup(); } catch {}
     };
-  }, [sessionStartTime, startSession, endSession, initializeActiveTimeManager, activeTimeManager]);
+  }, [sessionStartTime, startSession, endSession, initializeActiveTimeManager]);
 
   const getCurrentActiveTime = () => {
+    // If manager exists, rely on precise active time; else approximate via sessionStartTime.
     if (activeTimeManager) return timeSpent.total + activeTimeManager.getStats().totalTimeSeconds;
     if (sessionStartTime) return timeSpent.total + Math.floor((Date.now() - sessionStartTime) / 1000);
     return timeSpent.total;
   };
+  // Stable interval: does not restart on every total increment (avoids flicker / reset)
   useEffect(() => {
-    const i = setInterval(() => setActiveReadingTime(getCurrentActiveTime()), 1000);
-    // Immediately reflect any active manager time to avoid showing 0 until first tick
-    setActiveReadingTime(getCurrentActiveTime());
+    setActiveReadingTime(getCurrentActiveTime()); // initial sync
+    const i = setInterval(() => {
+      setActiveReadingTime(getCurrentActiveTime());
+    }, 1000);
     return () => clearInterval(i);
-  }, [sessionStartTime, activeTimeManager, timeSpent.total]);
+  }, [sessionStartTime, activeTimeManager]);
 
   useEffect(() => { updateDailyStreak(); }, [updateDailyStreak]);
 
@@ -433,6 +523,25 @@ export default function HomeScreen() {
     </View>
   );
 
+  // Dynamic color function for streak milestones
+  const getStreakColor = (streak: number): string => {
+    if (streak >= 500) {
+      return '#FFD700'; // Golden color for 500+
+    }
+    
+    // Fluorescent colors for every 100 up to 500
+    const milestone = Math.floor(streak / 100);
+    const fluorescents = [
+      '#FF6B35', // Orange-Red (0-99)
+      '#FF1493', // Deep Pink (100-199) 
+      '#00FFFF', // Cyan (200-299)
+      '#ADFF2F', // Green Yellow (300-399)
+      '#FF4500', // Orange Red (400-499)
+    ];
+    
+    return fluorescents[milestone] || '#FF6B35'; // Default to first color
+  };
+
   const StreakCard = ({ title, value, subtitle, icon:Icon, color='#2196F3' }:{title:string; value:string|number; subtitle?:string; icon:any; color?:string;}) => (
     <View style={styles.statCard}>
       <Icon size={28} color={color} style={{ marginBottom:4 }} />
@@ -621,6 +730,11 @@ export default function HomeScreen() {
         </ScrollView>
       </View>
 
+      {/* Ayah of the Day */}
+      <View style={styles.section}>
+        <AyahOfTheDayCard />
+      </View>
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Revision Goals</Text>
         <View style={styles.revisionItem}>
@@ -683,7 +797,7 @@ export default function HomeScreen() {
         <Text style={styles.sectionTitle}>Usage Overview</Text>
         <View style={styles.statsGrid}>
           <StatCard title="Quran Time" value={formatTotalTime(activeReadingTime)} subtitle="Active time spent" icon={Clock} color="#4CAF50" />
-          <StreakCard title="Streak" value={stats.currentStreak} subtitle="Day streak" icon={FireStreakIcon} color="#FF9800" />
+          <StreakCard title="Streak" value={stats.currentStreak} subtitle="Day streak" icon={FireStreakIcon} color={getStreakColor(stats.currentStreak)} />
         </View>
       </View>
 
@@ -699,6 +813,35 @@ export default function HomeScreen() {
             <View style={styles.progressItem}><View style={styles.remainingDot} /><Text style={styles.progressText}>{mustahabbahRemaining} Remaining</Text></View>
           </View>
         </LinearGradient>
+      </View>
+
+      {/* Hifdh Planner monthly summary */}
+      <View style={styles.section}>
+        <View style={styles.plannerCard}>
+          <View style={styles.plannerHeader}>
+            <View style={styles.plannerTitleRow}>
+              <View style={styles.plannerIconWrap}><Calendar size={16} color="#a855f7" /></View>
+              <Text style={styles.plannerTitle}>Hifdh Planner for {plannerSummary.monthName}</Text>
+            </View>
+            <Pressable onPress={() => setShowPlannerInfo(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Info size={18} color="#a855f7" />
+            </Pressable>
+          </View>
+          {plannerSummary.totalPlannedVerses > 0 ? (
+            <>
+              <Text style={styles.plannerSubtitle}>{plannerSummary.completedPlannedVerses} of {plannerSummary.totalPlannedVerses} verses completed</Text>
+              <View style={styles.plannerProgressBar}>
+                <View style={[styles.plannerProgressFill, { width: `${plannerSummary.percent}%` }]} />
+              </View>
+              <View style={styles.plannerStatsRow}>
+                <Text style={styles.plannerStatText}>{plannerSummary.inProgressSurahs} surahs in progress</Text>
+                <Text style={styles.plannerStatText}>{plannerSummary.totalPlannedSurahs} planned</Text>
+              </View>
+            </>
+          ) : (
+            <Text style={styles.plannerEmptyText}>No plans yet for {plannerSummary.monthName}. Add your Hifdh plans in Revision.</Text>
+          )}
+        </View>
       </View>
 
       <View style={styles.section}>
@@ -762,6 +905,40 @@ export default function HomeScreen() {
           >
             <Text style={styles.tooltipCloseText}>Got it!</Text>
           </Pressable>
+        </View>
+      </Pressable>
+    </Modal>
+
+    {/* Planner Info Modal */}
+    <Modal
+      visible={showPlannerInfo}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowPlannerInfo(false)}
+    >
+      <Pressable style={styles.tooltipOverlay} onPress={() => setShowPlannerInfo(false)}>
+        <View style={styles.tooltipContainer}>
+          <View style={styles.tooltipHeader}>
+            <Calendar size={24} color="#a855f7" />
+            <Text style={styles.tooltipTitle}>Hifdh Planner</Text>
+          </View>
+          <Text style={styles.tooltipText}>
+            Plan your Hifdh by adding surahs or verse ranges to any day of the month. Your progress updates automatically when you memorize or revise. Overlapping plans are de-duplicated—no double counting.
+          </Text>
+          <View style={styles.tooltipNote}>
+            <Info size={16} color="#a855f7" />
+            <Text style={styles.tooltipNoteText}>
+              Use the Hifdh Planner in the Revision tab to add or edit your plans.
+            </Text>
+          </View>
+          <View style={{ flexDirection:'row', gap:8, marginTop:8 }}>
+            <Pressable style={[styles.tooltipCloseButton, { backgroundColor: '#111827', borderWidth:1, borderColor:'#a855f7' }]} onPress={() => setShowPlannerInfo(false)}>
+              <Text style={styles.tooltipCloseText}>Close</Text>
+            </Pressable>
+            <Pressable style={[styles.tooltipCloseButton, { backgroundColor: '#a855f7' }]} onPress={() => { setShowPlannerInfo(false); router.push('/(tabs)/revision'); }}>
+              <Text style={styles.tooltipCloseText}>Open Planner</Text>
+            </Pressable>
+          </View>
         </View>
       </Pressable>
     </Modal>
@@ -1002,4 +1179,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  // Planner styles
+  plannerCard: { backgroundColor:'#2a2a2a', borderRadius:12, padding:12, borderWidth:2, borderColor:'#a855f7' },
+  plannerHeader: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:6 },
+  plannerTitleRow: { flexDirection:'row', alignItems:'center', gap:6 },
+  plannerIconWrap: { width:24, height:24, borderRadius:6, backgroundColor:'rgba(168,85,247,0.12)', alignItems:'center', justifyContent:'center' },
+  plannerTitle: { fontSize:15, fontWeight:'700', color:'#fff' },
+  plannerSubtitle: { fontSize:13, color:'#ccc', marginBottom:6 },
+  plannerProgressBar: { height:6, backgroundColor:'#4b5563', borderRadius:999, overflow:'hidden' },
+  plannerProgressFill: { height:'100%', backgroundColor:'#a855f7' },
+  plannerStatsRow: { flexDirection:'row', justifyContent:'space-between', marginTop:6 },
+  plannerStatText: { color:'#94a3b8', fontSize:12, fontWeight:'600' },
+  plannerEmptyText: { color:'#94a3b8', fontSize:12 },
 });

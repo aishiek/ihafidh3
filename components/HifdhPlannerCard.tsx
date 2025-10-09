@@ -1,20 +1,33 @@
+import { surahsData } from '@/data/surahs';
+import { usePlannerStore } from '@/store/plannerStore';
+import { useProgressStore } from '@/store/progressStore';
+import { useThemeColor } from '@/utils/useThemeColor';
+import { Plus, Trash2 } from 'lucide-react-native';
 import React, { useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useThemeColor } from '@/utils/useThemeColor';
-import { usePlannerStore } from '@/store/plannerStore';
 import SurahRangePicker from './SurahRangePicker';
-import { useProgressStore } from '@/store/progressStore';
-import { surahsData } from '@/data/surahs';
-import { Plus, Trash2 } from 'lucide-react-native';
 
 type DateItem = { key: string; label: string; isToday: boolean };
 
-function formatDate(date: Date): string {
-  return date.toISOString().split('T')[0];
+function formatDMY(date: Date): string {
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const yyyy = date.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+}
+
+function parseDMY(s: string): Date | null {
+  const m = /^([0-3]\d)-([0-1]\d)-(\d{4})$/.exec(s);
+  if (!m) return null;
+  const dd = Number(m[1]);
+  const mm = Number(m[2]);
+  const yyyy = Number(m[3]);
+  const d = new Date(yyyy, mm - 1, dd);
+  return d.getFullYear() === yyyy && d.getMonth() === mm - 1 && d.getDate() === dd ? d : null;
 }
 
 function prettyLabel(dateStr: string): string {
-  const d = new Date(dateStr);
+  const d = parseDMY(dateStr) || new Date();
   const month = d.toLocaleString('default', { month: 'short' });
   return `${d.getDate()} ${month}`;
 }
@@ -42,7 +55,7 @@ export default function HifdhPlannerCard() {
   const revised = useProgressStore((s) => s.revisedVerses);
 
   const [pickerVisible, setPickerVisible] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(formatDate(new Date()));
+  const [selectedDate, setSelectedDate] = useState(formatDMY(new Date()));
 
   const dates: DateItem[] = useMemo(() => {
     const out: DateItem[] = [];
@@ -50,7 +63,7 @@ export default function HifdhPlannerCard() {
     for (let i = 0; i < 365; i++) {
       const d = new Date(today);
       d.setDate(today.getDate() + i);
-      const key = formatDate(d);
+      const key = formatDMY(d);
       out.push({ key, label: prettyLabel(key), isToday: i === 0 });
     }
     return out;

@@ -3,27 +3,41 @@ import { useProgressStore } from '@/store/progressStore';
 import { PLAYBACK_SPEED_OPTIONS, useSettingsStore, type PlaybackSpeed } from '@/store/settingsStore';
 import { Verse } from '@/types';
 import { pauseAudio, playVerseWithOptionalBismillah, setPlaybackSpeed, type AudioStatus } from '@/utils/audioUtils';
-import { getArabicFontFamily } from '@/utils/fontUtils';
+import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
 import * as Haptics from 'expo-haptics';
-import { Bookmark as BookmarkIcon, Infinity as InfinityIcon, Pause, Play, Repeat } from 'lucide-react-native';
+import { Bookmark as BookmarkIcon, BookOpen, Infinity as InfinityIcon, Pause, Play, Repeat } from 'lucide-react-native';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import TajweedVerse from 'rn-tajweed-verse';
+import TafsirModal from './TafsirModal';
 
 interface VerseItemProps {
   verse: Verse;
-  isMemorized: (verseId: number) => boolean;
-  isRevised: (verseId: number) => boolean;
   onMemorizeToggle: (verseId: number) => void;
   onRevisionToggle: (verseId: number) => void;
   onPlayAudio: (verse: Verse) => void;
 }
 
+// Date formatting cache for performance
+const dateFormatCache = new Map<string, string>();
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function formatDateCached(dateStr: string | null): string | null {
+  if (!dateStr) return null;
+  if (dateFormatCache.has(dateStr)) return dateFormatCache.get(dateStr)!;
+  if (/\b[A-Za-z]{3}\b/.test(dateStr)) { dateFormatCache.set(dateStr, dateStr); return dateStr; }
+  const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) {
+    const [, y, mo, d] = m; const mi = Math.max(0, Math.min(11, parseInt(mo,10)-1));
+    const formatted = `${parseInt(d,10)} ${MONTHS[mi]} ${y}`; dateFormatCache.set(dateStr, formatted); return formatted;
+  }
+  const dt = new Date(dateStr);
+  if (!isNaN(dt.getTime())) { const formatted = `${dt.getDate()} ${MONTHS[dt.getMonth()]} ${dt.getFullYear()}`; dateFormatCache.set(dateStr, formatted); return formatted; }
+  dateFormatCache.set(dateStr, dateStr); return dateStr;
+}
+
 const VerseItem = ({
   verse,
-  isMemorized,
-  isRevised,
   onMemorizeToggle,
   onRevisionToggle,
   onPlayAudio,
@@ -46,52 +60,24 @@ const VerseItem = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [audioFallback, setAudioFallback] = useState(false);
-  const [memorized, setMemorized] = useState(false);
-  const [revised, setRevised] = useState(false);
+  // Derive memorized/revised status directly from stores for accuracy
+  const memorizedVerseDates = useProgressStore(state => state.memorizedVerseDates);
+  const revisedVerses = useProgressStore(state => state.revisedVerses);
+  const persistedMemDate = memorizedVerseDates?.[verse.id] || null;
+  const revisedEntry = revisedVerses.find(v => v.verseId === verse.id);
+  const persistedRevDate = revisedEntry?.revisionDate || null;
+  const memorized = persistedMemDate !== null;
+  const revised = !!revisedEntry;
   const [repeatCount, setRepeatCount] = useState(repeatMode || 1);
   const [showPlaybackModal, setShowPlaybackModal] = useState(false);
-  const [memorizedDateLocal, setMemorizedDateLocal] = useState<string | null>(null);
-  const [revisedDateLocal, setRevisedDateLocal] = useState<string | null>(null);
+  const [showTafsirModal, setShowTafsirModal] = useState(false);
   const { addBookmark, removeBookmark, isBookmarked } = useBookmarkStore();
   const bookmarked = isBookmarked(verse.id);
 
-  const memorizedVerseDates = useProgressStore(state => state.memorizedVerseDates);
-  const revisedVerses = useProgressStore(state => state.revisedVerses);
-
-  const toPrettyDate = useCallback((dateStr: string | null): string | null => {
-    if (!dateStr) return null;
-    if (/\b[A-Za-z]{3}\b/.test(dateStr)) return dateStr;
-    const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (m) {
-      const [_, y, mo, d] = m;
-      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      const monthIdx = Math.max(0, Math.min(11, parseInt(mo, 10) - 1));
-      return `${parseInt(d,10)} ${months[monthIdx]} ${y}`;
-    }
-    const dt = new Date(dateStr);
-    if (!isNaN(dt.getTime())) {
-      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      return `${dt.getDate()} ${months[dt.getMonth()]} ${dt.getFullYear()}`;
-    }
-    return dateStr;
-  }, []);
-
-  const persistedMemDate = useMemo(() => memorizedVerseDates?.[verse.id] || null, [memorizedVerseDates, verse.id]);
-  const persistedRevDate = useMemo(() => {
-    const rv = revisedVerses.find(v => v.verseId === verse.id);
-    return rv?.revisionDate ?? null;
-  }, [revisedVerses, verse.id]);
-
-  useEffect(() => {
-    // Only sync from store state, not from function calls that might be stale
-    const storeMemorized = persistedMemDate !== null;
-    const storeRevised = persistedRevDate !== null;
-    
-    setMemorized(storeMemorized);
-    setRevised(storeRevised);
-    setMemorizedDateLocal(toPrettyDate(persistedMemDate));
-    setRevisedDateLocal(toPrettyDate(persistedRevDate));
-  }, [verse.id, persistedMemDate, persistedRevDate, toPrettyDate]);
+  const [memorizedDateLocal, setMemorizedDateLocal] = useState<string | null>(formatDateCached(persistedMemDate));
+  const [revisedDateLocal, setRevisedDateLocal] = useState<string | null>(formatDateCached(persistedRevDate));
+  useEffect(() => { setMemorizedDateLocal(formatDateCached(persistedMemDate)); }, [persistedMemDate]);
+  useEffect(() => { setRevisedDateLocal(formatDateCached(persistedRevDate)); }, [persistedRevDate]);
 
   const onStatus = useCallback((status: AudioStatus) => {
     // isPlaying from the audio engine is the source of truth
@@ -168,36 +154,8 @@ const VerseItem = ({
     return () => { pauseAudio().catch(console.error); };
   }, []);
 
-  const formatDate = (date: Date) => {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
-  };
-
-  const handleMarkMemorized = useCallback(() => {
-    // Get current store state to make decision
-    const currentlyMemorized = persistedMemDate !== null;
-    const newMemorizedState = !currentlyMemorized;
-    
-    // Update UI immediately for responsiveness
-    setMemorized(newMemorizedState);
-    setMemorizedDateLocal(newMemorizedState ? formatDate(new Date()) : null);
-
-    // Update store immediately (not in setTimeout to avoid race conditions)
-    onMemorizeToggle(verse.id);
-  }, [onMemorizeToggle, verse.id, persistedMemDate]);
-
-const handleMarkRevised = useCallback(() => {
-  // Get current store state to make decision
-  const currentlyRevised = persistedRevDate !== null;
-  const newRevisedState = !currentlyRevised;
-  
-  // Update UI immediately for responsiveness
-  setRevised(newRevisedState);
-  setRevisedDateLocal(newRevisedState ? formatDate(new Date()) : null);
-
-  // Update store immediately (not in setTimeout to avoid race conditions)
-  onRevisionToggle(verse.id);
-}, [onRevisionToggle, verse.id, persistedRevDate]);
+  const handleMarkMemorized = useCallback(() => { onMemorizeToggle(verse.id); }, [onMemorizeToggle, verse.id]);
+  const handleMarkRevised = useCallback(() => { onRevisionToggle(verse.id); }, [onRevisionToggle, verse.id]);
 
   const handlePlaybackSpeedPress = useCallback(async (speed: PlaybackSpeed) => {
     setStorePlaybackSpeed(speed);
@@ -222,9 +180,11 @@ const handleMarkRevised = useCallback(() => {
   }, [repeatMode]);
 
   const arabicFamily = getArabicFontFamily(arabicFont as any);
+  const arabicTypography = getArabicTypographySizing(fontSizeArabic, arabicFont as any);
   const arabicText = verse.arabicText?.trim() || 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';
   const translation = verse.translation?.trim() || 'In the name of Allah, the Entirely Merciful, the Especially Merciful.';
   const transliteration = verse.transliteration?.trim();
+  const { translationLanguage } = useSettingsStore();
 
   return (
     <Pressable
@@ -252,7 +212,17 @@ const handleMarkRevised = useCallback(() => {
           {audioFallback && <Text style={[styles.audioFallbackText, { color: '#FFD700' }]}>Using fallback reciter (Alafasy)</Text>}
         </View>
 
-        {/* Bookmark button (before audio button) */}
+        {/* 1) Tafsir first */}
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Open tafsir"
+          style={[styles.controlButton, styles.subtleGoldBg, { marginLeft: 8 }]}
+          onPress={() => setShowTafsirModal(true)}
+        >
+          <BookOpen size={18} color="#FFD700" />
+        </TouchableOpacity>
+
+        {/* 2) Bookmark */}
         <Pressable
           style={({ pressed }) => [
             styles.bookmarkButton,
@@ -264,6 +234,7 @@ const handleMarkRevised = useCallback(() => {
           <BookmarkIcon size={16} color={bookmarked ? '#FFD700' : '#888888'} fill={bookmarked ? '#FFD700' : 'transparent'} />
         </Pressable>
 
+        {/* 3) Play/Pause */}
         <Pressable 
           style={[styles.audioButton, { 
             backgroundColor: primary,
@@ -274,6 +245,7 @@ const handleMarkRevised = useCallback(() => {
           {isPlaying ? <Pause size={16} color="#ffffff" /> : <Play size={16} color="#ffffff" />}
         </Pressable>
         
+        {/* 4) Repeat options */}
         <TouchableOpacity 
           style={[styles.controlButton]} 
           onPress={() => setShowPlaybackModal(true)}
@@ -283,31 +255,33 @@ const handleMarkRevised = useCallback(() => {
             {infiniteLoop ? '∞' : `${repeatCount}x`}
           </Text>
         </TouchableOpacity>
+
       </View>
 
       {arabicFont === 'tajweed' && verse.tajweedText ? (
-        <TajweedVerse
-          verse={verse.tajweedText}
-          config={{
-            style: {
-              fontSize: fontSizeArabic,
-              lineHeight: fontSizeArabic * 1.8,
-              color: '#FFFFFF',
-              direction: 'rtl',
-              fontFamily: arabicFamily,
-            }
-          }}
-        />
+        <View style={{ paddingHorizontal: 4 }}>
+          <TajweedVerse
+            verse={verse.tajweedText}
+            config={{
+              style: {
+                fontSize: arabicTypography.fontSize,
+                lineHeight: arabicTypography.lineHeight,
+                color: '#FFFFFF',
+                direction: 'rtl',
+                fontFamily: arabicFamily,
+              }
+            }}
+          />
+        </View>
       ) : (
         <Text
           style={{
             color: '#ffffff',
-            fontSize: fontSizeArabic,
             fontFamily: arabicFamily,
-            lineHeight: fontSizeArabic * 1.8,
-            textAlign: 'right',
+            includeFontPadding: false,
             paddingHorizontal: 4,
-            letterSpacing: -0.2,
+            ...arabicTypography,
+            lineHeight: arabicTypography.lineHeight || Math.round(fontSizeArabic * 2.0),
           }}
         >
           {arabicText}
@@ -455,6 +429,14 @@ const handleMarkRevised = useCallback(() => {
           </View>
         </Pressable>
       </Modal>
+
+      {/* Tafsir Modal */}
+      <TafsirModal
+        visible={showTafsirModal}
+        onClose={() => setShowTafsirModal(false)}
+        surahId={verse.surahId || verse.surahNumber || verse.surah?.number || 1}
+        verseNumber={verse.verseNumber}
+      />
     </Pressable>
   );
 };
@@ -495,6 +477,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minWidth: 40,
+  },
+  subtleGoldBg: {
+    backgroundColor: 'rgba(255, 215, 0, 0.08)',
+    borderColor: 'rgba(255, 215, 0, 0.25)',
   },
   datesRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, marginBottom: 2, paddingHorizontal: 4 },
   dateCol: { width: '48%', alignItems: 'center' },

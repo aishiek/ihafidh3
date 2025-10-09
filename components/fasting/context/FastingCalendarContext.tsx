@@ -42,8 +42,8 @@ const initialState: FastingCalendarState = {
     theme: 'light',
     colorScheme: 'blue',
     location: {
-      country: 'Saudi Arabia',
-      city: 'Mecca'
+      country: 'Singapore',
+      city: 'Singapore'
     },
     hijriAdjustment: 0,
     notifications: getDefaultNotificationSettings(),

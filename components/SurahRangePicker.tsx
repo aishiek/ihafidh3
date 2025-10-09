@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { surahsData } from '@/data/surahs';
 import { useThemeColor } from '@/utils/useThemeColor';
 import { Check, Search, X } from 'lucide-react-native';
+import React, { useMemo, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 type Props = {
   visible: boolean;
@@ -62,22 +62,22 @@ export default function SurahRangePicker({ visible, onClose, onConfirm }: Props)
         <View style={styles.header}>
           <Text style={styles.title}>Pick Surah and Range</Text>
           <Pressable onPress={() => { resetState(); onClose(); }} style={styles.closeBtn}>
-            <X size={22} color="#fff" />
+            <X size={22} color="#e2e8f0" />
           </Pressable>
         </View>
 
         <View style={styles.searchRow}>
-          <Search size={18} color="#888" style={{ marginRight: 8 }} />
+          <Search size={18} color="#94a3b8" style={{ marginRight: 8 }} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search by Surah Name or number"
-            placeholderTextColor="#666"
+            placeholderTextColor="#64748b"
             value={search}
             onChangeText={setSearch}
           />
           {!!search && (
             <Pressable onPress={() => setSearch('')}>
-              <X size={18} color="#888" />
+              <X size={18} color="#94a3b8" />
             </Pressable>
           )}
         </View>
@@ -106,15 +106,19 @@ export default function SurahRangePicker({ visible, onClose, onConfirm }: Props)
             </Text>
             <View style={styles.rangeToggleRow}>
               {(['full', 'partial'] as const).map((v) => (
-                <TouchableOpacity
+                <Pressable
                   key={v}
                   onPress={() => setRangeType(v)}
-                  style={[styles.toggleBtn, rangeType === v && { backgroundColor: primary }]}
+                  style={({ pressed }) => [
+                    styles.toggleBtn, 
+                    rangeType === v && styles.toggleBtnActive,
+                    pressed && rangeType !== v && { backgroundColor: '#333333' }
+                  ]}
                 >
-                  <Text style={[styles.toggleBtnText, rangeType === v && { color: '#000' }]}>
+                  <Text style={[styles.toggleBtnText, rangeType === v && styles.toggleBtnTextActive]}>
                     {v === 'full' ? 'Full Surah' : 'Verse Range'}
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
               ))}
             </View>
 
@@ -128,7 +132,7 @@ export default function SurahRangePicker({ visible, onClose, onConfirm }: Props)
                     value={startVerse}
                     onChangeText={setStartVerse}
                     placeholder="1"
-                    placeholderTextColor="#666"
+                    placeholderTextColor="#64748b"
                   />
                 </View>
                 <View style={styles.inputCol}>
@@ -139,7 +143,7 @@ export default function SurahRangePicker({ visible, onClose, onConfirm }: Props)
                     value={endVerse}
                     onChangeText={setEndVerse}
                     placeholder={`${selectedSurahInfo.versesCount}`}
-                    placeholderTextColor="#666"
+                    placeholderTextColor="#64748b"
                   />
                 </View>
               </View>
@@ -150,7 +154,7 @@ export default function SurahRangePicker({ visible, onClose, onConfirm }: Props)
               <TextInput
                 style={styles.noteInput}
                 placeholder="Add a short note..."
-                placeholderTextColor="#666"
+                placeholderTextColor="#64748b"
                 value={note}
                 onChangeText={setNote}
                 multiline
@@ -159,13 +163,25 @@ export default function SurahRangePicker({ visible, onClose, onConfirm }: Props)
             </View>
 
             <View style={styles.footerRow}>
-              <TouchableOpacity style={styles.backBtn} onPress={() => setSelectedSurah(null)}>
+              <Pressable 
+                style={({ pressed }) => [
+                  styles.backBtn,
+                  pressed && { backgroundColor: '#333333' }
+                ]} 
+                onPress={() => setSelectedSurah(null)}
+              >
                 <Text style={styles.backBtnText}>Back</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: primary }]} onPress={handleConfirm}>
-                <Check size={18} color="#fff" />
+              </Pressable>
+              <Pressable 
+                style={({ pressed }) => [
+                  styles.confirmBtn,
+                  pressed && { backgroundColor: '#333333' }
+                ]} 
+                onPress={handleConfirm}
+              >
+                <Check size={18} color="#ffffff" />
                 <Text style={styles.confirmText}>Add to Plan</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
         )}
@@ -175,7 +191,7 @@ export default function SurahRangePicker({ visible, onClose, onConfirm }: Props)
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1a1a1a' },
+  container: { flex: 1, backgroundColor: '#0b1220' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -184,41 +200,48 @@ const styles = StyleSheet.create({
     paddingTop: 56,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#2a2a2a',
+    borderBottomColor: '#1f2937',
   },
-  title: { color: '#fff', fontSize: 18, fontWeight: '600' },
+  title: { color: '#e2e8f0', fontSize: 18, fontWeight: '700' },
   closeBtn: { padding: 8 },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     margin: 16,
     paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: '#2a2a2a',
+    borderRadius: 10,
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: '#1f2937',
   },
-  searchInput: { flex: 1, color: '#fff', paddingVertical: 10 },
+  searchInput: { flex: 1, color: '#e5e7eb', paddingVertical: 10 },
+  listFrame: { maxHeight: 360, marginHorizontal: 12, marginBottom: 8, borderRadius: 12, backgroundColor: 'rgba(15,23,42,0.35)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.15)' },
   item: {
-    backgroundColor: '#2a2a2a',
+    backgroundColor: 'rgba(2,6,23,0.4)',
     padding: 12,
     borderRadius: 10,
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.12)'
   },
   itemNumber: { fontWeight: '700', width: 26 },
-  itemName: { color: '#fff', fontWeight: '600' },
-  itemEn: { color: '#aaa', fontSize: 12 },
-  itemMeta: { color: '#888', fontSize: 12 },
-  selectedLabel: { color: '#fff', fontWeight: '600', marginBottom: 8 },
+  itemName: { color: '#e5e7eb', fontWeight: '600' },
+  itemEn: { color: '#94a3b8', fontSize: 12 },
+  itemMeta: { color: '#94a3b8', fontSize: 12 },
+  selectedLabel: { color: '#e2e8f0', fontWeight: '700', marginBottom: 8 },
   rangeToggleRow: { flexDirection: 'row', gap: 8 },
-  toggleBtn: { backgroundColor: '#2a2a2a', paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8 },
-  toggleBtnText: { color: '#fff', fontWeight: '600' },
+  toggleBtn: { backgroundColor: '#000000', paddingVertical: 9, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: '#8b5cf6' },
+  toggleBtnActive: { backgroundColor: '#8b5cf6', borderColor: '#8b5cf6' },
+  toggleBtnText: { color: '#ffffff', fontWeight: '600' },
+  toggleBtnTextActive: { color: '#ffffff', fontWeight: '600' },
   rangeInputs: { flexDirection: 'row', gap: 12, marginTop: 12 },
   inputCol: { flex: 1 },
-  inputLabel: { color: '#aaa', fontSize: 12, marginBottom: 6 },
-  numberInput: { backgroundColor: '#2a2a2a', color: '#fff', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 },
-  noteInput: { backgroundColor: '#2a2a2a', color: '#fff', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, minHeight: 80, textAlignVertical: 'top' },
+  inputLabel: { color: '#94a3b8', fontSize: 12, marginBottom: 6 },
+  numberInput: { backgroundColor: '#0f172a', color: '#e5e7eb', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: '#1f2937' },
+  noteInput: { backgroundColor: '#0f172a', color: '#e5e7eb', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, minHeight: 80, textAlignVertical: 'top', borderWidth: 1, borderColor: '#1f2937' },
   footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 },
-  backBtn: { paddingVertical: 12, paddingHorizontal: 16, backgroundColor: '#2a2a2a', borderRadius: 8 },
-  backBtnText: { color: '#fff', fontWeight: '600' },
-  confirmBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8 },
-  confirmText: { color: '#fff', fontWeight: '700' },
+  backBtn: { paddingVertical: 9, paddingHorizontal: 16, backgroundColor: '#000000', borderRadius: 8, borderWidth: 1, borderColor: '#8b5cf6' },
+  backBtnText: { color: '#ffffff', fontWeight: '600' },
+  confirmBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#000000', borderWidth: 1, borderColor: '#8b5cf6' },
+  confirmText: { color: '#ffffff', fontWeight: '600' },
 });

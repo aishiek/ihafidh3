@@ -1,36 +1,29 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TextInput, TouchableOpacity, Switch } from 'react-native';
-import { Stack } from 'expo-router';
-import { 
-  User, 
-  Mail, 
-  Moon, 
-  Sun, 
-  Palette, 
-  Bell, 
-  Target, 
-  RotateCcw, 
-  Check,
-  ArrowLeft,
-  Volume2
-} from 'lucide-react-native';
-import { useCustomColors } from '@/utils/themeUtils';
+import { BackfillButton } from '@/components/BackfillButton';
 import { useSettingsStore } from '@/store/settingsStore';
-import ThemeSelector from '@/components/ThemeSelector';
-import FontSizeSelector from '@/components/FontSizeSelector';
-import RepeatModeSelector from '@/components/RepeatModeSelector';
-import ToggleOption from '@/components/ToggleOption';
-import { useThemeStore, ColorScheme } from '../store/themeStore';
+import { useCustomColors } from '@/utils/themeUtils';
+import { router, Stack } from 'expo-router';
+import {
+    ArrowLeft,
+    Bell,
+    Check,
+    Moon,
+    Palette,
+    RotateCcw,
+    Sun,
+    Target,
+    User,
+    Volume2
+} from 'lucide-react-native';
+import React, { useState } from 'react';
+import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useActivityStore } from '../store/activityStore';
-import { router } from 'expo-router';
+import { ColorScheme, useThemeStore } from '../store/themeStore';
 
 export default function SettingsScreen() {
   const colors = useCustomColors();
   const { 
     userName, 
-    userEmail,
     setUserName, 
-    setUserEmail,
     showTranslation, 
     setShowTranslation,
     autoPlayAudio, 
@@ -52,17 +45,13 @@ export default function SettingsScreen() {
   } = useActivityStore();
   
   const [localName, setLocalName] = useState(userName);
-  const [localEmail, setLocalEmail] = useState(userEmail);
   
   const handleNameChange = (text: string) => {
     setLocalName(text);
     setUserName(text);
   };
   
-  const handleEmailChange = (text: string) => {
-    setLocalEmail(text);
-    setUserEmail(text);
-  };
+  
 
   const handleBack = () => {
     router.back();
@@ -118,24 +107,6 @@ export default function SettingsScreen() {
               onChangeText={handleNameChange}
               placeholder="Enter your name"
               placeholderTextColor="#666666"
-            />
-          </View>
-          
-          <View style={styles.inputContainer}>
-            <View style={styles.inputHeader}>
-              <View style={styles.iconContainer}>
-                <Mail size={20} color="#2196F3" />
-              </View>
-              <Text style={styles.inputLabel}>Email</Text>
-            </View>
-            <TextInput
-              style={styles.input}
-              value={localEmail}
-              onChangeText={handleEmailChange}
-              placeholder="Enter your email"
-              placeholderTextColor="#666666"
-              keyboardType="email-address"
-              autoCapitalize="none"
             />
           </View>
         </View>
@@ -383,6 +354,29 @@ export default function SettingsScreen() {
             </View>
           )}
         </View>
+
+        {/* Data Management */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Data Management</Text>
+
+          <View style={styles.dataCard}>
+            <View style={styles.dataHeader}>
+              <View style={[styles.iconContainer, { backgroundColor: '#0e1a12' }]}>
+                <RotateCcw size={18} color="#4CAF50" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.dataTitle}>Update Activity Data</Text>
+                <Text style={styles.dataSubtitle}>Backfill your stats using existing memorization dates.</Text>
+              </View>
+            </View>
+            <BackfillButton />
+          </View>
+        </View>
+
+        {/* App version label */}
+        <View style={styles.versionRow}>
+          <Text style={styles.versionText}>Ver-1.2.1</Text>
+        </View>
       </ScrollView>
     </View>
   );
@@ -435,6 +429,39 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
     marginBottom: 20,
+    letterSpacing: 0.5,
+  },
+  dataCard: {
+    backgroundColor: '#0a0a0a',
+    borderWidth: 1,
+    borderColor: '#1f2a1f',
+    borderRadius: 14,
+    padding: 16,
+  },
+  dataHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  dataTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  dataSubtitle: {
+    color: '#aaaaaa',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  versionRow: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 24,
+    alignItems: 'center',
+  },
+  versionText: {
+    color: '#777',
+    fontSize: 12,
     letterSpacing: 0.5,
   },
   inputContainer: {

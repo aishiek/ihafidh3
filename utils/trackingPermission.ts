@@ -1,9 +1,21 @@
 import { Platform } from 'react-native';
-import {
-    getTrackingPermissionsAsync,
-    requestTrackingPermissionsAsync,
-    TrackingPermissionStatus
-} from 'react-native-app-tracking-transparency';
+
+// Make the ATT dependency optional at compile/runtime to prevent build errors
+// if the native module isn't installed in a given environment.
+type TrackingPermissionStatus = 'granted' | 'denied' | 'undetermined' | 'unavailable' | 'restricted';
+
+type ATTModule = {
+  getTrackingPermissionsAsync: () => Promise<{ status: TrackingPermissionStatus }>;
+  requestTrackingPermissionsAsync: () => Promise<{ status: TrackingPermissionStatus }>;
+};
+
+let ATT: Partial<ATTModule> = {};
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  ATT = require('react-native-app-tracking-transparency');
+} catch (_e) {
+  // Module not available; we'll gracefully fallback below
+}
 
 export interface TrackingPermissionResult {
   status: TrackingPermissionStatus;
@@ -25,11 +37,11 @@ export const requestTrackingPermission = async (): Promise<TrackingPermissionRes
 
   try {
     // Check current permission status
-    const { status } = await getTrackingPermissionsAsync();
+  const status = (await ATT.getTrackingPermissionsAsync?.())?.status ?? 'undetermined';
     
     if (status === 'undetermined') {
       // Request permission if not determined
-      const { status: newStatus } = await requestTrackingPermissionsAsync();
+      const newStatus = (await ATT.requestTrackingPermissionsAsync?.())?.status ?? 'denied';
       return {
         status: newStatus,
         canTrack: newStatus === 'granted'
@@ -61,7 +73,7 @@ export const getTrackingPermissionStatus = async (): Promise<TrackingPermissionR
   }
 
   try {
-    const { status } = await getTrackingPermissionsAsync();
+    const status = (await ATT.getTrackingPermissionsAsync?.())?.status ?? 'denied';
     return {
       status,
       canTrack: status === 'granted'

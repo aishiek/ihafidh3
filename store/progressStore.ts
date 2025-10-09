@@ -1,10 +1,12 @@
 import { surahsData } from '@/data/surahs';
+import { logVerseActivity } from '@/database/QuranDatabase';
 import { Verse } from '@/types';
 import { logAyahMemorized, logAyahRevised, logBadgeEarned } from '@/utils/analyticsUniversal';
 import { formatDate } from '@/utils/dateUtils';
 import { getJuzVerseRange } from '@/utils/juzCalculator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
+import { TOTAL_VERSES } from '@/constants/quran';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 interface TimeSpent {
@@ -58,10 +60,15 @@ interface RevisionTracker {
 }
 
 interface ProgressState {
+  // Unified verse status map (source of truth going forward)
+  verseStatus: Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>; 
   memorizedVerses: number[]; // Array of verse IDs
   revisedVerses: RevisedVerse[]; // Array of objects with verse ID and revision date
   dailyRevisedVerses: RevisionTracker[]; // New: Track daily revised verses
   weeklyRevisedVerses: RevisionTracker[]; // New: Track weekly revised verses  
+  // Aggregates (derived but cached for cheap subscriptions)
+  memorizedCount?: number;
+  revisedCount?: number;
   dailyStreak: number;
   lastOpenDate: string | null;
   timeSpent: TimeSpent;
@@ -79,7 +86,9 @@ interface ProgressState {
   
   markVerseAsMemorized: (verseId: number) => void;
   unmarkVerseAsMemorized: (verseId: number) => void;
+  bulkMarkVersesMemorized: (verseIds: number[], isMemorized?: boolean) => Promise<void>;
   markVerseAsRevised: (verseId: number) => void;
+  bulkMarkVersesRevised: (verseIds: number[]) => Promise<void>;
   updateDailyStreak: () => void;
   startTimeTracking: () => void;
   stopTimeTracking: () => void;
@@ -143,96 +152,162 @@ export const useProgressStore = create<ProgressState>()(
       lastDailyMarkedForRevisionReset: null,
       weeklyRevisedSurahsCompleted: [],
       lastWeeklyRevisedSurahsReset: null,
-      memorizedVerseDates: {},
+    memorizedVerseDates: {},
+  verseStatus: {},
+    memorizedCount: 0,
+    revisedCount: 0,
       
       markVerseAsMemorized: (verseId) => {
-        set((state) => {
-          if (state.memorizedVerses.includes(verseId)) {
-            return state;
-          }
-          
-          const newMemorizedVerses = [...state.memorizedVerses, verseId];
+        set((state): Partial<ProgressState> => {
           const today = formatDate(new Date());
+          const current = state.verseStatus[verseId]?.status || 'not_started';
+          if (current === 'memorized') return state; // no change
+
+          // Remove from revised if switching
+          let revisedVerses = state.revisedVerses;
+          if (current === 'revised') {
+            revisedVerses = revisedVerses.filter(v => v.verseId !== verseId);
+          }
+
+            const newMemorizedVerses = state.memorizedVerses.includes(verseId)
+              ? state.memorizedVerses
+              : [...state.memorizedVerses, verseId];
+          const newStatus = { ...state.verseStatus, [verseId]: { status: 'memorized', last_updated: today } };
           const newMemDates = { ...state.memorizedVerseDates, [verseId]: today };
-          
-          // Update badges after adding a new memorized verse (non-blocking)
-          setTimeout(() => {
-            try {
-              logAyahMemorized(newMemorizedVerses.length, 'daily').catch(() => {
-                // Silently handle analytics errors to avoid UI lag
-              });
-              get().updateBadges();
-            } catch (error) {
-              // Silently handle any synchronous errors
-            }
-          }, 0);
-          
-          return { memorizedVerses: newMemorizedVerses, memorizedVerseDates: newMemDates };
+          const typedStatus = newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>;
+          const agg = recomputeAggregates(typedStatus);
+          return { memorizedVerses: newMemorizedVerses, revisedVerses, verseStatus: newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>, memorizedVerseDates: newMemDates, memorizedCount: agg.memorizedCount, revisedCount: agg.revisedCount };
         });
+        // Log activity (non-blocking)
+        setTimeout(() => { try { logVerseActivity(verseId, 'memorized'); } catch {} }, 0);
       },
       
       unmarkVerseAsMemorized: (verseId) => {
-        set((state) => {
-          if (!state.memorizedVerses.includes(verseId)) {
-            return state;
-          }
-          
+        set((state): Partial<ProgressState> => {
+          if (!state.memorizedVerses.includes(verseId)) return state as any;
           const newMemorizedVerses = state.memorizedVerses.filter(id => id !== verseId);
           const { [verseId]: _removed, ...restDates } = state.memorizedVerseDates || {};
-          
-          // Update badges after removing a memorized verse (non-blocking)
-          setTimeout(() => {
-            try {
-              get().updateBadges();
-            } catch (error) {
-              // Silently handle any errors
-            }
-          }, 0);
-          
-          return { memorizedVerses: newMemorizedVerses, memorizedVerseDates: restDates };
+          const newStatus = { ...state.verseStatus, [verseId]: { status: 'not_started', last_updated: formatDate(new Date()) } };
+          setTimeout(() => { try { get().updateBadges(); } catch {} }, 0);
+          const typedStatus2 = newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>;
+          const agg = recomputeAggregates(typedStatus2);
+          return { memorizedVerses: newMemorizedVerses, memorizedVerseDates: restDates, verseStatus: newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>, memorizedCount: agg.memorizedCount, revisedCount: agg.revisedCount };
         });
       },
       
+      // Optimized bulk operation for memorizing/unmarking multiple verses
+      bulkMarkVersesMemorized: async (verseIds: number[], isMemorized: boolean = true) => {
+        try {
+          const { bulkMarkVersesMemorized } = await import('../database/QuranDatabase');
+          
+          // Update database first (batch operation)
+          await bulkMarkVersesMemorized(verseIds, isMemorized);
+          
+          // Update store state efficiently 
+          set((state) => {
+            const today = formatDate(new Date());
+            let memorizedVerses = [...state.memorizedVerses];
+            let memorizedVerseDates = { ...state.memorizedVerseDates };
+            const verseStatus = { ...state.verseStatus } as Record<number, { status: 'not_started'|'memorized'|'revised'; last_updated: string }>;
+
+            if (isMemorized) {
+              const toAdd = verseIds.filter(id => !memorizedVerses.includes(id));
+              if (toAdd.length) {
+                memorizedVerses.push(...toAdd);
+                toAdd.forEach(id => {
+                  memorizedVerseDates[id] = today;
+                  verseStatus[id] = { status: 'memorized', last_updated: today };
+                  // If previously revised, ensure it's not double-counted in revisedVerses array removal not needed here (status map is source of truth for aggregates)
+                });
+              }
+            } else {
+              if (verseIds.length) {
+                memorizedVerses = memorizedVerses.filter(id => !verseIds.includes(id));
+                verseIds.forEach(id => {
+                  delete memorizedVerseDates[id];
+                  // revert to not_started only if not revised already
+                  if (verseStatus[id]?.status === 'memorized') {
+                    verseStatus[id] = { status: 'not_started', last_updated: today };
+                  }
+                });
+              }
+            }
+
+            // Recompute aggregates from updated status map
+            const agg = recomputeAggregates(verseStatus);
+            return {
+              memorizedVerses,
+              memorizedVerseDates,
+              verseStatus,
+              memorizedCount: agg.memorizedCount,
+              revisedCount: agg.revisedCount,
+            } as Partial<ProgressState>;
+          });
+          
+          // Update badges and analytics (non-blocking)
+          setTimeout(() => {
+            try {
+              if (isMemorized) {
+                const currentTotal = get().memorizedVerses.length;
+                logAyahMemorized(currentTotal, 'daily').catch(() => {});
+              }
+              get().updateBadges();
+            } catch (error) {
+              // Silently handle errors
+            }
+          }, 0);
+          
+        } catch (error) {
+          console.error('Bulk mark verses failed:', error);
+        }
+      },
+      
       markVerseAsRevised: (verseId) => {
-        set((state) => {
-          // Check if the verse is already in the revised list by verseId
-          if (state.revisedVerses.some(v => v.verseId === verseId)) {
-             return state; // No change needed if already revised
+        set((state): Partial<ProgressState> => {
+          const today = formatDate(new Date());
+          const current = state.verseStatus[verseId]?.status || 'not_started';
+          if (current === 'revised') return state;
+
+          // Remove from memorized if switching
+          let memorizedVerses = state.memorizedVerses;
+          let memorizedVerseDates = state.memorizedVerseDates;
+          if (current === 'memorized') {
+            memorizedVerses = memorizedVerses.filter(id => id !== verseId);
+            const { [verseId]: _removed, ...rest } = memorizedVerseDates;
+            memorizedVerseDates = rest;
           }
 
-          const today = formatDate(new Date());
-          const newRevisedVerses = [...state.revisedVerses, { verseId, revisionDate: today }];
-          
-          // Update daily revised verses
-          const newDailyRevisedVerses = [...state.dailyRevisedVerses, { verseId, date: today }];
-          
-          // Update weekly revised verses
-          const newWeeklyRevisedVerses = [...state.weeklyRevisedVerses, { verseId, date: today }];
-          
-          // Find surah ID for the verse
-          let currentVerseId = 0;
-          let surahId = 1;
-          for (const surah of surahsData) {
-            if (verseId <= currentVerseId + surah.versesCount) {
-              break;
-            }
-            currentVerseId += surah.versesCount;
-            surahId++;
-          }
-          
-          // Update weekly revised surahs if not already marked
-          const newWeeklyRevisedSurahsCompleted = 
-            state.weeklyRevisedSurahsCompleted.includes(surahId)
-              ? state.weeklyRevisedSurahsCompleted
-              : [...state.weeklyRevisedSurahsCompleted, surahId];
-          
-          return { 
+          // Add to revised arrays if not already
+          const exists = state.revisedVerses.some(v => v.verseId === verseId);
+          const newRevisedVerses = exists ? state.revisedVerses : [...state.revisedVerses, { verseId, revisionDate: today }];
+          const newDailyRevisedVerses = exists ? state.dailyRevisedVerses : [...state.dailyRevisedVerses, { verseId, date: today }];
+          const newWeeklyRevisedVerses = exists ? state.weeklyRevisedVerses : [...state.weeklyRevisedVerses, { verseId, date: today }];
+
+          // Determine surah
+          let currentVerseId = 0; let surahId = 1;
+          for (const surah of surahsData) { if (verseId <= currentVerseId + surah.versesCount) break; currentVerseId += surah.versesCount; surahId++; }
+          const newWeeklyRevisedSurahsCompleted = state.weeklyRevisedSurahsCompleted.includes(surahId)
+            ? state.weeklyRevisedSurahsCompleted
+            : [...state.weeklyRevisedSurahsCompleted, surahId];
+
+          const newStatus = { ...state.verseStatus, [verseId]: { status: 'revised', last_updated: today } };
+          const newState: Partial<ProgressState> = {
+            memorizedVerses,
+            memorizedVerseDates,
             revisedVerses: newRevisedVerses,
             dailyRevisedVerses: newDailyRevisedVerses,
             weeklyRevisedVerses: newWeeklyRevisedVerses,
-            weeklyRevisedSurahsCompleted: newWeeklyRevisedSurahsCompleted
+            weeklyRevisedSurahsCompleted: newWeeklyRevisedSurahsCompleted,
+            verseStatus: newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>,
           };
+          const typedStatus3 = newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>;
+          const agg = recomputeAggregates(typedStatus3);
+          (newState as any).memorizedCount = agg.memorizedCount;
+          (newState as any).revisedCount = agg.revisedCount;
+          return newState;
         });
+        // Log activity (non-blocking)
+        setTimeout(() => { try { logVerseActivity(verseId, 'revised'); } catch {} }, 0);
         // After marking as revised, update notifications (non-blocking)
         setTimeout(() => {
           try {
@@ -244,6 +319,80 @@ export const useProgressStore = create<ProgressState>()(
             // Silently handle any synchronous errors
           }
         }, 0);
+      },
+      
+      // Optimized bulk operation for marking multiple verses as revised
+      bulkMarkVersesRevised: async (verseIds: number[]) => {
+        try {
+          const { bulkLogRevisions } = await import('../database/QuranDatabase');
+          
+          // Log bulk revisions to database
+          await bulkLogRevisions(verseIds);
+          
+          // Update store state efficiently
+          set((state) => {
+            const today = formatDate(new Date());
+            let newRevisedVerses = [...state.revisedVerses];
+            let newDailyRevisedVerses = [...state.dailyRevisedVerses];
+            let newWeeklyRevisedVerses = [...state.weeklyRevisedVerses];
+            let newWeeklyRevisedSurahsCompleted = [...state.weeklyRevisedSurahsCompleted];
+            
+            verseIds.forEach(verseId => {
+              // Only add if not already revised
+              if (!newRevisedVerses.some(v => v.verseId === verseId)) {
+                newRevisedVerses.push({ verseId, revisionDate: today });
+                newDailyRevisedVerses.push({ verseId, date: today });
+                newWeeklyRevisedVerses.push({ verseId, date: today });
+                
+                // Find surah ID for weekly tracking
+                let currentVerseId = 0;
+                let surahId = 1;
+                for (const surah of surahsData) {
+                  if (verseId <= currentVerseId + surah.versesCount) {
+                    break;
+                  }
+                  currentVerseId += surah.versesCount;
+                  surahId++;
+                }
+                
+                if (!newWeeklyRevisedSurahsCompleted.includes(surahId)) {
+                  newWeeklyRevisedSurahsCompleted.push(surahId);
+                }
+              }
+            });
+            
+            // Update unified status map
+            const todayLocal = formatDate(new Date());
+            const verseStatus = { ...state.verseStatus };
+            verseIds.forEach(id => {
+              verseStatus[id] = { status: 'revised', last_updated: todayLocal } as { status: 'revised'; last_updated: string };
+            });
+            const partial = {
+              revisedVerses: newRevisedVerses,
+              dailyRevisedVerses: newDailyRevisedVerses,
+              weeklyRevisedVerses: newWeeklyRevisedVerses,
+              weeklyRevisedSurahsCompleted: newWeeklyRevisedSurahsCompleted,
+              verseStatus: verseStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>,
+            } as Partial<ProgressState>;
+            const agg = recomputeAggregates(verseStatus);
+            (partial as any).memorizedCount = agg.memorizedCount;
+            (partial as any).revisedCount = agg.revisedCount;
+            return partial;
+          });
+          
+          // Update analytics (non-blocking)
+          setTimeout(() => {
+            try {
+              const revisedVerses = get().revisedVerses;
+              logAyahRevised(revisedVerses.length).catch(() => {});
+            } catch (error) {
+              // Silently handle errors
+            }
+          }, 0);
+          
+        } catch (error) {
+          console.error('Bulk mark verses revised failed:', error);
+        }
       },
       
       updateDailyStreak: () => {
@@ -659,8 +808,47 @@ export const useProgressStore = create<ProgressState>()(
           if (!state.memorizedVerseDates) {
             state.memorizedVerseDates = {} as Record<number, string>;
           }
+
+          // Migration: populate verseStatus if empty using existing arrays
+          if (state.verseStatus && Object.keys(state.verseStatus).length === 0) {
+            const today = formatDate(new Date());
+            const vs: Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }> = {};
+            (state.memorizedVerses || []).forEach(id => { vs[id] = { status: 'memorized', last_updated: today }; });
+            (state.revisedVerses || []).forEach(rv => { vs[rv.verseId] = { status: 'revised', last_updated: rv.revisionDate || today }; });
+            state.verseStatus = vs;
+          }
+          // Recompute aggregates
+          const agg = recomputeAggregates(state.verseStatus || {});
+          state.memorizedCount = agg.memorizedCount;
+            state.revisedCount = agg.revisedCount;
+          const total = (agg.memorizedCount || 0) + (agg.revisedCount || 0);
+          if (total > TOTAL_VERSES) {
+            console.warn('[progressStore] Invariant violation: total progressed verses exceeds TOTAL_VERSES');
+          }
         }
       },
     }
   )
 );
+
+// Utility to recompute aggregates centrally
+function recomputeAggregates(verseStatus: Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>) {
+  let memorizedCount = 0; let revisedCount = 0;
+  Object.values(verseStatus).forEach(entry => {
+    if (entry.status === 'memorized') memorizedCount++; else if (entry.status === 'revised') revisedCount++;
+  });
+  return { memorizedCount, revisedCount };
+}
+
+// Public selector helpers
+export const selectProgressAggregates = (state: ProgressState) => {
+  const memorizedCount = state.memorizedCount || 0;
+  const revisedCount = state.revisedCount || 0;
+  const total = Math.min(memorizedCount + revisedCount, TOTAL_VERSES);
+  return {
+    memorizedCount,
+    revisedCount,
+    totalProgressed: total,
+    percent: (total / TOTAL_VERSES) * 100,
+  };
+};

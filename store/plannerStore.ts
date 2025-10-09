@@ -82,6 +82,25 @@ export const usePlannerStore = create<PlannerState>()(
       onRehydrateStorage: () => (state) => {
         if (state) {
           state.plansByDate = state.plansByDate || {};
+          // Migrate keys from yyyy-MM-dd to dd-MM-yyyy if needed
+          const keys = Object.keys(state.plansByDate);
+          let changed = false;
+          const newMap: Record<string, PlannerEntry[]> = { ...state.plansByDate };
+          for (const k of keys) {
+            // detect yyyy-MM-dd
+            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(k);
+            if (m) {
+              const yyyy = m[1], mm = m[2], dd = m[3];
+              const newKey = `${dd}-${mm}-${yyyy}`;
+              if (!newMap[newKey]) newMap[newKey] = newMap[k];
+              delete newMap[k];
+              changed = true;
+            }
+          }
+          if (changed) {
+            // Assign back; persist middleware will write it on next set
+            state.plansByDate = newMap;
+          }
         }
       },
     }

@@ -91,9 +91,21 @@ export default function BadgesScreen() {
         level: 1,
         details: `${juz30VerseCount}/${juz30TotalVerses} verses memorized in Juz Amma`
       },
+      // 3 Juz Completed
+      {
+        id: 'munir-al-darb',
+        name: 'Munir Al-Darb',
+        description: 'Illuminator of the Path',
+        icon: '🕌',
+        requirement: 'Complete any 3 Juz of the Quran',
+        isUnlocked: completedJuz >= 3,
+        progress: Math.min((completedJuz / 3) * 100, 100),
+        level: 1.5,
+        details: `${completedJuz}/3 Juz completed`
+      },
       {
         id: 'hamil-al-hikmah',
-        name: 'Hamil al-Hikmah',
+        name: 'Hamil Al-Hikmah',
         description: 'Bearer of Wisdom',
         icon: '📜',
         requirement: 'Complete any 5 Juz of the Quran',
@@ -101,6 +113,18 @@ export default function BadgesScreen() {
         progress: Math.min((completedJuz / 5) * 100, 100),
         level: 2,
         details: `${completedJuz}/5 Juz completed`
+      },
+      // 10 Juz Completed
+      {
+        id: 'sahib-al-istiqaamah',
+        name: 'Sahib Al-Istiqamah',
+        description: 'Keeper of Steadfastness',
+        icon: '🌙',
+        requirement: 'Complete any 10 Juz of the Quran',
+        isUnlocked: completedJuz >= 10,
+        progress: Math.min((completedJuz / 10) * 100, 100),
+        level: 2.5,
+        details: `${completedJuz}/10 Juz completed`
       },
       {
         id: 'saari-fi-sabeelillah',
@@ -113,9 +137,21 @@ export default function BadgesScreen() {
         level: 3,
         details: `${completedJuz}/15 Juz completed`
       },
+      // 20 Juz Completed
+      {
+        id: 'sahib-al-azm',
+        name: 'Sahib Al-Azm',
+        description: 'Master of Determination',
+        icon: '🏔️',
+        requirement: 'Complete any 20 Juz of the Quran',
+        isUnlocked: completedJuz >= 20,
+        progress: Math.min((completedJuz / 20) * 100, 100),
+        level: 3.5,
+        details: `${completedJuz}/20 Juz completed`
+      },
       {
         id: 'naasir-al-quran',
-        name: 'Naasir al-Quran',
+        name: 'Naasir Al-Quran',
         description: 'Defender of the Quran',
         icon: '⚔️',
         requirement: 'Complete any 23 Juz of the Quran',
@@ -123,6 +159,18 @@ export default function BadgesScreen() {
         progress: Math.min((completedJuz / 23) * 100, 100),
         level: 4,
         details: `${completedJuz}/23 Juz completed`
+      },
+      // 25 Juz Completed
+      {
+        id: 'rahiq-al-yaqeen',
+        name: 'Rahiq Al-Yaqeen',
+        description: 'Nectar of Certainity',
+        icon: '📖✨',
+        requirement: 'Complete any 25 Juz of the Quran',
+        isUnlocked: completedJuz >= 25,
+        progress: Math.min((completedJuz / 25) * 100, 100),
+        level: 4.5,
+        details: `${completedJuz}/25 Juz completed`
       },
       {
         id: 'hafidh-al-quran',

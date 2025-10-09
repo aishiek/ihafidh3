@@ -8,12 +8,15 @@ import { useSettingsStore } from '@/store/settingsStore';
 import type { Surah } from '@/types';
 import { Verse } from '@/types';
 import { pauseAudio, pauseSurahAudio, playAudio, playSurahAudioWithFallback, resumeSurahAudio } from '@/utils/audioUtils';
+import { getArabicTypographySizing } from '@/utils/fontUtils';
+import { getAverageVerseHeight } from '@/utils/verseLayoutUtils';
 import { useCustomColors } from '@/utils/themeUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { ArrowLeft, CheckCircle, Pause, Play, RefreshCw, Search, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, InteractionManager, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View, ViewStyle, Platform } from 'react-native';
 
 // Dynamic batch size based on surah length
 const getDynamicBatchSize = (surahVerseCount: number, isInitial: boolean = false) => {
@@ -117,7 +120,10 @@ export default function ReadScreen() {
   } = useProgressStore();
   const { clearError, setLastViewedSurahId, getLastViewedSurahId } = useQuranStore();
   const lastViewedSurahId = useQuranStore(state => state.lastViewedSurahId);
-  const { autoPlayAudio, translationLanguage, arabicFont, fontSizeArabic } = useSettingsStore();
+  const { autoPlayAudio, translationLanguage, arabicFont, fontSizeArabic, showTranslation, fontSizeTranslation } = useSettingsStore();
+
+  // Header Arabic text typography (smaller size for surah names)
+  const headerArabicTypography = getArabicTypographySizing(fontSizeArabic * 0.9, arabicFont as any);
 
   // ✅ OPTIMIZED: Stable callback references
   const isVerseMemorizedCallback = useCallback((verseId: number) => {
@@ -189,19 +195,11 @@ export default function ReadScreen() {
   const renderVerseOptimized = useCallback(({ item: verse }: { item: Verse }) => (
     <VerseItem
       verse={verse}
-      isMemorized={isVerseMemorizedCallback}
-      isRevised={isVerseRevisedCallback}
       onMemorizeToggle={handleVerseMemorizeToggle}
       onRevisionToggle={handleVerseRevisionToggle}
       onPlayAudio={handleVersePlayAudio}
     />
-  ), [
-    isVerseMemorizedCallback,
-    isVerseRevisedCallback,
-    handleVerseMemorizeToggle,
-    handleVerseRevisionToggle,
-    handleVersePlayAudio
-  ]);
+  ), [handleVerseMemorizeToggle, handleVerseRevisionToggle, handleVersePlayAudio]);
   const surahListRef = useRef<FlatList>(null);
   const versesListRef = useRef<FlatList<Verse>>(null);
   const targetVerseRef = useRef<number | null>(null);
@@ -325,6 +323,18 @@ export default function ReadScreen() {
     if (progress === 100) return '#4CAF50'; // Green for completed
     return '#FF9800'; // Orange for in progress
   };
+
+  // Average verse height (sample-based) for virtualization
+  const averageVerseHeight = useMemo(() => {
+    return getAverageVerseHeight(
+      verses,
+      {
+        arabicFontSize: fontSizeArabic,
+        showTranslation: showTranslation,
+        translationFontSize: fontSizeTranslation,
+      }
+    );
+  }, [verses, fontSizeArabic, showTranslation, fontSizeTranslation]);
   
   const loadInitialVerses = useCallback(async (surah: any) => {
     const lockKey = `surah_${surah.id}_${translationLanguage}`;
@@ -516,69 +526,119 @@ export default function ReadScreen() {
   }, [selectedSurah, router]);
 
   // Handle marking all verses as memorized or unmarking them (work on ALL verses in surah)
+  const BULK_UPDATE_THRESHOLD = 10; // Reduced: use bulk DB/state update for surahs with 10+ verses (was 30)
+
   const handleMarkAllMemorized = async () => {
     if (!selectedSurah) return;
 
     const allSurahVerseIds = getSurahVerseRange(selectedSurah);
     const memorizedSet = new Set(memorizedVerses);
+    const isMarking = !surahStatus.isMemorized;
 
-    const pendingUpdates: Array<() => Promise<void>> = [];
-
-    for (let verseId of allSurahVerseIds) {
-      if (surahStatus.isMemorized && memorizedSet.has(verseId)) {
-        pendingUpdates.push(() => Promise.resolve(unmarkVerseAsMemorized(verseId)));
-      } else if (!surahStatus.isMemorized && !memorizedSet.has(verseId)) {
-        pendingUpdates.push(() => Promise.resolve(markVerseAsMemorized(verseId)));
+    // Determine which verses need updating
+    const versesToUpdate = allSurahVerseIds.filter(verseId => {
+      if (isMarking) {
+        return !memorizedSet.has(verseId); // Only unmemorized verses
+      } else {
+        return memorizedSet.has(verseId); // Only memorized verses
       }
+    });
+
+    if (versesToUpdate.length === 0) {
+      Alert.alert('No Changes', 'All verses are already in the desired state.');
+      return;
     }
 
-    setProgressAction(surahStatus.isMemorized ? 'unmark-memorized' : 'mark-memorized');
+    // Show progress modal
+    setProgressAction(isMarking ? 'mark-memorized' : 'unmark-memorized');
     setProgressModalVisible(true);
     setProgressCount(0);
 
-    const BATCH_SIZE = 10;
-    const processedRef = { current: 0 };
-    const lastReportedRef = { current: 0 };
-    const isCancelled = { current: false };
-
-    const processNextBatch = (index = 0) => {
-      if (isCancelled.current) return;
-
-      const batch = pendingUpdates.slice(index, index + BATCH_SIZE);
-
-      Promise.all(
-        batch.map(async (fn) => {
-          try {
-            await fn();
-          } catch (e) {
-            console.error("Verse update failed:", e);
+    try {
+      const startTime = Date.now(); // Performance tracking
+      
+      // Use bulk update for larger surahs
+      if (selectedSurah.versesCount >= BULK_UPDATE_THRESHOLD) {
+        console.log(`Using bulk update for ${selectedSurah.name} (${versesToUpdate.length} verses)`);
+        
+        // Import the database function
+        const { bulkMarkVersesMemorized } = await import('@/database/QuranDatabase');
+        
+        // Perform bulk update
+        await bulkMarkVersesMemorized(versesToUpdate, isMarking);
+        
+        // Update local state in batches to show progress
+        const BATCH_SIZE = 50;
+        for (let i = 0; i < versesToUpdate.length; i += BATCH_SIZE) {
+          const batch = versesToUpdate.slice(i, i + BATCH_SIZE);
+          
+          if (isMarking) {
+            useProgressStore.setState(state => {
+              // Ensure we don't duplicate verses
+              const existingSet = new Set(state.memorizedVerses);
+              const newVerses = batch.filter(id => !existingSet.has(id));
+              return {
+                memorizedVerses: [...state.memorizedVerses, ...newVerses]
+              };
+            });
+          } else {
+            useProgressStore.setState(state => ({
+              memorizedVerses: state.memorizedVerses.filter(id => !batch.includes(id))
+            }));
           }
-        })
-      ).then(() => {
-        processedRef.current += batch.length;
-
-        if (
-          processedRef.current - lastReportedRef.current >= 10 ||
-          processedRef.current === pendingUpdates.length
-        ) {
-          lastReportedRef.current = processedRef.current;
-          setProgressCount(processedRef.current);
+          
+          setProgressCount(Math.min(i + BATCH_SIZE, versesToUpdate.length));
+          await new Promise(resolve => setTimeout(resolve, 50)); // Brief pause for UI update
         }
+        
+      } else {
+        // Use individual updates for smaller surahs (existing logic)
+        console.log(`Using individual updates for ${selectedSurah.name} (${versesToUpdate.length} verses)`);
+        
+        const pendingUpdates: Array<() => Promise<void>> = versesToUpdate.map(verseId => {
+          return isMarking 
+            ? () => Promise.resolve(markVerseAsMemorized(verseId))
+            : () => Promise.resolve(unmarkVerseAsMemorized(verseId));
+        });
 
-        if (index + BATCH_SIZE < pendingUpdates.length) {
-          setTimeout(() => processNextBatch(index + BATCH_SIZE), 25);
-        } else {
-          setProgressModalVisible(false);
-          setProgressAction(null);
+        // Process in batches with progress updates
+        const BATCH_SIZE = 10;
+        let processed = 0;
+
+        for (let i = 0; i < pendingUpdates.length; i += BATCH_SIZE) {
+          const batch = pendingUpdates.slice(i, i + BATCH_SIZE);
+          
+          await Promise.all(
+            batch.map(async (fn) => {
+              try {
+                await fn();
+              } catch (e) {
+                console.error("Verse update failed:", e);
+              }
+            })
+          );
+          
+          processed += batch.length;
+          setProgressCount(processed);
+          
+          // Small delay for UI responsiveness
+          if (i + BATCH_SIZE < pendingUpdates.length) {
+            await new Promise(resolve => setTimeout(resolve, 25));
+          }
         }
-      });
-    };
+      }
 
-    await useQuranStore.getState().initializeDatabase();
-
-    InteractionManager.runAfterInteractions(() => {
-      processNextBatch();
-    });
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+      console.log(`✅ Successfully updated ${versesToUpdate.length} verses for ${selectedSurah.name} in ${duration}ms`);
+      
+    } catch (error) {
+      console.error('Failed to update verses:', error);
+      Alert.alert('Error', 'Failed to update verses. Please try again.');
+    } finally {
+      setProgressModalVisible(false);
+      setProgressAction(null);
+    }
   };
 
   const handleMarkAllRevised = async () => {
@@ -586,69 +646,140 @@ export default function ReadScreen() {
 
     const allSurahVerseIds = getSurahVerseRange(selectedSurah);
     const revisedSet = new Set(revisedVerses.map((v) => v.verseId));
+    const isMarking = !surahStatus.isRevised;
 
-    const pendingUpdates: Array<() => Promise<void>> = [];
-
-    for (let verseId of allSurahVerseIds) {
-      if (surahStatus.isRevised && revisedSet.has(verseId)) {
-        pendingUpdates.push(() => {
-        useProgressStore.setState((state) => ({
-            revisedVerses: state.revisedVerses.filter((rv) => rv.verseId !== verseId),
-            dailyRevisedVerses: state.dailyRevisedVerses.filter((rv) => rv.verseId !== verseId),
-            weeklyRevisedVerses: state.weeklyRevisedVerses.filter((rv) => rv.verseId !== verseId),
-          }));
-          return Promise.resolve();
-        });
-      } else if (!surahStatus.isRevised && !revisedSet.has(verseId)) {
-        pendingUpdates.push(() => Promise.resolve(markVerseAsRevised(verseId)));
-        }
+    // Determine which verses need updating
+    const versesToUpdate = allSurahVerseIds.filter(verseId => {
+      if (isMarking) {
+        return !revisedSet.has(verseId); // Only unrevised verses
+      } else {
+        return revisedSet.has(verseId); // Only revised verses
       }
+    });
 
-    setProgressAction(surahStatus.isRevised ? 'unmark-revised' : 'mark-revised');
+    if (versesToUpdate.length === 0) {
+      Alert.alert('No Changes', 'All verses are already in the desired state.');
+      return;
+    }
+
+    // Show progress modal
+    setProgressAction(isMarking ? 'mark-revised' : 'unmark-revised');
     setProgressModalVisible(true);
     setProgressCount(0);
 
-    const BATCH_SIZE = 10;
-    const processedRef = { current: 0 };
-    const lastReportedRef = { current: 0 };
-    const isCancelled = { current: false };
-
-    const processNextBatch = (index = 0) => {
-      if (isCancelled.current) return;
-
-      const batch = pendingUpdates.slice(index, index + BATCH_SIZE);
-
-      Promise.all(
-        batch.map(async (fn) => {
-        try {
-          await fn();
-        } catch (e) {
-          console.error("Verse update failed:", e);
+    try {
+      const startTime = Date.now(); // Performance tracking
+      
+      // Use bulk update for larger surahs
+      if (selectedSurah.versesCount >= BULK_UPDATE_THRESHOLD) {
+        console.log(`Using bulk revision update for ${selectedSurah.name} (${versesToUpdate.length} verses)`);
+        
+        if (isMarking) {
+          // Import the database function for bulk revision logging
+          const { bulkLogRevisions } = await import('@/database/QuranDatabase');
+          await bulkLogRevisions(versesToUpdate);
         }
-        })
-      ).then(() => {
-        processedRef.current += batch.length;
-
-        if (
-          processedRef.current - lastReportedRef.current >= 10 ||
-          processedRef.current === pendingUpdates.length
-        ) {
-          lastReportedRef.current = processedRef.current;
-          setProgressCount(processedRef.current);
+        
+        // Update local state in batches to show progress
+        const BATCH_SIZE = 50;
+        for (let i = 0; i < versesToUpdate.length; i += BATCH_SIZE) {
+          const batch = versesToUpdate.slice(i, i + BATCH_SIZE);
+          
+          if (isMarking) {
+            // Add revisions
+            batch.forEach(verseId => {
+              useProgressStore.setState((state) => {
+                const exists = state.revisedVerses.some(rv => rv.verseId === verseId);
+                if (!exists) {
+                  const now = new Date();
+                  const today = now.toISOString().split('T')[0]; // YYYY-MM-DD format
+                  const revision = {
+                    verseId,
+                    revisionDate: today, // Use revisionDate to match RevisedVerse interface
+                  };
+                  const tracker = {
+                    verseId,
+                    date: today, // Use date for tracker interfaces
+                  };
+                  return {
+                    revisedVerses: [...state.revisedVerses, revision],
+                    dailyRevisedVerses: [...state.dailyRevisedVerses, tracker],
+                    weeklyRevisedVerses: [...state.weeklyRevisedVerses, tracker],
+                  };
+                }
+                return state;
+              });
+            });
+          } else {
+            // Remove revisions
+            useProgressStore.setState((state) => ({
+              revisedVerses: state.revisedVerses.filter((rv) => !batch.includes(rv.verseId)),
+              dailyRevisedVerses: state.dailyRevisedVerses.filter((rv) => !batch.includes(rv.verseId)),
+              weeklyRevisedVerses: state.weeklyRevisedVerses.filter((rv) => !batch.includes(rv.verseId)),
+            }));
+          }
+          
+          setProgressCount(Math.min(i + BATCH_SIZE, versesToUpdate.length));
+          await new Promise(resolve => setTimeout(resolve, 50)); // Brief pause for UI update
         }
-
-        if (index + BATCH_SIZE < pendingUpdates.length) {
-          setTimeout(() => processNextBatch(index + BATCH_SIZE), 25);
+        
       } else {
-          setProgressModalVisible(false);
-          setProgressAction(null);
-        }
-      });
-    };
+        // Use individual updates for smaller surahs (existing logic)
+        console.log(`Using individual revision updates for ${selectedSurah.name} (${versesToUpdate.length} verses)`);
+        
+        const pendingUpdates: Array<() => Promise<void>> = versesToUpdate.map(verseId => {
+          if (isMarking) {
+            return () => Promise.resolve(markVerseAsRevised(verseId));
+          } else {
+            return () => {
+              useProgressStore.setState((state) => ({
+                revisedVerses: state.revisedVerses.filter((rv) => rv.verseId !== verseId),
+                dailyRevisedVerses: state.dailyRevisedVerses.filter((rv) => rv.verseId !== verseId),
+                weeklyRevisedVerses: state.weeklyRevisedVerses.filter((rv) => rv.verseId !== verseId),
+              }));
+              return Promise.resolve();
+            };
+          }
+        });
 
-    InteractionManager.runAfterInteractions(() => {
-      processNextBatch();
-    });
+        // Process in batches with progress updates
+        const BATCH_SIZE = 10;
+        let processed = 0;
+
+        for (let i = 0; i < pendingUpdates.length; i += BATCH_SIZE) {
+          const batch = pendingUpdates.slice(i, i + BATCH_SIZE);
+          
+          await Promise.all(
+            batch.map(async (fn) => {
+              try {
+                await fn();
+              } catch (e) {
+                console.error("Verse revision update failed:", e);
+              }
+            })
+          );
+          
+          processed += batch.length;
+          setProgressCount(processed);
+          
+          // Small delay for UI responsiveness
+          if (i + BATCH_SIZE < pendingUpdates.length) {
+            await new Promise(resolve => setTimeout(resolve, 25));
+          }
+        }
+      }
+
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+      console.log(`✅ Successfully updated ${versesToUpdate.length} verse revisions for ${selectedSurah.name} in ${duration}ms`);
+      
+    } catch (error) {
+      console.error('Failed to update verse revisions:', error);
+      Alert.alert('Error', 'Failed to update verse revisions. Please try again.');
+    } finally {
+      setProgressModalVisible(false);
+      setProgressAction(null);
+    }
   };
 
   
@@ -960,7 +1091,7 @@ export default function ReadScreen() {
       setHasMoreVerses(true);
       loadInitialVerses(selectedSurah);
     }
-  }, [arabicFont, selectedSurah, translationLanguage, verses, clearSurahCache, loadInitialVerses]);
+  }, [arabicFont, selectedSurah, translationLanguage, clearSurahCache, loadInitialVerses]);
 
   // Handle deep-link style params from Home: open surah and optionally scroll to verse
   useEffect(() => {
@@ -978,6 +1109,48 @@ export default function ReadScreen() {
       }
     }
   }, [paramSurahId, paramVerseId, setLastViewedSurahId, loadInitialVerses]);
+
+  // Re-run param handling whenever screen regains focus (covers Android occasional missed mount param processing)
+  useFocusEffect(
+    useCallback(() => {
+      const sid = paramSurahId ? Number(paramSurahId) : undefined;
+      const vid = paramVerseId ? Number(paramVerseId) : undefined;
+      if (sid && !Number.isNaN(sid)) {
+        // Only reopen if not already on the same surah
+        if (!selectedSurah || selectedSurah.id !== sid) {
+          const surah = surahsData.find(s => s.id === sid);
+            if (surah) {
+              setSelectedSurah(surah);
+              setLastViewedSurahId(surah.id);
+              if (vid && !Number.isNaN(vid)) targetVerseRef.current = vid;
+              loadInitialVerses(surah);
+            }
+        }
+      }
+      // No cleanup needed
+      return () => {};
+    }, [paramSurahId, paramVerseId, selectedSurah, loadInitialVerses, setLastViewedSurahId])
+  );
+
+  // Android-specific subtle race fallback: after a short delay if params exist but surah not opened, retry once
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sid = paramSurahId ? Number(paramSurahId) : undefined;
+    if (!sid) return;
+    if (selectedSurah && selectedSurah.id === sid) return; // already opened
+    const timeout = setTimeout(() => {
+      if (!selectedSurah) {
+        const surah = surahsData.find(s => s.id === sid);
+        if (surah) {
+          console.log('[read] Fallback re-open surah due to initial miss (Android)', sid);
+          setSelectedSurah(surah);
+          setLastViewedSurahId(surah.id);
+          loadInitialVerses(surah);
+        }
+      }
+    }, 180); // small delay to allow route params to settle
+    return () => clearTimeout(timeout);
+  }, [paramSurahId, selectedSurah, loadInitialVerses, setLastViewedSurahId]);
 
   // After verses load, scroll to the requested verse if any
   useEffect(() => {
@@ -1030,9 +1203,7 @@ export default function ReadScreen() {
               </View>
               <Text style={[styles.headerSubtitle, { 
                 fontFamily: getArabicFontFamily(),
-                fontSize: fontSizeArabic * 0.9,
-                lineHeight: fontSizeArabic * 1.4,
-                letterSpacing: -0.2,
+                ...headerArabicTypography,
               }]}>{selectedSurah.arabicName}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
                 <Text style={{
@@ -1163,7 +1334,7 @@ export default function ReadScreen() {
                 ref={versesListRef}
                 data={verses}
                 renderItem={renderVerseOptimized}
-                keyExtractor={(item, index) => `verse-${item.id}-${index}`}
+                keyExtractor={(item) => `v-${item.id}`}
                 contentContainerStyle={[styles.versesContent, { backgroundColor: '#1a1a1a' }]}
                 onEndReached={loadMoreVerses}
                 onEndReachedThreshold={0.5}
@@ -1171,16 +1342,11 @@ export default function ReadScreen() {
                 ListEmptyComponent={renderEmpty}
                 showsVerticalScrollIndicator={true}
                 removeClippedSubviews={true}
-                maxToRenderPerBatch={5}
-                windowSize={5}
-                initialNumToRender={5}
-                updateCellsBatchingPeriod={50}
+                maxToRenderPerBatch={8}
+                windowSize={10}
+                initialNumToRender={8}
                 style={{ backgroundColor: '#1a1a1a' }}
-                onScrollToIndexFailed={({ index }) => {
-                  setTimeout(() => {
-                    versesListRef.current?.scrollToIndex({ index, animated: true });
-                  }, 300);
-                }}
+                getItemLayout={(data, index) => ({ length: averageVerseHeight, offset: averageVerseHeight * index, index })}
               />
             )}
           </View>
@@ -1198,6 +1364,11 @@ export default function ReadScreen() {
                 scrollOffsetRef.current = e.nativeEvent.contentOffset.y;
               }}
               scrollEventThrottle={400} // Only update every 400ms to avoid performance issues
+              getItemLayout={(data, index) => ({ length: SURAH_ITEM_HEIGHT, offset: SURAH_ITEM_HEIGHT * index, index })}
+              initialNumToRender={12}
+              windowSize={12}
+              maxToRenderPerBatch={12}
+              removeClippedSubviews
             />
           ) : (
             <JuzMemorization />
@@ -1207,6 +1378,12 @@ export default function ReadScreen() {
     </View>
   );
 }
+
+// Average verse height estimation (sample-based) for getItemLayout
+const SURAH_ITEM_HEIGHT = 80; // Approximate fixed height for surah list rows
+
+// Hook-level memo: placed after component definition to avoid reorder of hooks above
+// We'll compute averageVerseHeight inside component via useMemo; define default below in case of early reference.
 
 const styles = StyleSheet.create({
   container: {

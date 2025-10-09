@@ -1,4 +1,5 @@
 import { useSettingsStore } from '@/store/settingsStore';
+import { getArabicTypographySizing } from '@/utils/fontUtils';
 import React, { useEffect, useRef } from 'react';
 import { Animated, Dimensions, Modal, StyleSheet, Text, View } from 'react-native';
 
@@ -124,6 +125,9 @@ export default function QuranQuizCelebration({ visible, onComplete }: { visible:
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.3)).current;
   
+  // Get improved typography for the selected font
+  const arabicTypography = getArabicTypographySizing(fontSizeArabic * 1.2, arabicFont as any); // Slightly larger for celebration
+  
   // Randomly select a message when celebration becomes visible
   const message = React.useMemo(() => 
     ISLAMIC_MESSAGES[Math.floor(Math.random() * ISLAMIC_MESSAGES.length)], 
@@ -234,8 +238,10 @@ export default function QuranQuizCelebration({ visible, onComplete }: { visible:
           <Text style={styles.emoji}>{message.emoji}</Text>
           <Text style={[styles.arabic, { 
             fontFamily: getArabicFontFamily(),
-            fontSize: fontSizeArabic * 1.2, // Slightly larger for celebration
-            lineHeight: fontSizeArabic * 1.8
+            writingDirection: 'rtl' as const,
+            includeFontPadding: false,
+            textAlign: 'center',
+            ...arabicTypography
           }]}>{message.arabic}</Text>
           <Text style={styles.english}>{message.english}</Text>
         </Animated.View>

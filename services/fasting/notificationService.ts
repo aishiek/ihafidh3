@@ -112,10 +112,13 @@ export class FastingNotificationService {
         identifier,
         content: {
           title: `🌙 ${fastingInfo.name} Reminder`,
-            body: `Tomorrow is ${fastingInfo.name} fasting day. ${fastingInfo.description}`,
-            data: { type: 'fasting_reminder', fastingType, date: day.date, hijriDate: day.hijriDate.date },
+          body: `Tomorrow is ${fastingInfo.name} fasting day. ${fastingInfo.description}`,
+          data: { type: 'fasting_reminder', fastingType, date: day.date, hijriDate: day.hijriDate.date },
         },
-        trigger: null,
+        trigger: { 
+          type: 'date',
+          date: notificationDate 
+        } as Notifications.DateTriggerInput,
       });
       return identifier;
     } catch (error) {

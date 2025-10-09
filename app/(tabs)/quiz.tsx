@@ -99,7 +99,7 @@ export default function QuizScreen() {
   const quranStore = useQuranStore();
 
   // Get proper Arabic typography settings
-  const arabicTypography = getArabicTypographySizing(fontSizeArabic);
+  const arabicTypography = getArabicTypographySizing(fontSizeArabic, arabicFont);
 
   // Load quiz results on mount
   useEffect(() => {
@@ -491,7 +491,9 @@ export default function QuizScreen() {
               </View>
               <Text style={[styles.arabicText, {
                 fontFamily: getArabicFontFamily(arabicFont),
-                ...arabicTypography
+                includeFontPadding: false,
+                ...arabicTypography,
+                lineHeight: arabicTypography.lineHeight || Math.round((arabicTypography.fontSize || 20) * 2.0),
               }]}>{currentQuiz.verses[0].arabicText}</Text>
               <Text style={styles.translationText}>{currentQuiz.verses[0].translation}</Text>
             </View>
@@ -517,7 +519,9 @@ export default function QuizScreen() {
                     </View>
                     <Text style={[styles.arabicText, {
                       fontFamily: getArabicFontFamily(arabicFont),
-                      ...arabicTypography
+                      includeFontPadding: false,
+                      ...arabicTypography,
+                      lineHeight: arabicTypography.lineHeight || Math.round((arabicTypography.fontSize || 20) * 2.0),
                     }]}>{verse.arabicText}</Text>
                     <Text style={styles.translationText}>{verse.translation}</Text>
                     <View style={styles.answerButtons}>
@@ -954,11 +958,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   arabicText: {
-    fontSize: 24,
     color: '#ffffff',
     textAlign: 'right',
-    marginVertical: 12,
-    lineHeight: 40,
+    marginVertical: 8,
+    paddingHorizontal: 4,
+    letterSpacing: -0.2,
+    // fontSize, fontFamily, and lineHeight will be applied via inline styles
+    // to use the settings from useSettingsStore and getArabicTypographySizing
   },
   translationText: {
     fontSize: 16,

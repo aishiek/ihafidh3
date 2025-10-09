@@ -10,6 +10,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 // Remove unused import - now using calculateJuzProgress from juzCalculator
 import CircularProgress from '@/components/CircularProgress';
+import LifetimeProgressCard from '@/components/stats/LifetimeProgressCard';
+import VerseProgressCard from '@/components/stats/VerseProgressCard';
 import { useQuranStore } from '@/store/quranStore';
 
 interface ProgressTrackerData {
@@ -290,36 +292,35 @@ export default function StatsScreen() {
       </View>
       
       {/* 114 Surahs and 30 Juz Grid */}
-      <View style={[styles.yourProgressSection, { backgroundColor: '#333333', borderColor: '#555555' }]}>
-        <View style={styles.progressHeader}>
-          <Text style={[styles.sectionTitle, { color: '#ffffff' }]}>
-            Your Progress
-          </Text>
-          <View style={styles.toggleContainer}>
-            <View style={styles.toggleRow}>
-              <TouchableOpacity
-                style={[
-                  styles.toggleButton,
-                  { backgroundColor: viewMode === 'surah' ? primary : 'transparent' }
-                ]}
-                onPress={() => setViewMode('surah')}
-              >
-                <Text style={[styles.toggleText, { color: '#ffffff' }]}>
-                  Surah
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.toggleButton,
-                  { backgroundColor: viewMode === 'juz' ? primary : 'transparent' }
-                ]}
-                onPress={() => setViewMode('juz')}
-              >
-                <Text style={[styles.toggleText, { color: '#ffffff' }]}>
-                  Juz
-                </Text>
-              </TouchableOpacity>
-            </View>
+      <View style={[styles.progressCard, { backgroundColor: '#333333', borderColor: '#555555' }]}>
+        <Text style={[styles.progressTitle, { color: '#ffffff' }]}>
+          Your Progress
+        </Text>
+        
+        <View style={styles.toggleContainer}>
+          <View style={styles.toggleRow}>
+            <TouchableOpacity
+              style={[
+                styles.toggleButton,
+                { backgroundColor: viewMode === 'surah' ? primary : 'transparent' }
+              ]}
+              onPress={() => setViewMode('surah')}
+            >
+              <Text style={[styles.toggleText, { color: '#ffffff' }]}>
+                Surah
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.toggleButton,
+                { backgroundColor: viewMode === 'juz' ? primary : 'transparent' }
+              ]}
+              onPress={() => setViewMode('juz')}
+            >
+              <Text style={[styles.toggleText, { color: '#ffffff' }]}>
+                Juz
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -454,6 +455,12 @@ export default function StatsScreen() {
           </View>
         </Pressable>
       </Modal>
+      
+      {/* Verse Activity Graph - Mobile pattern: positioned at bottom */}
+      <VerseProgressCard />
+
+      {/* Lifetime cumulative progress graph */}
+      <LifetimeProgressCard />
     </ScrollView>
   );
 }
@@ -496,21 +503,6 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     paddingHorizontal: 10,
     gap: 40,
-  },
-  yourProgressSection: {
-    marginHorizontal: 16,
-    marginBottom: 24,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-  },
-  progressHeader: {
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 12,
   },
   toggleContainer: {
     borderRadius: 8,

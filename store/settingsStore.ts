@@ -10,8 +10,9 @@ export const DEFAULT_PLAYBACK_SPEED: PlaybackSpeed = 1;
 
 export const PLAYBACK_SPEED_OPTIONS: PlaybackSpeed[] = [0.5, 0.75, 1, 1.25];
 
-interface SettingsState extends AppSettings {
+export interface SettingsState extends AppSettings {
   userName: string;
+  userEmail: string;
   quizVerseCount: number;
   translationLanguage: string;
   reciterIdentifier: string;
@@ -31,6 +32,7 @@ interface SettingsState extends AppSettings {
   setNotificationsEnabled: (enabled: boolean) => void;
   setReminderTime: (time: string) => void;
   setUserName: (name: string) => void;
+  setUserEmail: (email: string) => void;
   setQuizVerseCount: (count: number) => void;
   setTranslationLanguage: (language: string) => void;
   setReciterIdentifier: (identifier: string) => void;
@@ -41,8 +43,9 @@ interface SettingsState extends AppSettings {
 // Initialize store with values from AsyncStorage
 const initializeStore = async (set: any) => {
   try {
-    const [userName] = await Promise.all([
-      AsyncStorage.getItem('user_name')
+    const [userName, userEmail] = await Promise.all([
+      AsyncStorage.getItem('user_name'),
+      AsyncStorage.getItem('user_email')
     ]);
     
     if (userName) {
@@ -50,6 +53,9 @@ const initializeStore = async (set: any) => {
       set({ 
         userName: userName || '',
       });
+    }
+    if (userEmail) {
+      set({ userEmail: userEmail || '' });
     }
   } catch (error) {
     console.error('Error initializing settings store:', error);
@@ -74,6 +80,7 @@ export const useSettingsStore = create<SettingsState>()(
       notificationsEnabled: false,
       reminderTime: '09:00',
       userName: '',
+    userEmail: '',
       quizVerseCount: 5,
       translationLanguage: 'en.sahih',
       reciterIdentifier: 'ar.alafasy',
@@ -96,6 +103,11 @@ export const useSettingsStore = create<SettingsState>()(
         console.log('Setting userName in store:', userName);
         set({ userName });
       },
+      setUserEmail: (userEmail) => {
+        set({ userEmail });
+        // also persist to AsyncStorage for early init
+        AsyncStorage.setItem('user_email', userEmail).catch(() => {});
+      },
       setQuizVerseCount: (quizVerseCount) => set({ quizVerseCount }),
       setTranslationLanguage: (translationLanguage) => set({ translationLanguage }),
       setReciterIdentifier: (reciterIdentifier) => {
@@ -114,6 +126,8 @@ export const useSettingsStore = create<SettingsState>()(
         if (state) {
           // Ensure all properties have default values
           state.userName = state.userName || '';
+          // @ts-ignore add new field default
+          (state as any).userEmail = (state as any).userEmail || '';
           state.theme = state.theme || 'light';
           state.repeatMode = state.repeatMode || 1;
           state.fontSizeArabic = state.fontSizeArabic || 24;

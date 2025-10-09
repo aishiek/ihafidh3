@@ -1,9 +1,9 @@
+import MonthlyHifdhCalendar from '@/components/MonthlyHifdhCalendar';
 import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
 import { useThemeColor } from '@/utils/useThemeColor';
 import { useRouter } from 'expo-router';
 import { BookOpen, Check, CheckCircle, ChevronDown, Settings, X } from 'lucide-react-native';
-import HifdhPlannerCard from '@/components/HifdhPlannerCard';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
@@ -331,8 +331,8 @@ export default function RevisionScreen() {
           )}
         </View>
 
-  {/* Hifdh Planner Card */}
-  <HifdhPlannerCard />
+  {/* Hifdh Planner - Monthly Calendar */}
+  <MonthlyHifdhCalendar />
 
         {/* Daily Progress */}
         <View style={styles.progressCard}>

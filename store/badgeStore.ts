@@ -1,6 +1,6 @@
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 export interface Badge {
   id: string;
@@ -38,6 +38,17 @@ const initialBadges: Badge[] = [
     unlockedDate: null,
   },
   {
+    id: 'munir-al-darb',
+    name: 'Munir al-Darb',
+    arabicName: 'منير الدرب',
+    description: 'Complete any 3 Juz of the Holy Quran',
+    icon: '🕌',
+    requirement: 3,
+    color: '#65C3BA',
+    unlocked: false,
+    unlockedDate: null,
+  },
+  {
     id: 'hamil-hikmah',
     name: 'Bearer of Wisdom',
     arabicName: 'حامل الحكمة',
@@ -45,6 +56,17 @@ const initialBadges: Badge[] = [
     icon: '📖',
     requirement: 5,
     color: '#C0C0C0',
+    unlocked: false,
+    unlockedDate: null,
+  },
+  {
+    id: 'sahib-istiqaamah',
+    name: 'Sahib al-Istiqamah',
+    arabicName: 'صاحب الاستقامة',
+    description: 'Complete any 10 Juz of the Holy Quran',
+    icon: '🌙',
+    requirement: 10,
+    color: '#8EC5FC',
     unlocked: false,
     unlockedDate: null,
   },
@@ -60,6 +82,17 @@ const initialBadges: Badge[] = [
     unlockedDate: null,
   },
   {
+    id: 'sahib-azm',
+    name: 'Sahib al-Azm',
+    arabicName: 'صاحب العزم',
+    description: 'Complete any 20 Juz of the Holy Quran',
+    icon: '🏔️',
+    requirement: 20,
+    color: '#9B8AFB',
+    unlocked: false,
+    unlockedDate: null,
+  },
+  {
     id: 'naasir-quran',
     name: 'Defender of the Quran',
     arabicName: 'ناصر القرآن',
@@ -67,6 +100,17 @@ const initialBadges: Badge[] = [
     icon: '🛡️',
     requirement: 23,
     color: '#FF6347',
+    unlocked: false,
+    unlockedDate: null,
+  },
+  {
+    id: 'rahiq-yaqeen',
+    name: 'Rahiq Al-Yaqeen',
+    arabicName: 'رحيق اليقين',
+    description: 'Complete any 25 Juz of the Holy Quran',
+    icon: '📖✨',
+    requirement: 25,
+    color: '#F6AE2D',
     unlocked: false,
     unlockedDate: null,
   },

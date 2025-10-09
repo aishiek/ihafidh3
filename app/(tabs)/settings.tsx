@@ -1,13 +1,16 @@
 import { useFastingCalendar } from '@/components/fasting/context/FastingCalendarContext';
+import LocationSelector from '@/components/LocationSelector';
 import { RECITERS } from '@/constants/reciters';
 import { TRANSLATION_LANGUAGES } from '@/constants/translationLanguages';
 import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
+import { FastingNotificationService } from '@/services/fasting/notificationService';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useThemeStore } from '@/store/themeStore';
+import { FastingLocation } from '@/types/fasting';
 import { useThemeColor } from '@/utils/useThemeColor';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, Stack } from 'expo-router';
-import { Bell, Calendar, Globe, MessageSquare, Moon, Music, User } from 'lucide-react-native';
+import { Bell, Calendar, Globe, MessageSquare, Music, User } from 'lucide-react-native';
 import React, { useMemo, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -27,6 +30,7 @@ export default function SettingsScreen() {
   const [localShowTranslation, setLocalShowTranslation] = useState(showTranslation ?? true);
   const [localShowTransliteration, setLocalShowTransliteration] = useState(showTransliteration ?? false);
   const [localArabicFont, setLocalArabicFont] = useState(arabicFont || 'default');
+  const [showLocationSelector, setShowLocationSelector] = useState(false);
 
   // Track if any changes have been made
   const hasChanges = useMemo(() => {
@@ -111,6 +115,18 @@ export default function SettingsScreen() {
           [{ text: 'OK' }]
         );
       });
+  };
+
+  const handleLocationChange = async (location: FastingLocation) => {
+    try {
+      if (fastingContext?.updateSettings) {
+        await fastingContext.updateSettings({ location });
+        setShowLocationSelector(false);
+      }
+    } catch (error) {
+      console.error('Error updating location:', error);
+      Alert.alert('Error', 'Failed to update location. Please try again.');
+    }
   };
 
   const styles = StyleSheet.create({
@@ -257,6 +273,14 @@ export default function SettingsScreen() {
       paddingVertical: 6,
       marginBottom: 4,
     },
+    interactiveOption: {
+      paddingVertical: 12,
+      borderRadius: 8,
+      backgroundColor: 'rgba(255, 255, 255, 0.02)',
+      paddingHorizontal: 12,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+    },
     displayOptionText: {
       fontSize: 16,
     },
@@ -315,6 +339,17 @@ export default function SettingsScreen() {
       width: 16,
       height: 16,
       borderRadius: 8,
+    },
+    versionRow: {
+      paddingHorizontal: 16,
+      paddingTop: 8,
+      paddingBottom: 24,
+      alignItems: 'center',
+    },
+    versionText: {
+      color: '#777',
+      fontSize: 12,
+      letterSpacing: 0.5,
     },
   });
 
@@ -722,27 +757,24 @@ export default function SettingsScreen() {
             </Pressable>
           </View>
 
-          {/* Location Display */}
-           <View style={styles.displayOption}>
+          {/* Location Display - Interactive */}
+           <Pressable 
+             style={[styles.displayOption, styles.interactiveOption]}
+             onPress={() => setShowLocationSelector(true)}
+           >
              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                <Globe size={16} color={theme.textSecondary} style={{ marginRight: 8 }} />
                <Text style={[styles.displayOptionText, { color: theme.text }]}>Location</Text>
              </View>
-             <Text style={[styles.displayOptionText, { color: theme.textSecondary, fontSize: 12 }]}>
-               {fastingContext.state.settings.location.city}, {fastingContext.state.settings.location.country}
-             </Text>
-           </View>
-
-           {/* Theme Sync Status */}
-           <View style={styles.displayOption}>
              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-               <Moon size={16} color={theme.textSecondary} style={{ marginRight: 8 }} />
-               <Text style={[styles.displayOptionText, { color: theme.text }]}>Theme Sync</Text>
+               <Text style={[styles.displayOptionText, { color: theme.textSecondary, fontSize: 12 }]}>
+                 {fastingContext.state.settings.location.city}, {fastingContext.state.settings.location.country}
+               </Text>
+               <Text style={[styles.displayOptionText, { color: theme.primary, fontSize: 12, marginLeft: 8 }]}>
+                 Change
+               </Text>
              </View>
-             <Text style={[styles.displayOptionText, { color: theme.success, fontSize: 12, fontWeight: '600' }]}>
-              Active
-             </Text>
-           </View>
+           </Pressable>
 
            {/* Navigate to full fasting settings */}
            <Pressable 
@@ -773,7 +805,23 @@ export default function SettingsScreen() {
             {'\n'}iHafidhapp@gmail.com
           </Text>
         </View>
+
+        {/* App version label */}
+        <View style={styles.versionRow}>
+          <Text style={styles.versionText}>Ver-1.2.1</Text>
+        </View>
       </ScrollView>
+
+      {/* Location Selector Modal */}
+      {fastingContext && (
+        <LocationSelector
+          visible={showLocationSelector}
+          onClose={() => setShowLocationSelector(false)}
+          onLocationSelect={handleLocationChange}
+          currentLocation={fastingContext.state.settings.location}
+          theme={unifiedTheme.theme}
+        />
+      )}
     </View>
   );
 }
