@@ -1,9 +1,10 @@
 import { getVerseActivitiesBetween } from '@/database/QuranDatabase';
+import { useDayKey } from '@/hooks/useDayKey';
 import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
 import { useProgressStore } from '@/store/progressStore';
 import { getOrSetInstallDate } from '@/utils/installDate';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Dimensions, StyleSheet, Text, View, ScrollView } from 'react-native';
+import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
 
@@ -40,6 +41,7 @@ function addDays(d: Date, n: number): Date {
 export default function LifetimeProgressCard(){
   const { theme } = useUnifiedTheme();
   const { memorizedVerses, revisedVerses } = useProgressStore(); // Add progress store dependency
+  const dayKey = useDayKey();
   const colors = useMemo(() => ({
     card: theme.card,
     border: theme.border,
@@ -206,7 +208,7 @@ export default function LifetimeProgressCard(){
       setTotalRev(runningRev);
     };
     load();
-  }, [memorizedVerses.length, revisedVerses.length, installStr]);
+  }, [memorizedVerses.length, revisedVerses.length, installStr, dayKey]);
 
   const totalCombined = totalMem + totalRev;
   const pointCount = Math.max(memPoints.length, revPoints.length);

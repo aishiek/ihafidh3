@@ -1,7 +1,7 @@
 import React, { memo, useMemo } from 'react';
 import { Dimensions, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
-import Svg, { Line, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Line, Rect } from 'react-native-svg';
 
 // Constants
 const TOTAL_VERSES = 6236; // Default total Quran verses

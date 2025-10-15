@@ -1,4 +1,4 @@
-import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View, ViewStyle, Platform, AppState, Dimensions, ScrollView, Pressable, Modal } from 'react-native';
+import AyahOfTheDayCard from '@/components/AyahOfTheDayCard';
 import MinimalTopStrip from '@/components/MinimalTopStrip';
 import { QuranProgressTracker } from '@/data/quranProgress';
 import { surahsData } from '@/data/surahs';
@@ -17,19 +17,19 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import {
-    Award,
-    BookOpen,
-    Calendar,
-    CheckCircle,
-    Clock,
-    Info,
-    Play,
-    RotateCcw,
-    Target,
-    XCircle
+  Award,
+  BookOpen,
+  Calendar,
+  CheckCircle,
+  Clock,
+  Info,
+  Play,
+  RotateCcw,
+  Target,
+  XCircle
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
-import AyahOfTheDayCard from '@/components/AyahOfTheDayCard';
+import { AppState, Dimensions, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
@@ -210,58 +210,144 @@ export default function HomeScreen() {
   useEffect(() => {
     let retryTimer: NodeJS.Timeout | null = null;
     let androidDeferred: NodeJS.Timeout | null = null;
-    try {
-      const mgr = initializeActiveTimeManager();
-      const currentState = AppState.currentState;
-      // Some Android builds report 'unknown' initially; treat as active after short delay
-      if (!sessionStartTime) {
-        if (currentState === 'active') {
-          startSession();
-        } else if (Platform.OS === 'android' && (currentState === 'unknown' || currentState === 'background')) {
-          androidDeferred = setTimeout(() => {
-            if (!useActivityStore.getState().sessionStartTime) {
-              try { startSession(); } catch {}
-            }
-          }, 1200);
-        }
-      }
-      if (!mgr) {
-        retryTimer = setTimeout(() => { try { initializeActiveTimeManager(); } catch {}; }, 1500);
-      }
-    } catch (e) {
-      console.warn('[home] init time manager failed:', e);
-    }
-    const sub = AppState.addEventListener('change', (s) => {
+    let mounted = true;
+
+    const initializeTracking = () => {
+      if (!mounted) return;
+      
       try {
-        if (s === 'active' && !sessionStartTime) startSession();
-        if (s !== 'active' && sessionStartTime) endSession();
+        // Initialize manager first
+        const mgr = initializeActiveTimeManager();
+        
+        // Get current state
+        const currentState = AppState.currentState;
+        
+        // Start session if not already started
+        if (!sessionStartTime) {
+          // On Android, be more aggressive about starting the session
+          if (Platform.OS === 'android') {
+            // Always start on Android unless explicitly in background
+            if (currentState !== 'background' && currentState !== 'inactive') {
+              startSession();
+            } else {
+              // Retry after a delay
+              androidDeferred = setTimeout(() => {
+                if (mounted && !useActivityStore.getState().sessionStartTime) {
+                  try { startSession(); } catch (e) {
+                    console.warn('[TimeTracking] Deferred start failed:', e);
+                  }
+                }
+              }, 800);
+            }
+          } else {
+            // iOS - only start if active
+            if (currentState === 'active') {
+              startSession();
+            }
+          }
+        }
+        
+        // Retry manager initialization if needed
+        if (!mgr && mounted) {
+          retryTimer = setTimeout(() => {
+            if (mounted) {
+              try { initializeActiveTimeManager(); } catch (e) {
+                console.warn('[TimeTracking] Retry failed:', e);
+              }
+            }
+          }, 1000);
+        }
       } catch (e) {
-        console.warn('[home] AppState handler error:', e);
+        console.error('[TimeTracking] Init error:', e);
+      }
+    };
+
+    // Initial call
+    initializeTracking();
+
+    // AppState listener
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (!mounted) return;
+      
+      try {
+        const store = useActivityStore.getState();
+        
+        if (nextState === 'active') {
+          // Start session when app becomes active
+          if (!store.sessionStartTime) {
+            startSession();
+          }
+        } else if (nextState === 'background' || nextState === 'inactive') {
+          // CRITICAL: End session to persist time BEFORE going to background
+          if (store.sessionStartTime) {
+            endSession();
+          }
+        }
+      } catch (e) {
+        console.error('[TimeTracking] AppState handler error:', e);
       }
     });
+
     return () => {
+      mounted = false;
       if (retryTimer) clearTimeout(retryTimer);
       if (androidDeferred) clearTimeout(androidDeferred);
       try { sub.remove(); } catch {}
-      try { if (sessionStartTime) endSession(); } catch {}
+      
+      // CRITICAL: Persist time before cleanup
+      try { 
+        const store = useActivityStore.getState();
+        if (store.sessionStartTime) {
+          endSession();
+        }
+      } catch (e) {
+        console.error('[TimeTracking] Cleanup endSession error:', e);
+      }
+      
       try { activeTimeManager?.cleanup(); } catch {}
     };
-  }, [sessionStartTime, startSession, endSession, initializeActiveTimeManager]);
+  }, []); // Empty deps to prevent re-initialization
 
   const getCurrentActiveTime = () => {
-    // If manager exists, rely on precise active time; else approximate via sessionStartTime.
-    if (activeTimeManager) return timeSpent.total + activeTimeManager.getStats().totalTimeSeconds;
-    if (sessionStartTime) return timeSpent.total + Math.floor((Date.now() - sessionStartTime) / 1000);
-    return timeSpent.total;
+    const store = useActivityStore.getState();
+    const baseTime = store.timeSpent?.total || 0;
+    
+    // Primary: Use activeTimeManager if available
+    if (activeTimeManager) {
+      try {
+        const stats = activeTimeManager.getStats();
+        const managerTime = stats?.totalTimeSeconds || 0;
+        return baseTime + managerTime;
+      } catch (e) {
+        console.warn('[TimeTracking] Manager stats error:', e);
+      }
+    }
+    
+    // Fallback: Calculate from session start time
+    if (store.sessionStartTime) {
+      const elapsed = Math.floor((Date.now() - store.sessionStartTime) / 1000);
+      return baseTime + Math.max(0, elapsed);
+    }
+    
+    // Last resort: Return base time
+    return baseTime;
   };
   // Stable interval: does not restart on every total increment (avoids flicker / reset)
   useEffect(() => {
-    setActiveReadingTime(getCurrentActiveTime()); // initial sync
-    const i = setInterval(() => {
-      setActiveReadingTime(getCurrentActiveTime());
-    }, 1000);
-    return () => clearInterval(i);
-  }, [sessionStartTime, activeTimeManager]);
+    // Initial sync
+    const initialTime = getCurrentActiveTime();
+    setActiveReadingTime(initialTime);
+    
+    // Use shorter interval on Android for more responsive updates
+    const intervalDuration = Platform.OS === 'android' ? 500 : 1000;
+    
+    const interval = setInterval(() => {
+      const newTime = getCurrentActiveTime();
+      setActiveReadingTime(newTime);
+    }, intervalDuration);
+    
+    return () => clearInterval(interval);
+  }, []); // Stable interval
 
   useEffect(() => { updateDailyStreak(); }, [updateDailyStreak]);
 
@@ -758,6 +844,33 @@ export default function HomeScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionsContainer}>
+          {/* Hifdh Planner monthly summary - moved here as first quick action */}
+          <View style={styles.plannerCard}>
+            <View style={styles.plannerHeader}>
+              <View style={styles.plannerTitleRow}>
+                <View style={styles.plannerIconWrap}><Calendar size={16} color="#a855f7" /></View>
+                <Text style={styles.plannerTitle}>Hifdh Planner for {plannerSummary.monthName}</Text>
+              </View>
+              <Pressable onPress={() => setShowPlannerInfo(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Info size={18} color="#a855f7" />
+              </Pressable>
+            </View>
+            {plannerSummary.totalPlannedVerses > 0 ? (
+              <>
+                <Text style={styles.plannerSubtitle}>{plannerSummary.completedPlannedVerses} of {plannerSummary.totalPlannedVerses} verses completed</Text>
+                <View style={styles.plannerProgressBar}>
+                  <View style={[styles.plannerProgressFill, { width: `${plannerSummary.percent}%` }]} />
+                </View>
+                <View style={styles.plannerStatsRow}>
+                  <Text style={styles.plannerStatText}>{plannerSummary.inProgressSurahs} surahs in progress</Text>
+                  <Text style={styles.plannerStatText}>{plannerSummary.totalPlannedSurahs} planned</Text>
+                </View>
+              </>
+            ) : (
+              <Text style={styles.plannerEmptyText}>No plans yet for {plannerSummary.monthName}. Add your Hifdh plans in Revision.</Text>
+            )}
+          </View>
+
           {quickActions.map((a,i) => <ActionCard key={i} {...a} />)}
           
           {/* Badges Card */}
@@ -815,34 +928,7 @@ export default function HomeScreen() {
         </LinearGradient>
       </View>
 
-      {/* Hifdh Planner monthly summary */}
-      <View style={styles.section}>
-        <View style={styles.plannerCard}>
-          <View style={styles.plannerHeader}>
-            <View style={styles.plannerTitleRow}>
-              <View style={styles.plannerIconWrap}><Calendar size={16} color="#a855f7" /></View>
-              <Text style={styles.plannerTitle}>Hifdh Planner for {plannerSummary.monthName}</Text>
-            </View>
-            <Pressable onPress={() => setShowPlannerInfo(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Info size={18} color="#a855f7" />
-            </Pressable>
-          </View>
-          {plannerSummary.totalPlannedVerses > 0 ? (
-            <>
-              <Text style={styles.plannerSubtitle}>{plannerSummary.completedPlannedVerses} of {plannerSummary.totalPlannedVerses} verses completed</Text>
-              <View style={styles.plannerProgressBar}>
-                <View style={[styles.plannerProgressFill, { width: `${plannerSummary.percent}%` }]} />
-              </View>
-              <View style={styles.plannerStatsRow}>
-                <Text style={styles.plannerStatText}>{plannerSummary.inProgressSurahs} surahs in progress</Text>
-                <Text style={styles.plannerStatText}>{plannerSummary.totalPlannedSurahs} planned</Text>
-              </View>
-            </>
-          ) : (
-            <Text style={styles.plannerEmptyText}>No plans yet for {plannerSummary.monthName}. Add your Hifdh plans in Revision.</Text>
-          )}
-        </View>
-      </View>
+      {/* Hifdh Planner monthly summary moved above into Quick Actions */}
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Recent Activity</Text>

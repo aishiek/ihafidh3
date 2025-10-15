@@ -3,7 +3,6 @@ import LocationSelector from '@/components/LocationSelector';
 import { RECITERS } from '@/constants/reciters';
 import { TRANSLATION_LANGUAGES } from '@/constants/translationLanguages';
 import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
-import { FastingNotificationService } from '@/services/fasting/notificationService';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useThemeStore } from '@/store/themeStore';
 import { FastingLocation } from '@/types/fasting';

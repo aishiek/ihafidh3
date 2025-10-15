@@ -550,6 +550,38 @@ export const getVersesBySurah = async (
   }
 };
 
+// Get verses by Juz number (no Bismillah injection)
+export const getVersesByJuzFromDb = async (
+  juzNumber: number,
+  page: number = 1,
+  pageSize: number = 20
+): Promise<Verse[]> => {
+  if (!db || Platform.OS === 'web') return [];
+  try {
+    if (!db.getAllAsync) { console.warn('[sqlite] getAllAsync unavailable'); return []; }
+    const offset = (page - 1) * pageSize;
+    const rows = await db.getAllAsync(
+      'SELECT * FROM verses WHERE juzNumber = ? ORDER BY id LIMIT ? OFFSET ?',
+      [juzNumber, pageSize, offset]
+    ).catch(e => { console.warn('[sqlite] query failed', e); return []; });
+    const verses: Verse[] = (rows as any[]).map((row: any) => ({
+      id: row.id,
+      surahId: row.surahId,
+      verseNumber: row.verseNumber,
+      arabicText: row.arabicText,
+      translation: row.translation,
+      audioUrl: row.audioUrl || undefined,
+      juzNumber: row.juzNumber,
+      hizbNumber: row.hizbNumber,
+      pageNumber: row.pageNumber
+    }));
+    return verses;
+  } catch (error) {
+    console.error(`Error getting verses for Juz ${juzNumber}:`, error);
+    return [];
+  }
+};
+
 // Check if surah is cached
 export const isSurahCached = async (surahId: number): Promise<boolean> => {
   if (!db || Platform.OS === 'web') return false;

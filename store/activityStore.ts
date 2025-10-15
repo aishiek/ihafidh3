@@ -152,37 +152,42 @@ export const useActivityStore = create<ActivityState>()(
       },
       
       endSession: () => {
-        const state = get();
-        if (!state.sessionStartTime) return;
+        const { sessionStartTime, timeSpent, activeTimeManager } = get();
         
-        // Stop active time tracking and get the actual active time
-        let activeTimeInSeconds = 0;
-        try {
-          if (state.activeTimeManager) {
-            // Read current stats just before stopping
-            const stats = state.activeTimeManager.getStats();
-            activeTimeInSeconds = stats.totalTimeSeconds;
-            // Stop the tracking and commit time to store synchronously
-            state.activeTimeManager.stopReading((timeInSeconds: number) => {
-              activeTimeInSeconds = timeInSeconds;
-            });
-          }
-        } catch (e) {
-          console.warn('[activity] endSession stop/commit failed:', e);
+        if (!sessionStartTime) {
+          return;
         }
         
-        // Use active time instead of total session time
-        const sessionDuration = Math.max(activeTimeInSeconds, 0);
-        const { timeSpent } = state;
+        // Calculate elapsed time
+        const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
         
-        // Update time spent with only active time
+        // Get manager time if available
+        let managerTime = 0;
+        if (activeTimeManager) {
+          try {
+            const stats = activeTimeManager.getStats();
+            managerTime = stats?.totalTimeSeconds || 0;
+            // Stop the manager after getting stats
+            activeTimeManager.stopReading();
+          } catch (e) {
+            console.warn('[ActivityStore] Error getting manager stats:', e);
+          }
+        }
+        
+        // Use the greater of the two (manager is more accurate)
+        const timeToAdd = Math.max(elapsed, managerTime);
+        
+        // CRITICAL: Add to total
+        const newTotal = (timeSpent?.total || 0) + timeToAdd;
+        
+        // Update state
         set({
           sessionStartTime: null,
           timeSpent: {
-            daily: timeSpent.daily + sessionDuration,
-            weekly: timeSpent.weekly + sessionDuration,
-            monthly: timeSpent.monthly + sessionDuration,
-            total: timeSpent.total + sessionDuration,
+            daily: timeSpent.daily + timeToAdd,
+            weekly: timeSpent.weekly + timeToAdd,
+            monthly: timeSpent.monthly + timeToAdd,
+            total: newTotal,
             lastResetDaily: timeSpent.lastResetDaily,
             lastResetWeekly: timeSpent.lastResetWeekly,
             lastResetMonthly: timeSpent.lastResetMonthly,

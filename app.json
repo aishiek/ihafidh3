@@ -24,8 +24,7 @@
         {
           "icon": "./assets/images/icon.png",
           "color": "#ffffff",
-          "defaultChannel": "default",
-          "sounds": ["./assets/sounds/notification.wav"]
+          "defaultChannel": "default"
         }
       ],
       [
@@ -94,7 +93,7 @@
     },
     "android": {
       "package": "com.ihafidh",
-      "versionCode": 22,
+      "versionCode": 24,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",

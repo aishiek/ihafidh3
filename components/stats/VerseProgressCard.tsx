@@ -1,4 +1,6 @@
+import { TOTAL_VERSES } from '@/constants/quran';
 import { getVerseActivitiesBetween } from '@/database/QuranDatabase';
+import { useDayKey } from '@/hooks/useDayKey';
 import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
 import { useProgressStore } from '@/store/progressStore';
 import * as Haptics from 'expo-haptics';
@@ -6,7 +8,6 @@ import React, { useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import TimeRangeSelector, { TimeRange } from './TimeRangeSelector';
 import VerseProgressGraph, { VerseProgressData } from './VerseProgressGraph';
-import { TOTAL_VERSES } from '@/constants/quran';
 
 // Error Boundary Component
 class VerseProgressErrorBoundary extends React.Component<
@@ -55,6 +56,7 @@ function addDays(d: Date, n: number){ const r=new Date(d); r.setDate(r.getDate()
 export default function VerseProgressCard(){
   const { theme } = useUnifiedTheme();
   const { memorizedVerses, revisedVerses, verseStatus } = useProgressStore();
+  const dayKey = useDayKey();
   const [range, setRange] = useState<TimeRange>('week');
   const [total, setTotal] = useState(0);
   const [graphData, setGraphData] = useState<VerseProgressData[]>([]);
@@ -331,6 +333,11 @@ export default function VerseProgressCard(){
   React.useEffect(() => { 
     loadData(range); 
   }, [memorizedVerses.length, revisedVerses.length]);
+
+  // Refresh on calendar day change
+  React.useEffect(() => {
+    loadData(range);
+  }, [dayKey]);
 
   return (
     <VerseProgressErrorBoundary colors={colors}>

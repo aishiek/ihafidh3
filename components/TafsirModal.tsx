@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View, Dimensions } from 'react-native';
-import { X } from 'lucide-react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useSettingsStore } from '@/store/settingsStore';
 import { fetchTafsirByAyah } from '@/services/tafsirApi';
+import { useSettingsStore } from '@/store/settingsStore';
+import { LinearGradient } from 'expo-linear-gradient';
+import { X } from 'lucide-react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Dimensions, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 interface TafsirModalProps {
   visible: boolean;

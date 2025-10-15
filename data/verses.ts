@@ -1,4 +1,4 @@
-import { cacheVerses, getCachedVerses, isSurahCached } from '@/database/QuranDatabase';
+import { cacheVerses, getCachedVerses, getVersesByJuzFromDb, isSurahCached } from '@/database/QuranDatabase';
 import { fetchSingleVerse, fetchVersesBySurah } from '@/services/quranApi';
 import { useSettingsStore } from '@/store/settingsStore';
 import { Verse } from '@/types';
@@ -168,7 +168,10 @@ export async function getVersesByJuz(
   pageSize: number = 10
 ): Promise<Verse[]> {
   try {
-    console.log(`Juz functionality not yet implemented.`);
+    // First try local DB (fast/offline)
+    const verses = await getVersesByJuzFromDb(juzNumber, page, pageSize);
+    if (verses.length > 0) return verses;
+    // TODO: Optionally add network fallback here if needed
     return [];
   } catch (error) {
     console.error(`Error fetching verses for juz ${juzNumber}:`, error);

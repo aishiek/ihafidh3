@@ -3,6 +3,7 @@
 
 const QURAN_API = 'https://api.quran.com/api/v4';
 
+import { getTamilTafsir } from './localTamilTafsir';
 export interface TafsirResult {
   resourceId: number;
   resourceName: string;
@@ -42,6 +43,11 @@ function getLangPrefix(language: string | undefined): string {
   if (!language) return 'en';
   const prefix = language.split('.')[0]?.toLowerCase() || 'en';
   return prefix;
+}
+
+function isTamilLanguage(language: string | undefined): boolean {
+  const p = getLangPrefix(language);
+  return p === 'ta' || p.startsWith('ta');
 }
 
 function getCandidates(language: string | undefined): Array<{ id: number; name: string }> {
@@ -146,6 +152,20 @@ export async function fetchTafsirByAyah(
   if (!options?.forceRefresh) {
     const cached = cache.get(cacheKey);
     if (cached) return cached;
+  }
+
+  // If the requested language is Tamil, prefer the local DB first
+  try {
+    if (isTamilLanguage(userLanguage)) {
+      const local = await getTamilTafsir(surahNumber, verseNumber);
+      if (local) {
+        cache.set(cacheKey, local);
+        return local;
+      }
+      // If local lookup failed, fall back to API below
+    }
+  } catch (e) {
+    console.warn('[tafsirApi] local Tamil tafsir lookup failed', e);
   }
 
   // Try user-language candidates first, then English fallback list if needed.

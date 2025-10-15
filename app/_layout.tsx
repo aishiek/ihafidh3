@@ -1,10 +1,14 @@
 import { FastingCalendarProvider } from '@/components/fasting/context/FastingCalendarContext';
 import { initDatabase, logBasicStats, runIntegrityCheck } from '@/database/QuranDatabase';
+import { AyahNotificationService } from '@/services/ayahNotificationService';
+import { useSettingsStore } from '@/store/settingsStore';
 import { initializeAudio } from '@/utils/audioUtils';
+import { getTodayCardVerse } from '@/utils/ayahOfTheDay';
 import { initGlobalErrorHandlers } from '@/utils/globalErrorHandlers';
 import { runTurboModuleProbe } from '@/utils/turboModuleProbe';
 import * as Font from 'expo-font';
-import { Stack } from 'expo-router';
+import * as Notifications from 'expo-notifications';
+import { Stack, router } from 'expo-router';
 import React, { Component, ReactNode } from 'react';
 import { ActivityIndicator, AppState, AppStateStatus, Platform, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -108,6 +112,8 @@ export default function RootLayout() {
   const [fontsLoaded, setFontsLoaded] = React.useState(false);
   const [fontError, setFontError] = React.useState<Error | null>(null);
   const [forceContinue, setForceContinue] = React.useState(false);
+  const ayahEnabled = useSettingsStore(s => s.ayahDailyNotificationsEnabled ?? false);
+  const reminderTime = useSettingsStore(s => s.reminderTime);
 
   React.useEffect(() => {
     let mounted = true;
@@ -135,6 +141,39 @@ export default function RootLayout() {
       runTurboModuleProbe().catch(e => console.log('[probe] unexpected failure', e));
     }, 500); // allow initial bridge setup
     return () => clearTimeout(t);
+  }, []);
+
+  // Sync daily Ayah notification schedule with settings
+  React.useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        if (ayahEnabled) {
+          await AyahNotificationService.scheduleDailyAyahReminder(reminderTime || '09:00');
+        } else {
+          await AyahNotificationService.cancelDailyAyahReminder();
+        }
+      } catch (e) {
+        console.log('[AyahNotif] sync error', e);
+      }
+    })();
+    return () => { active = false; };
+  }, [ayahEnabled, reminderTime]);
+
+  // Deep-link when user taps on a daily ayah notification
+  React.useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      try {
+        const data: any = response?.notification?.request?.content?.data || {};
+        if (data?.type === 'daily_ayah') {
+          const today = getTodayCardVerse(new Date());
+          router.push(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`);
+        }
+      } catch (e) {
+        console.log('[AyahNotif] deep link failed', e);
+      }
+    });
+    return () => { try { sub.remove(); } catch {} };
   }, []);
 
   // Persistence guard and DB lifecycle management

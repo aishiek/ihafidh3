@@ -1,12 +1,11 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { StyleSheet, Text, View, FlatList, ActivityIndicator, Pressable } from 'react-native';
-import { useLocalSearchParams, Stack } from 'expo-router';
-import { useCustomColors } from '@/utils/themeUtils';
-import { useQuranStore } from '@/store/quranStore';
+import VerseItem from '@/components/VerseItem';
+import { getVersesByJuz } from '@/data/verses';
 import { useProgressStore } from '@/store/progressStore';
 import { Verse } from '@/types';
-import VerseItem from '@/components/VerseItem';
-import { completeQuranData } from '@/data/completeQuranData';
+import { useCustomColors } from '@/utils/themeUtils';
+import { Stack, useLocalSearchParams } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 export default function JuzScreen() {
   const { number } = useLocalSearchParams<{ number: string }>();
@@ -19,7 +18,7 @@ export default function JuzScreen() {
   }, [juzNumber]);
   
   const colors = useCustomColors();
-  const { fetchVersesByJuz } = useQuranStore();
+  // No store method for Juz yet; use data layer
   const { memorizedVerses, revisedVerses } = useProgressStore();
   
   const [verses, setVerses] = useState<Verse[]>([]);
@@ -51,31 +50,18 @@ export default function JuzScreen() {
           setTimeout(() => reject(new Error('Request timeout')), 10000)
         );
         
-        const fetchPromise = fetchVersesByJuz(validJuzNumber, page, pageSize);
+  const fetchPromise = getVersesByJuz(validJuzNumber, page, pageSize);
         newVerses = await Promise.race([fetchPromise, timeoutPromise]);
       } catch (err) {
-        console.error('Error fetching verses, falling back to in-memory data:', err);
-        
-        // Safer fallback with error handling using statically imported data
-        try {
-          if (!completeQuranData || !Array.isArray(completeQuranData)) {
-            throw new Error('Invalid Quran data structure');
-          }
-
-          const filteredVerses = completeQuranData.filter(v => v?.juzNumber === validJuzNumber);
-          const start = (page - 1) * pageSize;
-          newVerses = filteredVerses.slice(start, start + pageSize);
-        } catch (fallbackErr) {
-          console.error('Fallback data loading failed:', fallbackErr);
-          throw new Error('Unable to load verse data');
-        }
+        console.error('Error fetching verses for Juz:', err);
+        throw err;
       }
       
       // Validate the loaded verses
       const validVerses = newVerses.filter(verse => 
-        verse && 
-        typeof verse.id !== 'undefined' && 
-        verse.juzNumber === validJuzNumber
+  verse && 
+  typeof verse.id !== 'undefined' && 
+  verse.juzNumber === validJuzNumber
       );
       
       if (validVerses.length === 0 || validVerses.length < pageSize) {
@@ -106,7 +92,7 @@ export default function JuzScreen() {
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [validJuzNumber, hasMoreVerses, fetchVersesByJuz, isLoading, isLoadingMore]);
+  }, [validJuzNumber, hasMoreVerses, isLoading, isLoadingMore]);
   
   useEffect(() => {
     // Reset state when juz number changes
@@ -124,7 +110,7 @@ export default function JuzScreen() {
   }, [memorizedVerses]);
   
   const isVerseRevised = useCallback((verseId: number) => {
-    return Array.isArray(revisedVerses) && revisedVerses.includes(verseId);
+    return Array.isArray(revisedVerses) && revisedVerses.some(v => v.verseId === verseId);
   }, [revisedVerses]);
   
   const handleLoadMore = useCallback(() => {
@@ -195,10 +181,9 @@ export default function JuzScreen() {
   const renderItem = useCallback(({ item }: { item: Verse }) => (
     <VerseItem 
       verse={item} 
-      isMemorized={isVerseMemorized(item.id)}
-      isRevised={isVerseRevised(item.id)}
+      onPlayAudio={() => {}} // TODO: connect to audio logic
     />
-  ), [isVerseMemorized, isVerseRevised]);
+  ), []);
   
   const keyExtractor = useCallback((item: Verse) => item.id.toString(), []);
   

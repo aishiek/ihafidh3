@@ -238,9 +238,7 @@ export default function QuranQuizCelebration({ visible, onComplete }: { visible:
           <Text style={styles.emoji}>{message.emoji}</Text>
           <Text style={[styles.arabic, { 
             fontFamily: getArabicFontFamily(),
-            writingDirection: 'rtl' as const,
             includeFontPadding: false,
-            textAlign: 'center',
             ...arabicTypography
           }]}>{message.arabic}</Text>
           <Text style={styles.english}>{message.english}</Text>

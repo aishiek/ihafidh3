@@ -9,14 +9,14 @@ import type { Surah } from '@/types';
 import { Verse } from '@/types';
 import { pauseAudio, pauseSurahAudio, playAudio, playSurahAudioWithFallback, resumeSurahAudio } from '@/utils/audioUtils';
 import { getArabicTypographySizing } from '@/utils/fontUtils';
-import { getAverageVerseHeight } from '@/utils/verseLayoutUtils';
 import { useCustomColors } from '@/utils/themeUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { getAverageVerseHeight } from '@/utils/verseLayoutUtils';
 import { useFocusEffect } from '@react-navigation/native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, CheckCircle, Pause, Play, RefreshCw, Search, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View, ViewStyle, Platform } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View, ViewStyle } from 'react-native';
 
 // Dynamic batch size based on surah length
 const getDynamicBatchSize = (surahVerseCount: number, isInitial: boolean = false) => {
@@ -115,6 +115,9 @@ export default function ReadScreen() {
     markVerseAsMemorized,
     unmarkVerseAsMemorized,
     markVerseAsRevised,
+    unmarkVerseAsRevised,
+    bulkMarkVersesMemorized,
+    bulkMarkVersesRevised,
     // New: use memorizedVerseDates for khatam date
     memorizedVerseDates,
   } = useProgressStore();
@@ -124,6 +127,20 @@ export default function ReadScreen() {
 
   // Header Arabic text typography (smaller size for surah names)
   const headerArabicTypography = getArabicTypographySizing(fontSizeArabic * 0.9, arabicFont as any);
+
+  // Memoize getSurahVerseRange (must be declared before usage in hooks below)
+  const getSurahVerseRange = useCallback((surahObj: { id: number, versesCount: number }) => {
+    let startVerseId = 0;
+    for (let i = 1; i < surahObj.id; i++) {
+      const prevSurah = surahsData.find(s => s.id === i);
+      if (prevSurah) startVerseId += prevSurah.versesCount;
+    }
+    const verseIds: number[] = [];
+    for (let i = 1; i <= surahObj.versesCount; i++) {
+      verseIds.push(startVerseId + i);
+    }
+    return verseIds;
+  }, []);
 
   // ✅ OPTIMIZED: Stable callback references
   const isVerseMemorizedCallback = useCallback((verseId: number) => {
@@ -145,15 +162,69 @@ export default function ReadScreen() {
   const handleVerseRevisionToggle = useCallback((verseId: number) => {
     const isRevised = revisedVerses.some(rv => rv.verseId === verseId);
     if (isRevised) {
-      useProgressStore.setState((state) => ({
-        revisedVerses: state.revisedVerses.filter((rv) => rv.verseId !== verseId),
-        dailyRevisedVerses: state.dailyRevisedVerses.filter((rv) => rv.verseId !== verseId),
-        weeklyRevisedVerses: state.weeklyRevisedVerses.filter((rv) => rv.verseId !== verseId),
-      }));
+      unmarkVerseAsRevised(verseId);
     } else {
       markVerseAsRevised(verseId);
     }
-  }, [revisedVerses, markVerseAsRevised]);
+  }, [revisedVerses, markVerseAsRevised, unmarkVerseAsRevised]);
+
+  // Memoize getSurahVerseRange must be above usage; already declared above
+  // Surah-level state checking
+  const isSurahMemorizedGlobally = useMemo(() => {
+    if (!selectedSurah) return false;
+    const allIds = getSurahVerseRange({ id: selectedSurah.id, versesCount: selectedSurah.versesCount });
+    return allIds.length > 0 && allIds.every(id => memorizedVerses.includes(id));
+  }, [selectedSurah, memorizedVerses, getSurahVerseRange]);
+
+  const isSurahRevisedGlobally = useMemo(() => {
+    if (!selectedSurah) return false;
+    const allIds = getSurahVerseRange({ id: selectedSurah.id, versesCount: selectedSurah.versesCount });
+    return allIds.length > 0 && allIds.every(id => revisedVerses.some(rv => rv.verseId === id));
+  }, [selectedSurah, revisedVerses, getSurahVerseRange]);
+
+  // Surah-level toggle handlers
+  const handleSurahMemorizeToggle = useCallback(async () => {
+    if (!selectedSurah) return;
+    const surahVerseIds = getSurahVerseRange({ id: selectedSurah.id, versesCount: selectedSurah.versesCount });
+    const isCurrentlyMemorized = isSurahMemorizedGlobally;
+    try {
+      if (isCurrentlyMemorized) {
+        // Unmark all (override any individual marks)
+        await bulkMarkVersesMemorized(surahVerseIds, false);
+        // Guard: ensure store state cleared for all IDs
+        surahVerseIds.forEach(id => {
+          if (memorizedVerses.includes(id)) {
+            unmarkVerseAsMemorized(id);
+          }
+        });
+      } else {
+        await bulkMarkVersesMemorized(surahVerseIds, true);
+      }
+    } catch (error) {
+      console.error('Failed to toggle surah memorization:', error);
+      Alert.alert('Error', 'Failed to update memorization status. Please try again.');
+    }
+  }, [selectedSurah, isSurahMemorizedGlobally, bulkMarkVersesMemorized, getSurahVerseRange, memorizedVerses, unmarkVerseAsMemorized]);
+
+  const handleSurahRevisionToggle = useCallback(async () => {
+    if (!selectedSurah) return;
+    const surahVerseIds = getSurahVerseRange({ id: selectedSurah.id, versesCount: selectedSurah.versesCount });
+    const isCurrentlyRevised = isSurahRevisedGlobally;
+    try {
+      if (isCurrentlyRevised) {
+        // Unmark all verses as revised using individual calls
+        surahVerseIds.forEach(verseId => {
+          unmarkVerseAsRevised(verseId);
+        });
+      } else {
+        // Mark all verses as revised
+        await bulkMarkVersesRevised(surahVerseIds);
+      }
+    } catch (error) {
+      console.error('Failed to toggle surah revision:', error);
+      Alert.alert('Error', 'Failed to update revision status. Please try again.');
+    }
+  }, [selectedSurah, isSurahRevisedGlobally, bulkMarkVersesRevised, unmarkVerseAsRevised, getSurahVerseRange]);
 
   const handleVersePlayAudio = useCallback(async (verse: Verse) => {
     try {
@@ -191,19 +262,6 @@ export default function ReadScreen() {
     }
   }, [isPlayingAudio, autoPlayAudio]);
 
-  // ✅ OPTIMIZED: Memoized renderVerse with stable props (used in FlatList at line 1155)
-  const renderVerseOptimized = useCallback(({ item: verse }: { item: Verse }) => (
-    <VerseItem
-      verse={verse}
-      onMemorizeToggle={handleVerseMemorizeToggle}
-      onRevisionToggle={handleVerseRevisionToggle}
-      onPlayAudio={handleVersePlayAudio}
-    />
-  ), [handleVerseMemorizeToggle, handleVerseRevisionToggle, handleVersePlayAudio]);
-  const surahListRef = useRef<FlatList>(null);
-  const versesListRef = useRef<FlatList<Verse>>(null);
-  const targetVerseRef = useRef<number | null>(null);
-  
   // Use centralized font util
   const getArabicFontFamily = () => {
     switch (arabicFont) {
@@ -277,19 +335,56 @@ export default function ReadScreen() {
         );
   }, [searchQuery]);
 
-  // Memoize getSurahVerseRange
-  const getSurahVerseRange = useCallback((surahObj: { id: number, versesCount: number }) => {
-    let startVerseId = 0;
-    for (let i = 1; i < surahObj.id; i++) {
-      const prevSurah = surahsData.find(s => s.id === i);
-      if (prevSurah) startVerseId += prevSurah.versesCount;
+  
+
+  // ✅ OPTIMIZED: Memoized renderVerse with stable props (used in FlatList at line 1155)
+  const renderVerseOptimized = useCallback(({ item: verse }: { item: Verse }) => (
+    <VerseItem
+      verse={verse}
+      onPlayAudio={handleVersePlayAudio}
+      surahMemorizedGlobally={isSurahMemorizedGlobally}
+      surahRevisedGlobally={isSurahRevisedGlobally}
+      onSurahMemorizeToggle={handleSurahMemorizeToggle}
+      onSurahRevisionToggle={handleSurahRevisionToggle}
+    />
+  ), [handleVersePlayAudio, isSurahMemorizedGlobally, isSurahRevisedGlobally, handleSurahMemorizeToggle, handleSurahRevisionToggle]);
+  const surahListRef = useRef<FlatList>(null);
+  const versesListRef = useRef<FlatList<Verse>>(null);
+  // Keep a mutable ref copy of verses so async loops can access the latest array
+  const versesRef = useRef<Verse[]>([]);
+  const targetVerseRef = useRef<number | null>(null);
+
+  // Helper: safe scrolling to a verse index with validation and fallback
+  const scrollToVerseIndex = (targetIdx: number) => {
+    if (!versesListRef.current) {
+      console.warn('[read] scrollToVerseIndex: versesListRef not ready');
+      return;
     }
-    const verseIds = [];
-    for (let i = 1; i <= surahObj.versesCount; i++) {
-      verseIds.push(startVerseId + i);
+    const list = versesRef.current;
+    if (!list || list.length === 0) {
+      console.warn('[read] scrollToVerseIndex: verses empty');
+      return;
     }
-    return verseIds;
-  }, []);
+    if (targetIdx < 0 || targetIdx >= list.length) {
+      console.warn('[read] scrollToVerseIndex: index out of range', { targetIdx, length: list.length });
+      return;
+    }
+
+    // Delay slightly to allow render to settle
+    setTimeout(() => {
+      try {
+        versesListRef.current?.scrollToIndex({ index: targetIdx, animated: true, viewPosition: 0.5 });
+      } catch (err) {
+        console.warn('[read] scrollToIndex failed, falling back to offset', err);
+        const estimatedOffset = Math.max(0, Math.round(targetIdx * (averageVerseHeight || 200)));
+        try {
+          versesListRef.current?.scrollToOffset({ offset: estimatedOffset, animated: true });
+        } catch (e) {
+          console.warn('[read] scrollToOffset fallback failed', e);
+        }
+      }
+    }, 250);
+  };
 
   // Replace the calculateSurahProgress function with the one from stats page
   const calculateSurahProgress = useCallback((surahId: number) => {
@@ -412,24 +507,24 @@ export default function ReadScreen() {
     return loadPromise;
   }, [clearError, setLastReadVerse, translationLanguage]);
 
-  const loadMoreVerses = useCallback(async () => {
-    if (!selectedSurah || isLoadingMore || !hasMoreVerses) return;
-    
+  const loadMoreVerses = useCallback(async (): Promise<Verse[]> => {
+    if (!selectedSurah || isLoadingMore || !hasMoreVerses) return versesRef.current || [];
+
     setIsLoadingMore(true);
-      const nextPage = currentPage + 1;
-    
+    const nextPage = currentPage + 1;
+
     try {
       console.log(`Loading more verses for surah ${selectedSurah.id}, page ${nextPage}`);
-      
+
       // Check if this page is already cached
       const cacheKey = getCacheKey(selectedSurah.id, nextPage, translationLanguage);
       let fetchedVerses: Verse[] = [];
-      
+
       if (verseCache.has(cacheKey)) {
         // Use cached verses
         fetchedVerses = verseCache.get(cacheKey)!;
         // touch for LRU
-        (function(){ const idx = cacheAccessOrder.indexOf(cacheKey); if (idx !== -1) { cacheAccessOrder.splice(idx,1); cacheAccessOrder.push(cacheKey); } })();
+        (function() { const idx = cacheAccessOrder.indexOf(cacheKey); if (idx !== -1) { cacheAccessOrder.splice(idx,1); cacheAccessOrder.push(cacheKey); } })();
         console.log(`Using cached page ${nextPage} for surah ${selectedSurah.id}`);
       } else {
         // Fetch from API
@@ -440,43 +535,51 @@ export default function ReadScreen() {
           translationLanguage
         );
         fetchedVerses = result.verses;
-        
+
         // Cache the fetched verses
         if (fetchedVerses.length > 0) {
           setCacheWithLimit(cacheKey, fetchedVerses);
         }
       }
-      
+
       if (fetchedVerses.length > 0) {
+        let updatedVerses: Verse[] = [];
+        // Use functional setState but also synchronously update versesRef inside that callback
         setVerses(prev => {
-          // Create a set of existing verse IDs to prevent duplicates
           const existingIds = new Set(prev.map(v => v.id));
-          // Filter out any verses that are already in the list
           const newVerses = fetchedVerses.filter(v => !existingIds.has(v.id));
-          return [...prev, ...newVerses];
+          updatedVerses = [...prev, ...newVerses];
+          // Keep versesRef in sync immediately so callers can rely on it
+          versesRef.current = updatedVerses;
+          return updatedVerses;
         });
+
         setCurrentPage(nextPage);
-        const newTotal = verses.length + fetchedVerses.length;
+        const newTotal = (versesRef.current?.length || 0);
         const stillHasMore = newTotal < totalVersesInSurah;
         setHasMoreVerses(stillHasMore);
-        
+
         // Update loading state
         surahLoadingState.set(`surah_${selectedSurah.id}_${translationLanguage}`, {
           currentPage: nextPage,
           hasMore: stillHasMore,
           totalVerses: totalVersesInSurah
         });
+
+        return updatedVerses;
       } else {
         setHasMoreVerses(false);
+        return versesRef.current || [];
       }
     } catch (err) {
       console.error('Failed to load more verses:', err);
       // Don't show error for load more, just stop loading
       setHasMoreVerses(false);
+      return versesRef.current || [];
     } finally {
       setIsLoadingMore(false);
     }
-  }, [selectedSurah, currentPage, isLoadingMore, hasMoreVerses, verses.length, totalVersesInSurah, translationLanguage]);
+  }, [selectedSurah, currentPage, isLoadingMore, hasMoreVerses, totalVersesInSurah, translationLanguage]);
 
   const handleSurahPress = (surah: any) => {
     // Save current scroll position before navigating
@@ -497,33 +600,77 @@ export default function ReadScreen() {
   const handleBackToSurahs = useCallback(() => {
     if (isNavigatingBack.current) return; // Prevent double-tap
     isNavigatingBack.current = true;
-    
-    if (selectedSurah) {
-      // Keep lastViewedSurahId so list can scroll to it, but suppress auto-open once
-      suppressNextAutoOpen.current = true;
-      setSelectedSurah(null);
-      setVerses([]);
-      setLoadingError(null);
-      setCurrentPage(1);
-      setHasMoreVerses(true);
-      
-      // Restore exact scroll position (no animation)
-      setTimeout(() => {
-        if (surahListRef.current) {
-          surahListRef.current.scrollToOffset({ 
-            offset: scrollOffsetRef.current || 0, 
-            animated: false  // THIS STOPS THE ANIMATION
-          });
+
+    try {
+      // If this screen was opened via route params (e.g. from Bookmarks using router.push with surahId),
+      // handle three cases to avoid the double-back issue:
+      // 1) paramSurahId exists AND a surah is currently selected -> clear the selected surah first (show surah list)
+      // 2) paramSurahId exists AND no surah is selected -> call router.back() (return to originating screen)
+      // 3) no paramSurahId -> fallthrough to regular behavior
+      if (paramSurahId) {
+        if (selectedSurah) {
+          // Clear the selected surah first so the first Back shows the surah list instead of immediately exiting
+          suppressNextAutoOpen.current = true;
+          setSelectedSurah(null);
+          setVerses([]);
+          setLoadingError(null);
+          setCurrentPage(1);
+          setHasMoreVerses(true);
+          // Clear route params so effects don't reopen the surah immediately
+          try { router.replace('/(tabs)/read'); } catch {}
+
+          // Ensure suppression only lasts briefly (avoid reopening from stale params or focus effects)
+          setTimeout(() => { suppressNextAutoOpen.current = false; }, 700);
+
+          // Restore exact scroll position (no animation)
+          setTimeout(() => {
+            if (surahListRef.current) {
+              surahListRef.current.scrollToOffset({ offset: scrollOffsetRef.current || 0, animated: false });
+            }
+            isNavigatingBack.current = false;
+          }, 50);
+          return;
+        } else {
+          // No surah is selected but params exist -> user likely came from another screen (e.g. Bookmarks)
+          // Go back to the previous screen
+          try { router.back(); } catch { try { router.replace('/'); } catch {} }
+          setTimeout(() => { isNavigatingBack.current = false; }, 500);
+          return;
         }
-        isNavigatingBack.current = false;
-      }, 50);
-    } else {
-      router.back();
-      setTimeout(() => {
-        isNavigatingBack.current = false;
-      }, 500);
+      }
+
+      if (selectedSurah) {
+        // Close the selected surah in-place and restore list scroll position
+        suppressNextAutoOpen.current = true;
+        setSelectedSurah(null);
+        setVerses([]);
+        setLoadingError(null);
+        setCurrentPage(1);
+        setHasMoreVerses(true);
+        // Clear route params so effects don't reopen the surah immediately
+        try { router.replace('/(tabs)/read'); } catch {}
+
+        // Restore exact scroll position (no animation)
+        setTimeout(() => {
+          if (surahListRef.current) {
+            surahListRef.current.scrollToOffset({ offset: scrollOffsetRef.current || 0, animated: false });
+          }
+          isNavigatingBack.current = false;
+        }, 50);
+      } else {
+        // When on the surah list (no selectedSurah), Back should always go to Home
+        try {
+          router.replace('/');
+        } catch {
+          router.push('/');
+        }
+        setTimeout(() => { isNavigatingBack.current = false; }, 300);
+      }
+    } catch (e) {
+      console.error('[read] handleBackToSurahs error', e);
+      isNavigatingBack.current = false;
     }
-  }, [selectedSurah, router]);
+  }, [selectedSurah, router, paramSurahId]);
 
   // Handle marking all verses as memorized or unmarking them (work on ALL verses in surah)
   const BULK_UPDATE_THRESHOLD = 10; // Reduced: use bulk DB/state update for surahs with 10+ verses (was 30)
@@ -1047,8 +1194,7 @@ export default function ReadScreen() {
   useEffect(() => {
     if (lastViewedSurahId && !selectedSurah) {
       if (suppressNextAutoOpen.current) {
-        // Skip one auto-open cycle after back navigation
-        suppressNextAutoOpen.current = false;
+        // Skip auto-open while suppression is active
         return;
       }
       const surah = surahsData.find(s => s.id === lastViewedSurahId);
@@ -1099,7 +1245,7 @@ export default function ReadScreen() {
     const vid = paramVerseId ? Number(paramVerseId) : undefined;
     if (sid && !Number.isNaN(sid)) {
       const surah = surahsData.find(s => s.id === sid);
-      if (surah) {
+      if (surah && !suppressNextAutoOpen.current) {
         setSelectedSurah(surah);
         setLastViewedSurahId(surah.id);
         if (vid && !Number.isNaN(vid)) {
@@ -1117,7 +1263,7 @@ export default function ReadScreen() {
       const vid = paramVerseId ? Number(paramVerseId) : undefined;
       if (sid && !Number.isNaN(sid)) {
         // Only reopen if not already on the same surah
-        if (!selectedSurah || selectedSurah.id !== sid) {
+        if ((!selectedSurah || selectedSurah.id !== sid) && !suppressNextAutoOpen.current) {
           const surah = surahsData.find(s => s.id === sid);
             if (surah) {
               setSelectedSurah(surah);
@@ -1139,7 +1285,7 @@ export default function ReadScreen() {
     if (!sid) return;
     if (selectedSurah && selectedSurah.id === sid) return; // already opened
     const timeout = setTimeout(() => {
-      if (!selectedSurah) {
+      if (!selectedSurah && !suppressNextAutoOpen.current) {
         const surah = surahsData.find(s => s.id === sid);
         if (surah) {
           console.log('[read] Fallback re-open surah due to initial miss (Android)', sid);
@@ -1153,18 +1299,148 @@ export default function ReadScreen() {
   }, [paramSurahId, selectedSurah, loadInitialVerses, setLastViewedSurahId]);
 
   // After verses load, scroll to the requested verse if any
+  // Keep the ref updated whenever verses state changes so async handlers can read latest
+  useEffect(() => { 
+    versesRef.current = verses; 
+  }, [verses]);
+
+  // FIXED: Scroll to verse only after loading completes
   useEffect(() => {
-    if (selectedSurah && targetVerseRef.current && verses.length > 0) {
-      const idx = verses.findIndex(v => v.verseNumber === targetVerseRef.current);
-      if (idx >= 0) {
-        setTimeout(() => {
-          versesListRef.current?.scrollToIndex({ index: idx, animated: true });
-        }, 300);
-      }
-      // Clear target whether found or not to avoid loops
-      targetVerseRef.current = null;
+    let cancelled = false;
+    const desired = targetVerseRef.current;
+    
+    // Wait until we have a surah, a target verse, verses loaded, and loading is complete
+    if (!selectedSurah || !desired || isLoading || verses.length === 0) {
+      return;
     }
-  }, [verses, selectedSurah]);
+
+    // Improved scrollToVerseIndex helper with better error handling
+    const scrollToVerseIndexImproved = (targetIdx: number) => {
+      if (!versesListRef.current) {
+        console.warn('[read] scrollToVerseIndex: versesListRef not ready');
+        return;
+      }
+      const list = versesRef.current;
+      if (!list || list.length === 0) {
+        console.warn('[read] scrollToVerseIndex: verses empty');
+        return;
+      }
+      if (targetIdx < 0 || targetIdx >= list.length) {
+        console.warn('[read] scrollToVerseIndex: index out of range', { targetIdx, length: list.length });
+        // Fallback to closest valid index
+        targetIdx = Math.max(0, Math.min(targetIdx, list.length - 1));
+      }
+
+      console.log(`[read] Attempting to scroll to index ${targetIdx} of ${list.length} verses`);
+
+      try {
+        versesListRef.current.scrollToIndex({ 
+          index: targetIdx, 
+          animated: true, 
+          viewPosition: 0.3  // Changed from 0.5 - positions verse closer to top for better visibility
+        });
+      } catch (err) {
+        console.warn('[read] scrollToIndex failed, falling back to offset', err);
+        const estimatedOffset = Math.max(0, Math.round(targetIdx * (averageVerseHeight || 200)));
+        try {
+          versesListRef.current.scrollToOffset({ offset: estimatedOffset, animated: true });
+        } catch (e) {
+          console.warn('[read] scrollToOffset fallback also failed', e);
+        }
+      }
+    };
+
+    const findAndScroll = async () => {
+      // Helper to check current loaded verses
+      const findIndex = () => {
+        const idx = versesRef.current.findIndex(v => v.verseNumber === desired);
+        if (idx >= 0) {
+          console.log(`[read] Found verse at index ${idx}: verseNumber=${versesRef.current[idx].verseNumber}, looking for=${desired}`);
+        }
+        return idx;
+      };
+
+      // First quick check - maybe it's already loaded
+      let idx = findIndex();
+      if (idx >= 0) {
+        console.log(`[read] ✓ Found target verse ${desired} at index ${idx} (out of ${versesRef.current.length} verses), scrolling...`);
+        // Add a delay to ensure FlatList has rendered
+        setTimeout(() => {
+          scrollToVerseIndex(idx);
+          targetVerseRef.current = null;
+        }, 300); // Increased delay for better reliability
+        return;
+      }
+
+      console.log(`[read] ✗ Verse ${desired} not found in ${versesRef.current.length} loaded verses (have verses 1-${versesRef.current[versesRef.current.length - 1]?.verseNumber || 0}), loading more...`);
+
+      // Otherwise, keep loading more pages while available until we find the verse
+      let attempts = 0;
+      const maxAttempts = 50; // Safety limit to prevent infinite loops
+      
+      while (!cancelled && idx === -1 && hasMoreVerses && attempts < maxAttempts) {
+        attempts++;
+        const currentVerseCount = versesRef.current.length;
+        const lastVerseNum = versesRef.current[versesRef.current.length - 1]?.verseNumber || 0;
+
+        console.log(`[read] Loading more verses (attempt ${attempts}/${maxAttempts}), currently have ${currentVerseCount} verses (1-${lastVerseNum}), need verse ${desired}...`);
+
+        try {
+          // Use the returned updated verses to avoid races with state propagation
+          const updated = await loadMoreVerses();
+
+          // If no new verses were added (length didn't increase), break to avoid an infinite loop
+          const afterCount = updated.length;
+          if (afterCount <= currentVerseCount) {
+            console.log('[read] loadMoreVerses returned no new verses, breaking out to avoid infinite loop');
+            break;
+          }
+
+          // Small pause to allow FlatList to render new items
+          await new Promise(res => setTimeout(res, 200));
+
+          console.log(`[read] After loading: now have ${afterCount} verses (1-${updated[updated.length - 1]?.verseNumber || 0})`);
+
+          // Check with updated array
+          idx = updated.findIndex(v => v.verseNumber === desired);
+
+          if (idx >= 0) {
+            console.log(`[read] ✓ Found verse ${desired} at index ${idx} after ${attempts} attempts, scrolling...`);
+            // Extra delay after loading to ensure FlatList has rendered all items
+            setTimeout(() => {
+              scrollToVerseIndex(idx);
+              targetVerseRef.current = null;
+            }, 400);
+            return;
+          } else {
+            console.log(`[read] ✗ Still haven't found verse ${desired}, continuing...`);
+          }
+        } catch (e) {
+          console.error(`[read] Error loading more verses:`, e);
+          // Continue trying if we haven't hit max attempts
+        }
+      }
+
+      // If we exit loop and didn't find the verse
+      if (!cancelled) {
+        if (idx === -1 && !hasMoreVerses) {
+          console.warn(`[read] Verse ${desired} not found after loading all verses`);
+          targetVerseRef.current = null;
+          
+          // Fallback: scroll to top if verse not found
+          setTimeout(() => {
+            versesListRef.current?.scrollToOffset({ offset: 0, animated: true });
+          }, 200);
+        } else if (attempts >= maxAttempts) {
+          console.warn(`[read] Max attempts reached while searching for verse ${desired}`);
+          targetVerseRef.current = null;
+        }
+      }
+    };
+
+    findAndScroll();
+    return () => { cancelled = true; };
+  }, [selectedSurah, hasMoreVerses, loadMoreVerses, isLoading, verses.length]); // Added isLoading and verses.length
 
   return (
     <View style={[styles.container, { backgroundColor: '#1a1a1a' }]}> 
@@ -1176,9 +1452,9 @@ export default function ReadScreen() {
             <ArrowLeft size={28} color="#FFD700" />
           </TouchableOpacity>
           {selectedSurah ? (
-            <View style={styles.headerTitleContainer}>
-              <View style={{ flexDirection:'row', alignItems:'center', marginBottom:4 }}>
-                <Text style={styles.headerTitle}>{selectedSurah.englishName}</Text>
+            <View style={[styles.headerTitleContainer, { alignItems: 'center' }]}>
+              <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'center', marginBottom:4 }}>
+                <Text style={styles.headerTitle}>{`${selectedSurah.id}. ${selectedSurah.englishName}`}</Text>
                 <TouchableOpacity
                   onPress={handleToggleSurahAudio}
                   style={{
@@ -1201,26 +1477,34 @@ export default function ReadScreen() {
                   {isPlayingSurah ? <Pause size={22} color="#1a1a1a" /> : <Play size={22} color="#FFD700" />}
                 </TouchableOpacity>
               </View>
-              <Text style={[styles.headerSubtitle, { 
-                fontFamily: getArabicFontFamily(),
-                ...headerArabicTypography,
-              }]}>{selectedSurah.arabicName}</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-                <Text style={{
-                  color: '#ffffff',
-                  backgroundColor: '#444',
-                  paddingHorizontal: 8,
-                  paddingVertical: 4,
-                  borderRadius: 6,
-                  overflow: 'hidden',
-                  marginRight: 8,
-                  fontSize: 12,
-                }}>
-                  {(selectedSurah.revelationType === 'Medinan' ? 'Madani' : 'Makki')}
-                </Text>
-                <Text style={{ color: '#888888', fontSize: 12 }}>
-                  {selectedSurah.versesCount} verses
-                </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingHorizontal: 8, marginTop: 6 }}>
+                <View style={{ flex: 0.25, alignItems: 'flex-start' }}>
+                  <Text style={{
+                    color: '#ffffff',
+                    backgroundColor: '#444',
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderRadius: 6,
+                    overflow: 'hidden',
+                    marginRight: 8,
+                    fontSize: 12,
+                  }}>
+                    {(selectedSurah.revelationType === 'Medinan' ? 'Madani' : 'Makki')}
+                  </Text>
+                </View>
+                <View style={{ flex: 0.5, alignItems: 'center' }}>
+                  <Text style={[styles.headerSubtitle, { 
+                    fontFamily: getArabicFontFamily(),
+                    ...headerArabicTypography,
+                    textAlign: 'center',
+                    color: '#ffffff'
+                  }]}>{selectedSurah.arabicName}</Text>
+                </View>
+                <View style={{ flex: 0.25, alignItems: 'flex-end' }}>
+                  <Text style={{ color: '#ffffff', fontSize: 12 }}>
+                    {selectedSurah.versesCount} verses
+                  </Text>
+                </View>
               </View>
             </View>
           ) : (
@@ -1231,40 +1515,36 @@ export default function ReadScreen() {
         </View>
         {selectedSurah && (
           <View style={styles.headerActions}>
-            <TouchableOpacity 
+            <Pressable 
               style={[styles.actionButton, surahStatus.isMemorized ? styles.actionButtonActive : null]} 
+              android_ripple={{ color: 'transparent' }}
               onPress={handleMarkAllMemorized}
             >
-              <CheckCircle size={20} color={surahStatus.isMemorized ? "#ffffff" : "#888888"} />
+              <CheckCircle size={20} color="#ffffff" />
               <Text
-                style={[
-                  styles.actionButtonText,
-                  surahStatus.isMemorized ? styles.actionButtonTextActive : null
-                ]}
+                style={styles.actionButtonText}
                 numberOfLines={1}
                 adjustsFontSizeToFit
                 minimumFontScale={0.8}
               >
                 {surahStatus.isMemorized ? 'Unmark ❌' : 'Mark Memorized'}
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
+            </Pressable>
+            <Pressable 
               style={[styles.actionButton, surahStatus.isRevised ? styles.actionButtonRevised : null]} 
+              android_ripple={{ color: 'transparent' }}
               onPress={handleMarkAllRevised}
             >
-              <RefreshCw size={20} color={surahStatus.isRevised ? "#ffffff" : "#888888"} />
+              <RefreshCw size={20} color="#ffffff" />
               <Text
-                style={[
-                  styles.actionButtonText,
-                  surahStatus.isRevised ? styles.actionButtonTextActive : null
-                ]}
+                style={styles.actionButtonText}
                 numberOfLines={1}
                 adjustsFontSizeToFit
                 minimumFontScale={0.8}
               >
                 {surahStatus.isRevised ? 'Unmark ❌' : 'Mark Revision'}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         )}
         </View>
@@ -1347,6 +1627,14 @@ export default function ReadScreen() {
                 initialNumToRender={8}
                 style={{ backgroundColor: '#1a1a1a' }}
                 getItemLayout={(data, index) => ({ length: averageVerseHeight, offset: averageVerseHeight * index, index })}
+                onScrollToIndexFailed={(info) => {
+                  console.warn('[read] onScrollToIndexFailed', info);
+                  const avg = info.averageItemLength || averageVerseHeight || 200;
+                  const offset = Math.max(0, Math.round(info.index * avg));
+                  setTimeout(() => {
+                    try { versesListRef.current?.scrollToOffset({ offset, animated: true }); } catch (e) { console.warn('[read] scrollToOffset failed in handler', e); }
+                  }, 120);
+                }}
               />
             )}
           </View>
@@ -1428,14 +1716,15 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 8,
+    marginTop: 4,
+    paddingHorizontal: 8,
   },
   actionButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#333333',
+  backgroundColor: '#505050',
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
@@ -1448,7 +1737,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF9800', // Orange color for revised
   },
   actionButtonText: {
-    color: '#888888',
+    color: '#ffffff',
     marginLeft: 8,
     fontSize: 14,
     fontWeight: '500',

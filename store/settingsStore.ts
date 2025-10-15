@@ -38,6 +38,9 @@ export interface SettingsState extends AppSettings {
   setReciterIdentifier: (identifier: string) => void;
   setPlaybackSpeed: (speed: PlaybackSpeed) => void;
   setInfiniteLoop: (enabled: boolean) => void;
+  // Daily Ayah notification controls
+  ayahDailyNotificationsEnabled?: boolean;
+  setAyahDailyNotificationsEnabled?: (enabled: boolean) => void;
 }
 
 // Initialize store with values from AsyncStorage
@@ -87,6 +90,7 @@ export const useSettingsStore = create<SettingsState>()(
   arabicFont: 'uthman-taha',
       playbackSpeed: DEFAULT_PLAYBACK_SPEED,
       infiniteLoop: false,
+  ayahDailyNotificationsEnabled: false,
       
       setTheme: (theme) => set({ theme }),
       setRepeatMode: (repeatMode) => set({ repeatMode }),
@@ -99,6 +103,7 @@ export const useSettingsStore = create<SettingsState>()(
       setAutoPlayAudio: (autoPlayAudio) => set({ autoPlayAudio }),
         setNotificationsEnabled: (notificationsEnabled) => set({ notificationsEnabled }),
         setReminderTime: (reminderTime) => set({ reminderTime }),
+  setAyahDailyNotificationsEnabled: (enabled: boolean) => set({ ayahDailyNotificationsEnabled: enabled }),
               setUserName: (userName) => {
         console.log('Setting userName in store:', userName);
         set({ userName });
@@ -142,6 +147,8 @@ export const useSettingsStore = create<SettingsState>()(
           state.autoPlayAudio = state.autoPlayAudio ?? false;
           state.notificationsEnabled = state.notificationsEnabled ?? false;
           state.reminderTime = state.reminderTime || '09:00';
+          // @ts-ignore extend persisted state for ayah notifications
+          (state as any).ayahDailyNotificationsEnabled = (state as any).ayahDailyNotificationsEnabled ?? false;
           state.quizVerseCount = state.quizVerseCount || 5;
           state.translationLanguage = state.translationLanguage || 'en.sahih';
           // Default reciter

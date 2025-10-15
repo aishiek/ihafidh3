@@ -1,3 +1,4 @@
+import { TOTAL_VERSES } from '@/constants/quran';
 import { surahsData } from '@/data/surahs';
 import { logVerseActivity } from '@/database/QuranDatabase';
 import { Verse } from '@/types';
@@ -6,7 +7,6 @@ import { formatDate } from '@/utils/dateUtils';
 import { getJuzVerseRange } from '@/utils/juzCalculator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
-import { TOTAL_VERSES } from '@/constants/quran';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 interface TimeSpent {
@@ -88,6 +88,7 @@ interface ProgressState {
   unmarkVerseAsMemorized: (verseId: number) => void;
   bulkMarkVersesMemorized: (verseIds: number[], isMemorized?: boolean) => Promise<void>;
   markVerseAsRevised: (verseId: number) => void;
+  unmarkVerseAsRevised: (verseId: number) => void;
   bulkMarkVersesRevised: (verseIds: number[]) => Promise<void>;
   updateDailyStreak: () => void;
   startTimeTracking: () => void;
@@ -160,23 +161,26 @@ export const useProgressStore = create<ProgressState>()(
       markVerseAsMemorized: (verseId) => {
         set((state): Partial<ProgressState> => {
           const today = formatDate(new Date());
-          const current = state.verseStatus[verseId]?.status || 'not_started';
-          if (current === 'memorized') return state; // no change
+          
+          // Check if already memorized
+          if (state.memorizedVerses.includes(verseId)) return state; // no change
 
-          // Remove from revised if switching
-          let revisedVerses = state.revisedVerses;
-          if (current === 'revised') {
-            revisedVerses = revisedVerses.filter(v => v.verseId !== verseId);
-          }
-
-            const newMemorizedVerses = state.memorizedVerses.includes(verseId)
-              ? state.memorizedVerses
-              : [...state.memorizedVerses, verseId];
-          const newStatus = { ...state.verseStatus, [verseId]: { status: 'memorized', last_updated: today } };
+          // Add to memorized without removing from revised
+          const newMemorizedVerses = [...state.memorizedVerses, verseId];
           const newMemDates = { ...state.memorizedVerseDates, [verseId]: today };
+          
+          // Update status to reflect the most recent action, but keep both arrays
+          const newStatus = { ...state.verseStatus, [verseId]: { status: 'memorized', last_updated: today } };
           const typedStatus = newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>;
           const agg = recomputeAggregates(typedStatus);
-          return { memorizedVerses: newMemorizedVerses, revisedVerses, verseStatus: newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>, memorizedVerseDates: newMemDates, memorizedCount: agg.memorizedCount, revisedCount: agg.revisedCount };
+          
+          return { 
+            memorizedVerses: newMemorizedVerses, 
+            memorizedVerseDates: newMemDates,
+            verseStatus: newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>, 
+            memorizedCount: agg.memorizedCount, 
+            revisedCount: agg.revisedCount 
+          };
         });
         // Log activity (non-blocking)
         setTimeout(() => { try { logVerseActivity(verseId, 'memorized'); } catch {} }, 0);
@@ -184,14 +188,36 @@ export const useProgressStore = create<ProgressState>()(
       
       unmarkVerseAsMemorized: (verseId) => {
         set((state): Partial<ProgressState> => {
-          if (!state.memorizedVerses.includes(verseId)) return state as any;
-          const newMemorizedVerses = state.memorizedVerses.filter(id => id !== verseId);
+          const today = formatDate(new Date());
+          const wasMemorized = state.memorizedVerses.includes(verseId);
+          const newMemorizedVerses = wasMemorized
+            ? state.memorizedVerses.filter(id => id !== verseId)
+            : state.memorizedVerses.slice();
+
+          // Always remove memorized date if present (fixes stale date-only state)
           const { [verseId]: _removed, ...restDates } = state.memorizedVerseDates || {};
-          const newStatus = { ...state.verseStatus, [verseId]: { status: 'not_started', last_updated: formatDate(new Date()) } };
+
+          // If the verse is still revised, keep it as revised, otherwise mark as not_started
+          const isStillRevised = state.revisedVerses.some(v => v.verseId === verseId);
+          const newStatus = { 
+            ...state.verseStatus, 
+            [verseId]: { 
+              status: isStillRevised ? 'revised' : 'not_started', 
+              last_updated: today,
+            } 
+          };
+
           setTimeout(() => { try { get().updateBadges(); } catch {} }, 0);
           const typedStatus2 = newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>;
           const agg = recomputeAggregates(typedStatus2);
-          return { memorizedVerses: newMemorizedVerses, memorizedVerseDates: restDates, verseStatus: newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>, memorizedCount: agg.memorizedCount, revisedCount: agg.revisedCount };
+
+          return { 
+            memorizedVerses: newMemorizedVerses, 
+            memorizedVerseDates: restDates, 
+            verseStatus: newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>, 
+            memorizedCount: agg.memorizedCount, 
+            revisedCount: agg.revisedCount 
+          };
         });
       },
       
@@ -223,12 +249,12 @@ export const useProgressStore = create<ProgressState>()(
             } else {
               if (verseIds.length) {
                 memorizedVerses = memorizedVerses.filter(id => !verseIds.includes(id));
+                // Clear any memorized date and status for all affected ids
                 verseIds.forEach(id => {
-                  delete memorizedVerseDates[id];
-                  // revert to not_started only if not revised already
-                  if (verseStatus[id]?.status === 'memorized') {
-                    verseStatus[id] = { status: 'not_started', last_updated: today };
-                  }
+                  if (memorizedVerseDates[id]) delete memorizedVerseDates[id];
+                  // If not revised, set to not_started; if revised, keep revised
+                  const isStillRevised = state.revisedVerses.some(v => v.verseId === id);
+                  verseStatus[id] = { status: isStillRevised ? 'revised' : 'not_started', last_updated: today };
                 });
               }
             }
@@ -265,23 +291,15 @@ export const useProgressStore = create<ProgressState>()(
       markVerseAsRevised: (verseId) => {
         set((state): Partial<ProgressState> => {
           const today = formatDate(new Date());
-          const current = state.verseStatus[verseId]?.status || 'not_started';
-          if (current === 'revised') return state;
-
-          // Remove from memorized if switching
-          let memorizedVerses = state.memorizedVerses;
-          let memorizedVerseDates = state.memorizedVerseDates;
-          if (current === 'memorized') {
-            memorizedVerses = memorizedVerses.filter(id => id !== verseId);
-            const { [verseId]: _removed, ...rest } = memorizedVerseDates;
-            memorizedVerseDates = rest;
-          }
-
-          // Add to revised arrays if not already
+          
+          // Check if already revised
           const exists = state.revisedVerses.some(v => v.verseId === verseId);
-          const newRevisedVerses = exists ? state.revisedVerses : [...state.revisedVerses, { verseId, revisionDate: today }];
-          const newDailyRevisedVerses = exists ? state.dailyRevisedVerses : [...state.dailyRevisedVerses, { verseId, date: today }];
-          const newWeeklyRevisedVerses = exists ? state.weeklyRevisedVerses : [...state.weeklyRevisedVerses, { verseId, date: today }];
+          if (exists) return state;
+
+          // Add to revised without removing from memorized
+          const newRevisedVerses = [...state.revisedVerses, { verseId, revisionDate: today }];
+          const newDailyRevisedVerses = [...state.dailyRevisedVerses, { verseId, date: today }];
+          const newWeeklyRevisedVerses = [...state.weeklyRevisedVerses, { verseId, date: today }];
 
           // Determine surah
           let currentVerseId = 0; let surahId = 1;
@@ -290,10 +308,10 @@ export const useProgressStore = create<ProgressState>()(
             ? state.weeklyRevisedSurahsCompleted
             : [...state.weeklyRevisedSurahsCompleted, surahId];
 
+          // Update status to reflect the most recent action, but keep both arrays
           const newStatus = { ...state.verseStatus, [verseId]: { status: 'revised', last_updated: today } };
+          
           const newState: Partial<ProgressState> = {
-            memorizedVerses,
-            memorizedVerseDates,
             revisedVerses: newRevisedVerses,
             dailyRevisedVerses: newDailyRevisedVerses,
             weeklyRevisedVerses: newWeeklyRevisedVerses,
@@ -319,6 +337,40 @@ export const useProgressStore = create<ProgressState>()(
             // Silently handle any synchronous errors
           }
         }, 0);
+      },
+      
+      unmarkVerseAsRevised: (verseId) => {
+        set((state): Partial<ProgressState> => {
+          const existingIndex = state.revisedVerses.findIndex(v => v.verseId === verseId);
+          if (existingIndex === -1) return state as any;
+          
+          const newRevisedVerses = state.revisedVerses.filter(v => v.verseId !== verseId);
+          const newDailyRevisedVerses = state.dailyRevisedVerses.filter(rv => rv.verseId !== verseId);
+          const newWeeklyRevisedVerses = state.weeklyRevisedVerses.filter(rv => rv.verseId !== verseId);
+          
+          // If the verse is still memorized, keep it as memorized, otherwise mark as not_started
+          const isStillMemorized = state.memorizedVerses.includes(verseId);
+          const newStatus = { 
+            ...state.verseStatus, 
+            [verseId]: { 
+              status: isStillMemorized ? 'memorized' : 'not_started', 
+              last_updated: formatDate(new Date()) 
+            } 
+          };
+          
+          setTimeout(() => { try { get().updateBadges(); } catch {} }, 0);
+          const typedStatus2 = newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>;
+          const agg = recomputeAggregates(typedStatus2);
+          
+          return { 
+            revisedVerses: newRevisedVerses,
+            dailyRevisedVerses: newDailyRevisedVerses,
+            weeklyRevisedVerses: newWeeklyRevisedVerses,
+            verseStatus: newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>, 
+            memorizedCount: agg.memorizedCount, 
+            revisedCount: agg.revisedCount 
+          };
+        });
       },
       
       // Optimized bulk operation for marking multiple verses as revised

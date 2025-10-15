@@ -7,13 +7,13 @@ import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
 import { FastingCalendarService } from '@/services/fasting/calendarService';
 import { FastingNotificationService } from '@/services/fasting/notificationService';
 import {
-  FastingAppSettings,
-  FastingCalendarAction,
-  FastingCalendarState,
-  FastingContextType,
-  FastingIntention,
-  FastingNotificationSettings,
-  FastingType
+    FastingAppSettings,
+    FastingCalendarAction,
+    FastingCalendarState,
+    FastingContextType,
+    FastingIntention,
+    FastingNotificationSettings,
+    FastingType
 } from '@/types/fasting';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useReducer } from 'react';

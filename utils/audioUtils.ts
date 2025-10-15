@@ -16,6 +16,8 @@ export type AudioStatus = {
 };
 
 // Separate audio contexts for different types of audio
+// Keep Sound instances in module scope to avoid garbage collection while playing.
+// Storing these references prevents the JS GC from collecting the underlying native audio objects.
 let versePlayer: Audio.Sound | null = null;
 let surahPlayer: Audio.Sound | null = null;
 let isPlayingVerse = false;
@@ -41,14 +43,20 @@ export async function initializeAudio() {
   try {
     console.log('AudioUtils: Initializing audio mode...');
     
-    // Use proper audio mode settings for reliable audio streaming
+    // Configure audio mode for background playback and correct iOS/Android behavior
+    // Important flags:
+    // - staysActiveInBackground: allow playback when app is backgrounded / screen locked
+    // - playsInSilentModeIOS: allow audio to play even if the phone ringer is silent
+    // - shouldDuckAndroid: reduce other audio when playback starts (recommended on Android)
+    // - playThroughEarpieceAndroid: false ensures playback uses loudspeaker by default
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
-      staysActiveInBackground: true, // Enable background audio
-      interruptionModeIOS: InterruptionModeIOS.DoNotMix, // Proper audio session control
+      staysActiveInBackground: true,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
       playsInSilentModeIOS: true,
-      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix, // Proper Android audio session
-      shouldDuckAndroid: false, // Don't duck other audio
+      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
     });
     
     console.log('AudioUtils: Audio mode initialized successfully');

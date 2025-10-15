@@ -3,8 +3,8 @@
  * Handles device location detection and city lookup
  */
 
-import { FastingLocation } from '@/types/fasting';
 import { COUNTRIES } from '@/constants/countries';
+import { FastingLocation } from '@/types/fasting';
 
 export class LocationService {
   /**

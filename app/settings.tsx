@@ -30,6 +30,8 @@ export default function SettingsScreen() {
     setAutoPlayAudio,
     notificationsEnabled, 
     setNotificationsEnabled,
+    ayahDailyNotificationsEnabled,
+    setAyahDailyNotificationsEnabled,
     repeatMode,
     setRepeatMode,
     reminderTime,
@@ -307,6 +309,30 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notifications</Text>
           
+          {/* Ayah of the Day */}
+          <View style={styles.settingItem}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <View style={styles.iconContainer}>
+                  <Bell size={20} color="#03A9F4" />
+                </View>
+                <View>
+                  <Text style={styles.settingLabel}>Ayah of the Day</Text>
+                  <Text style={styles.settingDescription}>
+                    Receive a daily notification with the Ayah of the Day
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={!!ayahDailyNotificationsEnabled}
+                onValueChange={(v) => setAyahDailyNotificationsEnabled?.(v)}
+                trackColor={{ false: '#444444', true: '#03A9F480' }}
+                thumbColor={ayahDailyNotificationsEnabled ? '#03A9F4' : '#888888'}
+                ios_backgroundColor="#444444"
+              />
+            </View>
+          </View>
+
           <View style={styles.settingItem}>
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
