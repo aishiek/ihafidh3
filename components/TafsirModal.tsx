@@ -1,4 +1,5 @@
 import { fetchTafsirByAyah } from '@/services/tafsirApi';
+import { getTafsirFromSource } from '@/services/tafsirService';
 import { useSettingsStore } from '@/store/settingsStore';
 import { LinearGradient } from 'expo-linear-gradient';
 import { X } from 'lucide-react-native';
@@ -19,6 +20,7 @@ interface TafsirData {
 
 export default function TafsirModal({ visible, onClose, surahId, verseNumber }: TafsirModalProps) {
   const [tafsirData, setTafsirData] = useState<TafsirData | null>(null);
+    const [sourceInfo, setSourceInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,12 +35,15 @@ export default function TafsirModal({ visible, onClose, surahId, verseNumber }: 
       setError(null);
       setTafsirData(null);
       try {
-        const res = await fetchTafsirByAyah(surahId, verseNumber, translationLanguage, { forceRefresh: true });
+        // Use unified loader that prefers local Tamil tafsir when appropriate
+        const res = await getTafsirFromSource(surahId, verseNumber, translationLanguage);
         if (cancelled) return;
         if (res && res.text) {
-          setTafsirData({ scholar: res.resourceName || 'Tafsir', text: res.text });
+          setTafsirData({ scholar: res.scholar || 'Tafsir', text: res.text });
+          setSourceInfo(res.source === 'local' ? 'Local' : 'Remote');
         } else {
           setError('Tafsir is not available right now.');
+          setSourceInfo(null);
         }
       } catch (e: any) {
         if (!cancelled) setError(e?.message || 'Failed to load tafsir.');

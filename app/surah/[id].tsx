@@ -3,17 +3,25 @@ import { surahsData } from "@/data/surahs";
 import { getSurahById, isSurahFullyCached } from "@/services/quranApi";
 import { useProgressStore } from "@/store/progressStore";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { getAudioUrl, playAudio } from '@/utils/audioUtils';
+import { useSettingsStore } from '@/store/settingsStore';
 
 export default function SurahScreen() {
   const { id: surahId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
 
   const [surah, setSurah] = useState<any>(null);
-  const [verses, setVerses] = useState<any[]>([]);
+  const BATCH_SIZE = 20; // Local DB is fast; use larger batches
+  const [verses, setVerses] = useState<any[]>([]); // currently loaded batches
+  const [totalVerses, setTotalVerses] = useState(0);
+  const [currentBatch, setCurrentBatch] = useState(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [allVersesLoaded, setAllVersesLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isCached, setIsCached] = useState(false);
+  const fullSurahRef = useRef<any | null>(null);
 
   // Progress store integration
   const { 
@@ -27,6 +35,31 @@ export default function SurahScreen() {
     bulkMarkVersesRevised
   } = useProgressStore();
 
+  // Audio URL cache to avoid regenerating/checking availability repeatedly
+  const audioUrlCacheRef = useRef<Record<string, string>>({});
+  const { reciterIdentifier } = useSettingsStore();
+
+  const handlePlayAudio = useCallback(async (surahNum: number, verseNum: number, _globalId?: number, repeats?: number, isInfinite?: boolean) => {
+    try {
+      const key = `${surahNum}:${verseNum}:${reciterIdentifier}`;
+      let url = audioUrlCacheRef.current[key];
+      if (!url) {
+        // Synchronous URL construction (no network checks)
+        url = getAudioUrl(reciterIdentifier, surahNum, verseNum);
+        audioUrlCacheRef.current[key] = url;
+      }
+      // Play audio: use repeats passed from VerseItem or default to 1
+      const repeatCountToUse = typeof repeats === 'number' ? repeats : 1;
+      const infinite = !!isInfinite;
+      await playAudio(url, repeatCountToUse, (status) => {
+        // optional: update UI or store based on status
+      });
+    } catch (e) {
+      console.error('Failed to play audio:', e);
+      Alert.alert('Audio Error', 'Failed to play audio.');
+    }
+  }, [reciterIdentifier]);
+
   // 🔹 Load Surah
   const loadSurah = useCallback(async () => {
     try {
@@ -38,7 +71,16 @@ export default function SurahScreen() {
       setIsCached(fullyCached);
 
       if (surahData) {
-        setVerses(surahData.verses || []);
+        // store full surah verses in a ref for incremental loading
+        fullSurahRef.current = surahData;
+        const total = surahData.versesCount || (surahData.verses || []).length || 0;
+        setTotalVerses(total);
+
+        // load only the first batch
+        const firstBatch = (surahData.verses || []).slice(0, BATCH_SIZE);
+        setVerses(firstBatch);
+        setCurrentBatch(firstBatch.length > 0 ? 1 : 0);
+        setAllVersesLoaded((firstBatch.length || 0) >= total);
       }
     } catch (err) {
       console.error("❌ ERROR loading verses:", err);
@@ -54,18 +96,20 @@ export default function SurahScreen() {
   // Surah-level state checking
   const isSurahMemorizedGlobally = useMemo(() => {
     if (!surah) return false;
-    // compute full id range for surah
+    // compute full id range for surah using totalVerses
+    const total = totalVerses || surah.versesCount || 0;
     let start = 0; for (let i = 1; i < surah.id; i++) { const s = surahsData.find(ss => ss.id === i)!; start += s.versesCount; }
-    const allIds = Array.from({length: surah.versesCount}, (_, i) => start + 1 + i);
+    const allIds = Array.from({length: total}, (_, i) => start + 1 + i);
     return allIds.length > 0 && allIds.every((id: number) => memorizedVerses.includes(id));
-  }, [surah, memorizedVerses]);
+  }, [surah, memorizedVerses, totalVerses]);
 
   const isSurahRevisedGlobally = useMemo(() => {
     if (!surah) return false;
+    const total = totalVerses || surah.versesCount || 0;
     let start = 0; for (let i = 1; i < surah.id; i++) { const s = surahsData.find(ss => ss.id === i)!; start += s.versesCount; }
-    const allIds = Array.from({length: surah.versesCount}, (_, i) => start + 1 + i);
+    const allIds = Array.from({length: total}, (_, i) => start + 1 + i);
     return allIds.length > 0 && allIds.every((id: number) => revisedVerses.some(rv => rv.verseId === id));
-  }, [surah, revisedVerses]);
+  }, [surah, revisedVerses, totalVerses]);
 
   // Individual verse handlers
   const handleVerseMemorizeToggle = useCallback((verseId: number) => {
@@ -132,6 +176,39 @@ export default function SurahScreen() {
       Alert.alert('Error', 'Failed to update revision status. Please try again.');
     }
   }, [surah, isSurahRevisedGlobally, bulkMarkVersesRevised, unmarkVerseAsRevised]);
+
+  // Load next batch when user scrolls near the end
+  const loadNextBatch = useCallback(async () => {
+    if (isLoadingMore || allVersesLoaded) return;
+    if (!fullSurahRef.current) return;
+
+    setIsLoadingMore(true);
+    try {
+      const surahData = fullSurahRef.current;
+      const alreadyLoaded = verses.length;
+      const nextStart = alreadyLoaded;
+      const nextEnd = Math.min(alreadyLoaded + BATCH_SIZE, surahData.verses.length);
+      if (nextStart >= nextEnd) {
+        setAllVersesLoaded(true);
+        setIsLoadingMore(false);
+        return;
+      }
+
+      // simulate small delay for perceived responsiveness (optional)
+      // await new Promise(r => setTimeout(r, 100));
+
+      const nextBatch = surahData.verses.slice(nextStart, nextEnd);
+      setVerses(prev => [...prev, ...nextBatch]);
+      setCurrentBatch(prev => prev + 1);
+      if (nextEnd >= (surahData.versesCount || surahData.verses.length)) {
+        setAllVersesLoaded(true);
+      }
+    } catch (e) {
+      console.error('Error loading next batch:', e);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoadingMore, allVersesLoaded, verses.length]);
 
   if (loading) {
     return (
@@ -225,7 +302,7 @@ export default function SurahScreen() {
         renderItem={({ item }) => (
           <VerseItem
             verse={item}
-            onPlayAudio={() => {}} // TODO: connect to audio logic
+            onPlayAudio={(surahNum, verseNum, globalId, repeats, isInfinite) => handlePlayAudio(surahNum, verseNum, globalId, repeats, isInfinite)}
             surahMemorizedGlobally={isSurahMemorizedGlobally}
             surahRevisedGlobally={isSurahRevisedGlobally}
             onSurahMemorizeToggle={handleMarkMemorized}
@@ -233,6 +310,13 @@ export default function SurahScreen() {
           />
         )}
         contentContainerStyle={styles.verseList}
+        onEndReached={loadNextBatch}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={isLoadingMore ? <ActivityIndicator style={{ margin: 12 }} /> : null}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={5}
+        updateCellsBatchingPeriod={50}
+        windowSize={5}
       />
 
       {/* 🔹 Continue Reading Example */}

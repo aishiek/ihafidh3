@@ -1,5 +1,5 @@
+import { initDatabase, logBasicStats, runIntegrityCheck } from '@/assets/database/QuranDatabase';
 import { FastingCalendarProvider } from '@/components/fasting/context/FastingCalendarContext';
-import { initDatabase, logBasicStats, runIntegrityCheck } from '@/database/QuranDatabase';
 import { AyahNotificationService } from '@/services/ayahNotificationService';
 import { useSettingsStore } from '@/store/settingsStore';
 import { initializeAudio } from '@/utils/audioUtils';

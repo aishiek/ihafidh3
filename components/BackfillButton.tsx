@@ -1,4 +1,4 @@
-import { debugVerseActivityCounts, forceBackfillNow } from '@/database/QuranDatabase';
+import { debugVerseActivityCounts, forceBackfillNow } from '@/assets/database/QuranDatabase';
 import React, { useState } from 'react';
 import { Alert, Text, TouchableOpacity } from 'react-native';
 

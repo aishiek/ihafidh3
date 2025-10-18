@@ -181,11 +181,16 @@ export default function JuzScreen() {
   const renderItem = useCallback(({ item }: { item: Verse }) => (
     <VerseItem 
       verse={item} 
-      onPlayAudio={() => {}} // TODO: connect to audio logic
+      onPlayAudio={(surahNum, verseNum, globalId, repeats, isInfinite) => { /* noop for now */ }}
     />
   ), []);
   
-  const keyExtractor = useCallback((item: Verse) => item.id.toString(), []);
+  const keyExtractor = useCallback((item: Verse) => {
+    const a = typeof item.id !== 'undefined' ? String(item.id) : '';
+    const b = typeof item.verseNumber !== 'undefined' ? String(item.verseNumber) : '';
+    const c = typeof (item as any).surahId !== 'undefined' ? String((item as any).surahId) : '';
+    return [a, c, b].filter(Boolean).join('-');
+  }, []);
   
   const ListEmptyComponent = useMemo(() => (
     <View style={styles.emptyContainer}>
@@ -205,7 +210,7 @@ export default function JuzScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Stack.Screen 
         options={{ 
-          title: `Juz ${validJuzNumber}`,
+          title: 'Recite',
         }} 
       />
       

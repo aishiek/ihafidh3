@@ -37,10 +37,10 @@ export async function getSurahById(surahNumber: number) {
 export async function isSurahFullyCached(_surahNumber: number): Promise<boolean> {
   return false;
 }
-import { addFailedVerse, cacheVerses } from '@/database/QuranDatabase';
+import { addFailedVerse, cacheVerses } from '@/assets/database/QuranDatabase';
 import { useSettingsStore } from '@/store/settingsStore';
 import { Verse } from '@/types';
-import { generateVerseUrl } from '@/utils/audioUtils';
+import { getAudioUrl } from '@/utils/audioUtils';
 import NetInfo from '@react-native-community/netinfo';
 
 const ALQURAN_CLOUD_API = 'https://api.alquran.cloud/v1';
@@ -232,7 +232,7 @@ export async function fetchSingleVerse(
           ? await fetchTransliterationText(surahNumber, verseNumber, preferredLang)
           : undefined;
 
-        const audioUrl = await generateVerseUrl(reciterIdentifier, surahNumber, verseNumber);
+  const audioUrl = getAudioUrl(reciterIdentifier, surahNumber, verseNumber);
 
         const verse: Verse = {
           id: calculateVerseId(surahNumber, verseNumber),
@@ -364,5 +364,44 @@ export async function smartDownloadSurahOptimized(
     totalCount,
     errors
   };
+}
+
+/**
+ * Fetch translations for a list of verses (keeps ordering). This only calls the API
+ * for translation text and does not overwrite other fields. Returns an array of
+ * strings (translation text) aligned with the input verses array.
+ */
+export async function fetchTranslationsForVerses(
+  surahId: number,
+  verses: Array<{ verse_number: number }>,
+  translationLanguage: string = 'en.asad'
+): Promise<string[]> {
+  const translations: string[] = new Array(verses.length).fill('');
+  const langBase = (translationLanguage.split('.')[0] || 'en').toLowerCase();
+
+  if (langBase === 'en') return translations; // nothing to do
+
+  // We'll batch requests to avoid overloading the API
+  const batchSize = 10;
+  for (let i = 0; i < verses.length; i += batchSize) {
+    const batch = verses.slice(i, i + batchSize);
+    const fetches = batch.map(async (v, idx) => {
+      try {
+        const resp = await fetch(`${ALQURAN_CLOUD_API}/ayah/${surahId}:${v.verse_number}/${translationLanguage}`);
+        if (!resp.ok) return '';
+        const json = await resp.json();
+        return json?.data?.text || '';
+      } catch (err) {
+        return '';
+      }
+    });
+
+    const results = await Promise.all(fetches);
+    for (let j = 0; j < results.length; j++) {
+      translations[i + j] = results[j] || '';
+    }
+  }
+
+  return translations;
 }
 

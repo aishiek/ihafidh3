@@ -31,6 +31,8 @@ let maxRepeats = 1;
 let currentUrl = '';
 let statusCallback: ((status: AudioStatus) => void) | null = null;
 let isInfiniteLoop = false;
+// When true, onPlaybackStatus will only forward status updates and won't perform auto-replay.
+let manualRepeatModeActive = false;
 
 // Surah-specific state
 let surahStatusCallback: ((status: AudioStatus) => void) | null = null;
@@ -92,127 +94,68 @@ export async function checkAudioAvailability(url: string) {
     return false;
   }
 }
+// Supported reciters (prioritized) and default
+export const SUPPORTED_RECITERS = [
+  'ar.alafasy',
+  'ar.abdulbasitmurattal',
+  'ar.abdurrahmaansudais',
+  'ar.shaatri',
+  'ar.hanirifai',
+];
 
-export async function generateVerseUrl(reciter: string, surah: number, ayah: number) {
+export const DEFAULT_RECITER = 'ar.alafasy';
+
+/**
+ * Get a valid reciter identifier, with fallback to default if invalid.
+ * No network calls - just validates against known list.
+ */
+export function getValidReciter(reciter: string | undefined): string {
+  if (!reciter) return DEFAULT_RECITER;
+  if (SUPPORTED_RECITERS.includes(reciter)) return reciter;
+  console.warn(`AudioUtils: Reciter "${reciter}" not supported, falling back to ${DEFAULT_RECITER}`);
+  return DEFAULT_RECITER;
+}
+
+// Synchronous URL builders: do NOT perform network checks. These return the primary CDN URL.
+export function getAudioUrl(reciter: string | undefined, surah: number, ayah: number): string {
+  const validReciter = getValidReciter(reciter);
   const globalAyah = calculateGlobalAyahId(surah, ayah);
-  
-  // Primary: Use cdn.islamic.network (now working again)
-  const primaryUrl = `https://cdn.islamic.network/quran/audio/128/${reciter}/${globalAyah}.mp3`;
-  const fallbackCdnUrl = `https://cdn.islamic.network/quran/audio/128/ar.alafasy/${globalAyah}.mp3`;
-  
-  // Backup: Use everyayah.com format as secondary fallback
-  const surahPadded = surah.toString().padStart(3, '0');
-  const ayahPadded = ayah.toString().padStart(3, '0');
-  const reciterMap: Record<string, string> = {
-    'ar.alafasy': 'Alafasy_128kbps',
-    'ar.abdulbasitmurattal': 'Abdul_Basit_Murattal_192kbps',
-    'ar.abdurrahmaansudais': 'Abdurrahman_As-Sudais_192kbps',
-    'ar.shaatri': 'As-Shaatri_128kbps',
-    'ar.hanirifai': 'Hani_Ar-Rifai_192kbps'
-  };
-  const everyayahReciter = reciterMap[reciter] || 'Alafasy_128kbps';
-  const everyayahFallbackUrl = `https://everyayah.com/data/${everyayahReciter}/${surahPadded}${ayahPadded}.mp3`;
-  
-  console.log(`AudioUtils: Generating URL for Surah ${surah}, Ayah ${ayah}, Global ID: ${globalAyah}`);
-  console.log(`AudioUtils: Primary URL (cdn.islamic.network): ${primaryUrl}`);
-  
-  // Test primary URL first
-  try {
-    const isPrimaryAvailable = await checkAudioAvailability(primaryUrl);
-    if (isPrimaryAvailable) {
-      console.log(`AudioUtils: Using primary cdn.islamic.network URL: ${primaryUrl}`);
-      return primaryUrl;
-    }
-    
-    // Try fallback with default reciter on same CDN
-    console.log(`AudioUtils: Primary reciter not available, trying fallback reciter...`);
-    const isFallbackAvailable = await checkAudioAvailability(fallbackCdnUrl);
-    if (isFallbackAvailable) {
-      console.log(`AudioUtils: Using fallback cdn.islamic.network URL: ${fallbackCdnUrl}`);
-      return fallbackCdnUrl;
-    }
-    
-    // Finally try everyayah.com as backup CDN
-    console.log(`AudioUtils: cdn.islamic.network not available, trying everyayah.com backup...`);
-    const isEveryayahAvailable = await checkAudioAvailability(everyayahFallbackUrl);
-    if (isEveryayahAvailable) {
-      console.log(`AudioUtils: Using everyayah.com backup URL: ${everyayahFallbackUrl}`);
-      return everyayahFallbackUrl;
-    }
-    
-    // If all else fails, return primary URL anyway (let the audio player handle the error)
-    console.warn(`AudioUtils: All CDNs unavailable, returning primary URL: ${primaryUrl}`);
-    return primaryUrl;
-    
-  } catch (error) {
-    console.warn(`AudioUtils: Error checking URL availability, using primary URL:`, error);
-    return primaryUrl;
-  }
+  return `https://cdn.islamic.network/quran/audio/128/${validReciter}/${globalAyah}.mp3`;
 }
 
-export async function generateSurahUrl(reciter: string, surah: number) {
-  const primaryUrl = `https://cdn.islamic.network/quran/audio-surah/128/${reciter}/${surah}.mp3`;
-  const fallbackUrl = `https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy/${surah}.mp3`;
-  
-  console.log(`AudioUtils: Generating surah URL for Surah ${surah}`);
-  console.log(`AudioUtils: Primary surah URL: ${primaryUrl}`);
-  
-  try {
-    const isPrimaryAvailable = await checkAudioAvailability(primaryUrl);
-    if (isPrimaryAvailable) {
-      console.log(`AudioUtils: Using primary surah URL: ${primaryUrl}`);
-      return primaryUrl;
-    }
-    
-    console.log(`AudioUtils: Primary surah reciter not available, trying fallback...`);
-    const isFallbackAvailable = await checkAudioAvailability(fallbackUrl);
-    if (isFallbackAvailable) {
-      console.log(`AudioUtils: Using fallback surah URL: ${fallbackUrl}`);
-      return fallbackUrl;
-    }
-    
-    // Return primary URL anyway if fallback also fails
-    console.warn(`AudioUtils: Both surah URLs failed, returning primary: ${primaryUrl}`);
-    return primaryUrl;
-    
-  } catch (error) {
-    console.warn(`AudioUtils: Error checking surah URL availability, using primary:`, error);
-    return primaryUrl;
-  }
+export function getSurahAudioUrl(reciter: string | undefined, surah: number): string {
+  const validReciter = getValidReciter(reciter);
+  return `https://cdn.islamic.network/quran/audio-surah/128/${validReciter}/${surah}.mp3`;
 }
+
+// Note: generateSurahUrl and network checks removed. Use getSurahAudioUrl for synchronous URL construction.
 
 /* ---------- CORE AUDIO ---------- */
 export async function playAudio(url: string, repeats: number = 1, callback?: (status: AudioStatus) => void) {
   console.log(`AudioUtils: Starting playAudio with url: ${url}, repeats: ${repeats}`);
-  
+
   await stopAudio(); // Only stop verse audio, not surah audio
   await initializeAudio();
 
   const { playbackSpeed, infiniteLoop } = useSettingsStore.getState();
-  
+
   try {
     versePlayer = new Audio.Sound();
     player = versePlayer; // For backward compatibility
-    
+
     console.log('AudioUtils: Loading verse audio from URL:', url);
-    
-    // Direct loading without timeout or network test
     await versePlayer.loadAsync({ uri: url });
-    
-    console.log('AudioUtils: Audio loaded successfully, checking status...');
+
     const loadStatus = await versePlayer.getStatusAsync();
-    
     if (!loadStatus.isLoaded) {
       throw new Error('Audio failed to load properly');
     }
-    
-    console.log('AudioUtils: Audio is loaded, setting up playback...');
-    
+
     // Apply playback speed after audio is loaded
     if (loadStatus.isLoaded && playbackSpeed && playbackSpeed !== 1.0) {
       await versePlayer.setRateAsync(playbackSpeed, true);
     }
-    
+
     currentUrl = url;
     maxRepeats = repeats <= 0 ? 1 : Math.max(1, repeats);
     repeatCount = 0;
@@ -221,55 +164,115 @@ export async function playAudio(url: string, repeats: number = 1, callback?: (st
     isInfiniteLoop = infiniteLoop || repeats <= 0;
     statusCallback = callback || null;
 
-    versePlayer.setOnPlaybackStatusUpdate(onPlaybackStatus);
+  // Use manual repeat mode to avoid double-replay between onPlaybackStatus and the manual loop below.
+  manualRepeatModeActive = true;
+  // Set a minimal status update handler that forwards to onPlaybackStatus (which will no-op replay while manualRepeatModeActive)
+  versePlayer.setOnPlaybackStatusUpdate((s: any) => onPlaybackStatus(s));
 
-    // Ensure volume is set and audio is ready
     await versePlayer.setVolumeAsync(1.0);
-    
-    console.log('AudioUtils: Starting verse audio playback');
-    console.log('AudioUtils: Final pre-play status check...');
-    const prePlayStatus = await versePlayer.getStatusAsync();
-    console.log('AudioUtils: Pre-play status:', prePlayStatus.isLoaded ? 'LOADED' : 'NOT LOADED');
-    
-    await versePlayer.playAsync();
-    
-    // Verify playback started
-    setTimeout(async () => {
-      const playStatus = await versePlayer?.getStatusAsync();
-      if (playStatus && playStatus.isLoaded && 'isPlaying' in playStatus) {
-        console.log('AudioUtils: Post-play status:', playStatus.isPlaying ? 'PLAYING' : 'NOT PLAYING');
-      } else {
-        console.log('AudioUtils: Post-play status: UNKNOWN or ERROR');
-      }
-    }, 500);
-    
-    callback?.({ 
-      isPlaying: true, 
-      currentUrl: url, 
-      repeatCount: 0, 
-      maxRepeats: isInfiniteLoop ? Infinity : maxRepeats,
-      isInfiniteLoop
+
+    // Helper that returns a promise resolving when the current play finishes
+    const waitForFinish = () => new Promise<void>((resolve, reject) => {
+      const handler = async (s: any) => {
+        try {
+          // Forward status to global handler
+          onPlaybackStatus(s);
+
+          if (s.error) {
+            // Forward error and reject
+            statusCallback?.({ isPlaying: false, error: s.error, currentUrl });
+            versePlayer?.setOnPlaybackStatusUpdate(onPlaybackStatus);
+            return reject(new Error(s.error));
+          }
+
+          if (s.didJustFinish) {
+            // restore the global handler and resolve
+            versePlayer?.setOnPlaybackStatusUpdate(onPlaybackStatus);
+            return resolve();
+          }
+        } catch (e) {
+          versePlayer?.setOnPlaybackStatusUpdate(onPlaybackStatus);
+          return reject(e);
+        }
+      };
+
+      // Temporarily attach handler that forwards to onPlaybackStatus and resolves when done
+      versePlayer?.setOnPlaybackStatusUpdate(handler);
     });
+
+    // Start first play
+    console.log('AudioUtils: Starting verse audio playback');
+    await versePlayer.playAsync();
+    callback?.({ isPlaying: true, currentUrl: url, repeatCount: 0, maxRepeats: isInfiniteLoop ? Infinity : maxRepeats, isInfiniteLoop });
+
+    // If infinite loop, keep waiting and replaying until stopAudio flips isInfiniteLoop
+    let shouldContinue = true;
+
+  while (shouldContinue) {
+      // Wait for the current play to finish
+      try {
+        await waitForFinish();
+      } catch (err) {
+        // Playback error occurred - stop and surface error
+        console.error('AudioUtils: Error while waiting for finish:', err);
+        await stopAudio();
+        throw err;
+      }
+
+      // Determine if we should replay
+      if (isInfiniteLoop) {
+        // If still infinite, reset position and play again
+        try {
+          await player?.setPositionAsync(0);
+          await player?.playAsync();
+          // notify status
+          statusCallback?.({ isPlaying: true, currentUrl, repeatCount: Infinity, maxRepeats: Infinity, isInfiniteLoop: true });
+          // loop continues
+          shouldContinue = true;
+        } catch (err) {
+          console.error('AudioUtils: Failed to replay on infinite loop:', err);
+          await stopAudio();
+          shouldContinue = false;
+        }
+      } else {
+        // finite repeats: replay until we've done (maxRepeats) plays
+        if (repeatCount < maxRepeats - 1) {
+          repeatCount++;
+          try {
+            await player?.setPositionAsync(0);
+            await player?.playAsync();
+            statusCallback?.({ isPlaying: true, currentUrl, repeatCount, maxRepeats, isInfiniteLoop: false });
+            shouldContinue = true;
+          } catch (err) {
+            console.error('AudioUtils: Failed to replay:', err);
+            await stopAudio();
+            shouldContinue = false;
+          }
+        } else {
+          // Completed requested repeats
+          await stopAudio();
+          shouldContinue = false;
+        }
+      }
+    }
+    // Completed playback loop - disable manual mode
+    manualRepeatModeActive = false;
   } catch (error) {
     console.error('AudioUtils: Failed to play verse audio:', error);
     console.error('AudioUtils: Failed URL:', url);
-    
-    // Detailed error logging to understand the real issue
+
     if (error instanceof Error) {
       console.error('AudioUtils: Error name:', error.name);
       console.error('AudioUtils: Error message:', error.message);
       console.error('AudioUtils: Error stack:', error.stack);
     }
-    
-    callback?.({ 
-      isPlaying: false, 
-      error: `Failed to load or play audio: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      currentUrl: url
-    });
-    
-    // Clean up state
+
+    statusCallback?.({ isPlaying: false, error: `Failed to load or play audio: ${error instanceof Error ? error.message : 'Unknown error'}`, currentUrl: url });
+
+  // Clean up state
     isPlaying = false;
     isPlayingVerse = false;
+  manualRepeatModeActive = false;
     if (versePlayer) {
       try {
         await versePlayer.unloadAsync();
@@ -279,7 +282,7 @@ export async function playAudio(url: string, repeats: number = 1, callback?: (st
       versePlayer = null;
       player = null;
     }
-    
+
     throw error;
   }
 }
@@ -377,6 +380,24 @@ async function playSurahAudioInternal(url: string, callback?: (status: AudioStat
 
 async function onPlaybackStatus(status: any) {
   if (!status) return;
+  // If manual repeat mode is active, don't perform automatic replay here.
+  // The manual playback loop (playAudio) is responsible for replaying when manualRepeatModeActive === true.
+  if (manualRepeatModeActive) {
+    try {
+      // Forward a lightweight status update to any listeners and return early.
+      statusCallback?.({
+        isPlaying: !!status.isPlaying,
+        didJustFinish: !!status.didJustFinish,
+        currentUrl,
+        repeatCount: isInfiniteLoop ? Infinity : repeatCount,
+        maxRepeats: isInfiniteLoop ? Infinity : maxRepeats,
+        isInfiniteLoop
+      });
+    } catch (e) {
+      console.warn('AudioUtils: onPlaybackStatus (manual mode) failed to forward status', e);
+    }
+    return;
+  }
 
   if (status.isLoaded) {
     isPlaying = status.isPlaying;
@@ -427,6 +448,8 @@ export async function stopAudio() {
   repeatCount = 0;
   maxRepeats = 1;
   isInfiniteLoop = false;
+  // Ensure manual repeat guard is cleared when stopping externally
+  manualRepeatModeActive = false;
   statusCallback?.({ isPlaying: false, currentUrl: '' });
 }
 
@@ -514,7 +537,7 @@ export async function resumeAudio() {
 export async function playVerseWithOptionalBismillah(verse: Verse, repeats = 1, cb?: (status: AudioStatus) => void) {
   const reciter = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
   const surah = verse.surahId || verse.surahNumber || 0;
-  const url = verse.audioUrl || await generateVerseUrl(reciter, surah, verse.verseNumber);
+  const url = verse.audioUrl || getAudioUrl(reciter, surah, verse.verseNumber);
 
   console.log(`Playing verse ${verse.verseNumber} from surah ${surah}:`, {
     verseNumber: verse.verseNumber,
@@ -530,7 +553,7 @@ export async function playVerseWithOptionalBismillah(verse: Verse, repeats = 1, 
 export async function playSurah(surah: number, cb?: (status: AudioStatus) => void) {
   try {
     const reciter = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
-    const url = await generateSurahUrl(reciter, surah);
+    const url = getSurahAudioUrl(reciter, surah);
     if (url) {
       await playSurahAudioInternal(url, cb);
     }
@@ -544,13 +567,14 @@ export async function playSurah(surah: number, cb?: (status: AudioStatus) => voi
 }
 
 // Alias for backward compatibility
-export const generateSurahAudioUrl = generateSurahUrl;
+// Backwards compatibility: expose getSurahAudioUrl under the old name
+export const generateSurahAudioUrl = getSurahAudioUrl;
 
 // Updated to use separate surah audio context
 export const playSurahAudioWithFallback = async (surah: number, repeats: number = 1, cb?: (status: AudioStatus) => void) => {
   try {
     const reciter = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
-    const url = await generateSurahUrl(reciter, surah);
+    const url = getSurahAudioUrl(reciter, surah);
     if (url) {
       await playSurahAudioInternal(url, cb);
     }

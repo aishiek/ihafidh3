@@ -1,8 +1,8 @@
+import { getJuzProgress } from '@/assets/database/QuranDatabase';
 import AyahOfTheDayCard from '@/components/AyahOfTheDayCard';
 import MinimalTopStrip from '@/components/MinimalTopStrip';
 import { QuranProgressTracker } from '@/data/quranProgress';
 import { surahsData } from '@/data/surahs';
-import { getJuzProgress } from '@/database/QuranDatabase';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { useActivityStore } from '@/store/activityStore';
 import { usePlannerStore } from '@/store/plannerStore';
@@ -17,16 +17,16 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import {
-  Award,
-  BookOpen,
-  Calendar,
-  CheckCircle,
-  Clock,
-  Info,
-  Play,
-  RotateCcw,
-  Target,
-  XCircle
+    Award,
+    BookOpen,
+    Calendar,
+    CheckCircle,
+    Clock,
+    Info,
+    Play,
+    RotateCcw,
+    Target,
+    XCircle
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
 import { AppState, Dimensions, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -124,6 +124,16 @@ export default function HomeScreen() {
     activeTimeManager
   } = useActivityStore();
   const quranStore = useQuranStore.getState();
+
+  // Responsive card sizing for progress cards
+  const screenWidth = Dimensions.get('window').width;
+  const cardMargin = 20; // matches section paddingHorizontal
+  const cardGap = 12; // gap between cards
+  const availableWidth = screenWidth - (cardMargin * 2);
+  const cardWidth = Math.max(100, (availableWidth - (cardGap * 2)) / 3);
+
+  // Responsive minHeight for progress cards (proportional to width, clamped)
+  const computedMinHeight = Math.max(180, Math.min(300, Math.round(cardWidth * 1.15)));
 
   const [activeReadingTime, setActiveReadingTime] = useState(0);
   const [showStreakTooltip, setShowStreakTooltip] = useState(false);
@@ -583,18 +593,19 @@ export default function HomeScreen() {
     );
   };
 
-  const ProgressCard = ({ title, data }:{title:string; data:ProgressData}) => {
-    const isSmall = width < 420; const cardWidth = isSmall ? 150 : 220; const circleSize = isSmall ? 64 : 80;
+  const ProgressCard = ({ title, data, cardWidth, minHeight }:{title:string; data:ProgressData; cardWidth: number; minHeight?: number}) => {
+    const circleSize = cardWidth < 120 ? 56 : cardWidth < 150 ? 64 : 80;
+    const isSmall = cardWidth < 120;
     return (
-      <View style={[styles.progressCard, { width: cardWidth }]}>
+      <View style={[styles.progressCard, { width: cardWidth, marginRight: cardGap, minHeight: minHeight || undefined }]}>
         <Text style={styles.progressCardTitle}>{title}</Text>
         <View style={styles.progressCircleContainer}>
           <CircularProgress progress={(data.completed/data.total)*100} size={circleSize} completed={data.completed} inProgress={data.inProgress} total={data.total} />
         </View>
-        <View style={styles.progressLegend}>
+  <View style={styles.progressLegend}>
           <View style={styles.legendItem}><View style={[styles.legendDot,{backgroundColor:'#2196F3'}]} /><Text style={[styles.legendText, isSmall && { fontSize:11 }]}>{data.completed} Completed</Text></View>
           <View style={styles.legendItem}><View style={[styles.legendDot,{backgroundColor:'#FF9800'}]} /><Text style={[styles.legendText, isSmall && { fontSize:11 }]}>{data.inProgress} In Progress</Text></View>
-          <View style={styles.legendItem}><View style={[styles.legendDot,{backgroundColor:'#666'}]} /><Text style={[styles.legendText, isSmall && { fontSize:11 }]}>{data.notStarted} Not Started</Text></View>
+          <View style={styles.legendItem}><View style={[styles.legendDot,{backgroundColor:'#666'}]} /><Text style={[styles.legendText, isSmall && { fontSize:11 }]}>{data.notStarted} Idle</Text></View>
         </View>
       </View>
     );
@@ -809,11 +820,11 @@ export default function HomeScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Overall Progress</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <ProgressCard title="Verses" data={stats.verses} />
-          <ProgressCard title="Surahs" data={stats.surahs} />
-            <ProgressCard title="Juz" data={stats.juz as any} />
-        </ScrollView>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <ProgressCard title="Verses" data={stats.verses} cardWidth={cardWidth} minHeight={computedMinHeight} />
+          <ProgressCard title="Surahs" data={stats.surahs} cardWidth={cardWidth} minHeight={computedMinHeight} />
+          <ProgressCard title="Juz" data={stats.juz as any} cardWidth={cardWidth} minHeight={computedMinHeight} />
+        </View>
       </View>
 
       {/* Ayah of the Day */}
@@ -845,7 +856,7 @@ export default function HomeScreen() {
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <View style={styles.actionsContainer}>
           {/* Hifdh Planner monthly summary - moved here as first quick action */}
-          <View style={styles.plannerCard}>
+          <Pressable onPress={() => router.push('/(tabs)/revision')} style={({ pressed }) => [styles.plannerCard, pressed && { opacity: 0.9 }]}>
             <View style={styles.plannerHeader}>
               <View style={styles.plannerTitleRow}>
                 <View style={styles.plannerIconWrap}><Calendar size={16} color="#a855f7" /></View>
@@ -869,7 +880,7 @@ export default function HomeScreen() {
             ) : (
               <Text style={styles.plannerEmptyText}>No plans yet for {plannerSummary.monthName}. Add your Hifdh plans in Revision.</Text>
             )}
-          </View>
+          </Pressable>
 
           {quickActions.map((a,i) => <ActionCard key={i} {...a} />)}
           
@@ -1039,7 +1050,13 @@ const styles = StyleSheet.create({
   welcomeText: { fontSize:14, color:'#ccc', marginTop:4 },
   section: { paddingHorizontal:20, paddingVertical:16 },
   sectionTitle: { color:'#fff', fontSize:16, fontWeight:'600', marginBottom:12 },
-  progressCard: { backgroundColor:'#222', borderRadius:12, padding:12, marginRight:12 },
+  progressCard: { 
+    backgroundColor:'#222', 
+    borderRadius:12, 
+    padding:12, 
+    marginRight:12,
+    justifyContent: 'space-between', // distribute circle and legend evenly
+  },
   progressCardTitle: { color:'#fff', fontSize:14, marginBottom:8 },
   progressCircleContainer: { alignItems:'center', justifyContent:'center', marginBottom:8 },
   progressLegend: { flexDirection:'column', alignItems:'flex-start', marginTop:8 },

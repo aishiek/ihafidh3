@@ -1,4 +1,5 @@
-import { cacheVerses, getCachedVerses, getVersesByJuzFromDb, isSurahCached } from '@/database/QuranDatabase';
+import { cacheVerses, getCachedVerses, isSurahCached } from '@/assets/database/QuranDatabase';
+import { fetchVersesForJuz } from '@/services/juzDbService';
 import { fetchSingleVerse, fetchVersesBySurah } from '@/services/quranApi';
 import { useSettingsStore } from '@/store/settingsStore';
 import { Verse } from '@/types';
@@ -168,11 +169,51 @@ export async function getVersesByJuz(
   pageSize: number = 10
 ): Promise<Verse[]> {
   try {
-    // First try local DB (fast/offline)
-    const verses = await getVersesByJuzFromDb(juzNumber, page, pageSize);
-    if (verses.length > 0) return verses;
-    // TODO: Optionally add network fallback here if needed
-    return [];
+    // Load ayah + translation + transliteration from local DB
+    const allRows = await fetchVersesForJuz(juzNumber);
+    if (!Array.isArray(allRows) || allRows.length === 0) return [];
+
+    // paginate locally
+    const startIdx = (page - 1) * pageSize;
+    const slice = allRows.slice(startIdx, startIdx + pageSize);
+
+    // helper to compute global verse id for consistency with the rest of the app
+    const counts = [
+      7, 286, 200, 176, 120, 165, 206, 75, 129, 109, 123, 111, 43, 52, 99, 128, 111, 110, 98, 135,
+      112, 78, 118, 64, 77, 227, 93, 88, 69, 60, 34, 30, 73, 54, 45, 83, 182, 88, 75, 85, 54, 53,
+      89, 59, 37, 35, 38, 29, 18, 45, 60, 49, 62, 55, 78, 96, 29, 22, 24, 13, 14, 11, 11, 18, 12,
+      12, 30, 52, 52, 44, 28, 28, 20, 56, 40, 31, 50, 40, 46, 42, 29, 19, 36, 25, 22, 17, 19, 26,
+      30, 20, 15, 21, 11, 8, 8, 19, 5, 8, 8, 11, 11, 8, 3, 9, 5, 4, 7, 3, 6, 3, 5, 4, 5, 6
+    ];
+    const computeGlobalId = (surahId: number, verseNumber: number) =>
+      counts.slice(0, surahId - 1).reduce((a, b) => a + b, 0) + verseNumber;
+
+    // Build Verse objects; defer audio to on-demand playback
+    const enriched: Verse[] = [];
+    await Promise.all(
+      slice.map(async (row) => {
+        const surahId = Number(row.chapter_id);
+        const verseNumber = Number(row.verse_number);
+        const baseId = computeGlobalId(surahId, verseNumber);
+        enriched.push({
+          id: baseId,
+          surahId,
+          verseNumber,
+          // `ayah` (original Arabic text) is returned by the JuzVerse query
+          arabicText: (row.ayah as string) || '',
+          translation: (row.translation as string) || '',
+          transliteration: (row.transliteration as string) || undefined,
+          audioUrl: undefined,
+          // prefer DB-provided part_id/page_id when available
+          juzNumber: row.part_id ? Number(row.part_id) : juzNumber,
+          pageNumber: row.page_id ? Number(row.page_id) : undefined,
+        } as Verse);
+      })
+    );
+
+    // keep order by verse id
+    enriched.sort((a, b) => a.id - b.id);
+    return enriched;
   } catch (error) {
     console.error(`Error fetching verses for juz ${juzNumber}:`, error);
     return [];

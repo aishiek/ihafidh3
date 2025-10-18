@@ -1,4 +1,4 @@
-import { getVerseActivitiesBetween } from '@/database/QuranDatabase';
+import { getVerseActivitiesBetween } from '@/assets/database/QuranDatabase';
 import { useDayKey } from '@/hooks/useDayKey';
 import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
 import { useProgressStore } from '@/store/progressStore';

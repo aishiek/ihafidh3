@@ -47,7 +47,11 @@ function getLangPrefix(language: string | undefined): string {
 
 function isTamilLanguage(language: string | undefined): boolean {
   const p = getLangPrefix(language);
-  return p === 'ta' || p.startsWith('ta');
+  // Accept 'ta', 'ta.*' and any case variants; also accept plain 'tamil' identifiers
+  const normalized = String(p || '').toLowerCase();
+  if (normalized === 'ta' || normalized.startsWith('ta')) return true;
+  if ((language || '').toLowerCase().includes('tamil')) return true;
+  return false;
 }
 
 function getCandidates(language: string | undefined): Array<{ id: number; name: string }> {
@@ -156,13 +160,17 @@ export async function fetchTafsirByAyah(
 
   // If the requested language is Tamil, prefer the local DB first
   try {
+    const langPrefix = getLangPrefix(userLanguage);
+    console.debug('[tafsirApi] fetchTafsirByAyah requested language:', userLanguage, 'prefix:', langPrefix);
     if (isTamilLanguage(userLanguage)) {
+      console.debug('[tafsirApi] detected Tamil language; attempting local DB lookup for', `${surahNumber}:${verseNumber}`);
       const local = await getTamilTafsir(surahNumber, verseNumber);
       if (local) {
+        console.debug('[tafsirApi] local Tamil tafsir found for', `${surahNumber}:${verseNumber}`);
         cache.set(cacheKey, local);
         return local;
       }
-      // If local lookup failed, fall back to API below
+      console.debug('[tafsirApi] local Tamil tafsir not found; falling back to API for', `${surahNumber}:${verseNumber}`);
     }
   } catch (e) {
     console.warn('[tafsirApi] local Tamil tafsir lookup failed', e);

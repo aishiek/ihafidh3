@@ -13,9 +13,9 @@
       "backgroundColor": "#1a1a1a"
     },
     "assetBundlePatterns": [
-      "**/*"
+       "**/*",
+      "assets/**/*"
     ],
-    
     "plugins": [
       "expo-router",
       "expo-sqlite",

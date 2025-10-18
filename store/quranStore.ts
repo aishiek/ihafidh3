@@ -1,22 +1,18 @@
-import { create } from 'zustand';
-import { Surah, Verse } from '@/types';
-import { 
-  getAllSurahs, 
-  getSurahById, 
-  initDatabase, 
-  getVersesBySurah as getDbVersesBySurah,
-  cacheVerses,
-  isDatabasePrefetched,
-  getPrefetchProgress,
-  updatePrefetchProgress,
-  getFailedVerses,
-  addFailedVerse,
-  removeFailedVerse,
-  clearFailedVerses,
-  isSurahFullyCached
-} from '@/database/QuranDatabase';
-import { fetchVersesBySurah } from '@/services/quranApi';
+import {
+    cacheVerses,
+    getAllSurahs,
+    getFailedVerses,
+    getPrefetchProgress,
+    initDatabase,
+    isDatabasePrefetched,
+    isSurahFullyCached,
+    removeFailedVerse,
+    updatePrefetchProgress
+} from '@/assets/database/QuranDatabase';
 import { surahsData } from '@/data/surahs';
+import { fetchVersesBySurah } from '@/services/quranApi';
+import { Surah, Verse } from '@/types';
+import { create } from 'zustand';
 
 interface MemorizedVerse {
   surahId: number;

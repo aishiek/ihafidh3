@@ -1,4 +1,4 @@
-import { cacheAudioFile, getCachedAudioPath, isAudioCached } from '@/database/QuranDatabase';
+import { cacheAudioFile, getCachedAudioPath, isAudioCached } from '@/assets/database/QuranDatabase';
 
 // Import FileSystem using dynamic require to avoid build issues
 let FileSystem: any;

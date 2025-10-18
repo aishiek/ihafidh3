@@ -1,5 +1,5 @@
+import { getVerseActivitiesBetween } from '@/assets/database/QuranDatabase';
 import { TOTAL_VERSES } from '@/constants/quran';
-import { getVerseActivitiesBetween } from '@/database/QuranDatabase';
 import { useDayKey } from '@/hooks/useDayKey';
 import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
 import { useProgressStore } from '@/store/progressStore';

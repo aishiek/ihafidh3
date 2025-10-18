@@ -1,4 +1,4 @@
-import { bulkUpdateVerses } from '@/database/QuranDatabase';
+import { bulkUpdateVerses } from '@/assets/database/QuranDatabase';
 
 export type QueueItem = { verseId: number; state: boolean; type: 'memorized' | 'revised' };
 

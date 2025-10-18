@@ -626,10 +626,10 @@ export default function QuizScreen() {
                           })}
                         </Text>
                       </View>
-                      <Pressable 
+                        <Pressable 
                         style={styles.practiceButton}
                         onPress={() => {
-                          router.push(`/read?surahId=${failedSurah.surahId}`);
+                          router.push(`/(tabs)/read?surahId=${failedSurah.surahId}`);
                         }}
                       >
                         <Text style={styles.practiceButtonText}>Practice</Text>

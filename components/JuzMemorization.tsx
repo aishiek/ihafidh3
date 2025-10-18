@@ -4,25 +4,36 @@ import { useProgressStore } from '@/store/progressStore';
 import { calculateJuzProgress, getJuzVerseRange } from '@/utils/juzCalculator';
 import { useCustomColors } from '@/utils/themeUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useMemo, useRef } from 'react';
+import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import BulkProgressModal from '@/components/BulkProgressModal';
+import { useBulkProgressModal } from '@/hooks/useBulkProgressModal';
 
 function getSurahIdByName(name: string): number | null {
   const surah = surahsData.find(s => s.name === name || s.englishName === name || s.arabicName === name);
   return surah ? surah.id : null;
 }
 
-export default function JuzMemorization() {
+type Props = {
+  onOpenJuz: (juz: number) => void;
+};
+
+export default function JuzMemorization({ onOpenJuz }: Props) {
   const { primary } = useThemeColor();
   const colors = useCustomColors();
   const { memorizedVerses, bulkMarkVersesMemorized, updateBadges } = useProgressStore();
 
-  const [modalVisible, setModalVisible] = useState(false);
-  const [modalText, setModalText] = useState('');
-  const [modalProgress, setModalProgress] = useState(0);
-  const [modalTotal, setModalTotal] = useState(0);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const progressTimerRef = useRef<any>(null);
+  const {
+    modalVisible,
+    modalText,
+    modalProgress,
+    modalTotal,
+    isProcessing,
+    startBulkOperation,
+    animateProgress,
+    closeModal,
+    progressTimerRef,
+  } = useBulkProgressModal();
 
   const memorizedSet = useMemo(() => new Set(memorizedVerses), [memorizedVerses]);
 
@@ -39,105 +50,53 @@ export default function JuzMemorization() {
 
   const bulkToggleJuz = useCallback(async (juz: number, enable: boolean) => {
     if (isProcessing) return;
-    
-    setIsProcessing(true);
-    setModalText(enable ? `Marking Juz ${juz} as memorized...` : `Unmarking Juz ${juz}...`);
-    setModalVisible(true);
-    setModalProgress(0);
-    
+
     try {
       const range = getJuzVerseRange(juz);
-      if (!range.totalVerses) {
-        setModalVisible(false);
-        setIsProcessing(false);
-        return;
-      }
-      
+      if (!range.totalVerses) return;
+
       const startId = Math.max(1, range.startVerseId);
       const endId = Math.max(startId, range.endVerseId);
 
-      // Build the list of verse IDs for this Juz
       const juzIds: number[] = [];
-      for (let id = startId; id <= endId; id++) {
-        juzIds.push(id);
-      }
+      for (let id = startId; id <= endId; id++) juzIds.push(id);
 
-      // Determine which IDs actually need changing
-      const idsToApply = enable
-        ? juzIds.filter((id) => !memorizedSet.has(id))
-        : juzIds.filter((id) => memorizedSet.has(id));
+      const idsToApply = enable ? juzIds.filter(id => !memorizedSet.has(id)) : juzIds.filter(id => memorizedSet.has(id));
+      if (idsToApply.length === 0) return;
 
-      if (idsToApply.length === 0) {
-        setModalVisible(false);
-        setIsProcessing(false);
-        setModalProgress(0);
-        setModalTotal(0);
-        return;
-      }
+      startBulkOperation(enable ? `Marking Juz ${juz} as memorized...` : `Unmarking Juz ${juz}...`, idsToApply.length);
 
-      setModalTotal(idsToApply.length);
-      const total = idsToApply.length;
-
-      // Start smooth progress animation
+      // Animate progress via the hook
       let currentProgress = 0;
-      const animationDuration = 1200; // 1.2 seconds
+      const animationDuration = 1200;
       const updateInterval = 30;
       const steps = animationDuration / updateInterval;
-      const increment = total / steps;
+      const increment = idsToApply.length / steps;
 
       progressTimerRef.current = setInterval(() => {
         currentProgress += increment;
-        if (currentProgress >= total) {
-          currentProgress = total;
-          if (progressTimerRef.current) {
-            clearInterval(progressTimerRef.current);
-            progressTimerRef.current = null;
-          }
+        if (currentProgress >= idsToApply.length) {
+          currentProgress = idsToApply.length;
+          if (progressTimerRef.current) { clearInterval(progressTimerRef.current); progressTimerRef.current = null; }
         }
-        setModalProgress(Math.floor(currentProgress));
+        animateProgress(Math.floor(currentProgress), idsToApply.length);
       }, updateInterval);
 
-      // Small delay to let modal render
       await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Use the optimized bulk operation - THIS IS THE KEY CHANGE
       await bulkMarkVersesMemorized(idsToApply, enable);
-
-      // Wait for animation to complete
       await new Promise(resolve => setTimeout(resolve, animationDuration + 100));
-      
-      // Clear timer
-      if (progressTimerRef.current) {
-        clearInterval(progressTimerRef.current);
-        progressTimerRef.current = null;
-      }
-      
-      // Ensure 100%
-      setModalProgress(total);
-      
-      // Update badges (already called in bulkMarkVersesMemorized, but ensure it happens)
-      updateBadges();
 
-      // Show completion
+      if (progressTimerRef.current) { clearInterval(progressTimerRef.current); progressTimerRef.current = null; }
+      animateProgress(idsToApply.length, idsToApply.length);
+      updateBadges();
       await new Promise(resolve => setTimeout(resolve, 400));
-      
-      setModalVisible(false);
-      setModalProgress(0);
-      setModalTotal(0);
-      setIsProcessing(false);
-      
+      closeModal();
     } catch (e) {
       console.error('Error toggling Juz:', e);
-      if (progressTimerRef.current) {
-        clearInterval(progressTimerRef.current);
-        progressTimerRef.current = null;
-      }
-      setModalVisible(false);
-      setModalProgress(0);
-      setModalTotal(0);
-      setIsProcessing(false);
+      if (progressTimerRef.current) { clearInterval(progressTimerRef.current); progressTimerRef.current = null; }
+      closeModal();
     }
-  }, [memorizedSet, bulkMarkVersesMemorized, updateBadges, isProcessing]);
+  }, [memorizedSet, bulkMarkVersesMemorized, updateBadges, startBulkOperation, animateProgress, closeModal, progressTimerRef]);
 
   const renderItem = ({ item: juz }: { item: number }) => {
     const info = JUZ_MAPPING[juz];
@@ -148,68 +107,72 @@ export default function JuzMemorization() {
     const inProgress = memorized > 0 && memorized < total;
 
     return (
-      <View style={[styles.card, { backgroundColor: '#333333', borderColor: '#555555' }]}> 
-        {/* Action Button - Top Right Corner */}
+      <TouchableOpacity
+        onPress={() => onOpenJuz(juz)}
+        style={[styles.card, { backgroundColor: '#2d2d2d', borderColor: 'rgba(59,130,246,0.08)' }]}
+        activeOpacity={0.7}
+        disabled={isProcessing}
+      >
+        {/* Top-right action button (Complete) */}
+        {/* Action button (top-right) - toggles mark/unmark */}
         <TouchableOpacity
           style={[
-            styles.actionButtonTopRight,
+            styles.completeBtn,
             {
+              opacity: isProcessing ? 0.6 : 1,
               backgroundColor: enabled ? '#4CAF50' : primary,
-              borderColor: enabled ? '#4CAF50' : primary,
-              opacity: isProcessing ? 0.5 : 1,
             }
           ]}
           onPress={() => bulkToggleJuz(juz, !enabled)}
           disabled={isProcessing}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
-          <Text style={[
-            styles.actionText,
-            { color: enabled ? '#ffffff' : '#ffffff' }
-          ]}>
-            {enabled ? '✓ Memorized' : inProgress ? 'Complete' : 'Mark All'}
-          </Text>
+          <Text style={styles.completeBtnText}>{enabled ? '✓ Memorized' : inProgress ? 'Complete' : 'Mark All'}</Text>
         </TouchableOpacity>
-        
-        <View style={[styles.badge, { backgroundColor: primary }]}>
-          <Text style={styles.badgeText}>{juz}</Text>
-        </View>
-        
-        <View style={styles.info}>
-          <Text style={[styles.title, { color: '#ffffff' }]}>Juz {juz}</Text>
-          <Text style={[styles.subtitle, { color: '#cccccc' }]}>
-            {startText} to {endText}
-          </Text>
-          <View style={styles.progressRow}>
-            <Text style={[styles.progressText, { color: '#aaaaaa' }]}>
-              {memorized}/{total} verses
-            </Text>
-            <Text style={[styles.progressPercent, { color: primary }]}>
-              {progress}%
-            </Text>
+
+        <View style={styles.leftContent}>
+          <View style={[styles.juzLabel, { backgroundColor: primary }]}><Text style={styles.juzLabelText}>Juz {juz}</Text></View>
+
+          {(() => {
+            const [startSurah, startVerse] = (info.start || '').split(':');
+            const [endSurah, endVerse] = (info.end || '').split(':');
+            const showEndSurahName = (startSurah || '') !== (endSurah || '');
+            return (
+              <View style={styles.verseRange}>
+                <View style={styles.verseGroup}>
+                  {/* Always show start surah name */}
+                  <Text style={styles.surahName}>{startSurah}</Text>
+                  <Text style={styles.verseNumber}>{`:${startVerse || ''}`}</Text>
+                  <View style={styles.startIndicator} />
+                </View>
+
+                <Text style={styles.arrow}>→</Text>
+
+                <View style={styles.verseGroup}>
+                  {showEndSurahName && <Text style={styles.surahName}>{endSurah}</Text>}
+                  <Text style={styles.verseNumber}>{`:${endVerse || ''}`}</Text>
+                  <View style={styles.endIndicator} />
+                </View>
+              </View>
+            );
+          })()}
+
+          <View style={styles.statsRow}>
+            <Text style={styles.verseCount}>{`📖 ${memorized}/${total} verses`}</Text>
+            <Text style={[styles.percentage, { color: primary }]}>{`${progress}%`}</Text>
           </View>
-          
-          {/* Progress Bar */}
-          {inProgress && (
-            <View style={styles.miniProgressBar}>
-              <View 
-                style={[
-                  styles.miniProgressFill, 
-                  { 
-                    width: `${progress}%`,
-                    backgroundColor: primary 
-                  }
-                ]} 
-              />
-            </View>
-          )}
+
+          <View style={styles.progressContainer}>
+            <View style={[styles.progressBar, { width: `${Math.max(2, progress)}%`, backgroundColor: primary }]} />
+          </View>
         </View>
-      </View>
+  </TouchableOpacity>
     );
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}> 
+      {/* Juz verses are handled by parent via onOpenJuz */}
       <FlatList
         data={data}
         keyExtractor={(n) => String(n)}
@@ -221,40 +184,13 @@ export default function JuzMemorization() {
         windowSize={10}
       />
 
-      <Modal visible={modalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: '#333333' }]}> 
-            <ActivityIndicator size="large" color={primary} style={{ marginBottom: 16 }} />
-            <Text style={[styles.modalTitle, { color: '#ffffff' }]}>
-              {modalText}
-            </Text>
-            
-            {/* Progress Bar */}
-            <View style={styles.progressBarContainer}>
-              <View style={[styles.progressBarBackground, { backgroundColor: '#555555' }]}>
-                <View 
-                  style={[
-                    styles.progressBarFill, 
-                    { 
-                      backgroundColor: primary,
-                      width: modalTotal > 0 ? `${Math.round((modalProgress / modalTotal) * 100)}%` : '0%'
-                    }
-                  ]} 
-                />
-              </View>
-            </View>
-            
-            <View style={styles.progressStats}>
-              <Text style={[styles.progressLabel, { color: '#aaaaaa' }]}>
-                {modalProgress} / {modalTotal} verses
-              </Text>
-              <Text style={[styles.progressPercentLabel, { color: primary }]}>
-                {modalTotal > 0 ? Math.round((modalProgress / modalTotal) * 100) : 0}%
-              </Text>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <BulkProgressModal
+        visible={modalVisible}
+        text={modalText}
+        progress={modalProgress}
+        total={modalTotal}
+        onClose={closeModal}
+      />
     </View>
   );
 }
@@ -327,6 +263,105 @@ const styles = StyleSheet.create({
   miniProgressFill: {
     height: '100%',
     borderRadius: 2,
+  },
+  leftContent: {
+    flex: 1,
+  },
+  completeBtn: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+    backgroundColor: '#2563eb',
+    shadowColor: '#2563eb',
+    shadowOpacity: 0.25,
+    elevation: 4,
+  },
+  completeBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  juzLabel: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#2563eb',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 10,
+    shadowColor: '#2563eb',
+    shadowOpacity: 0.2,
+    elevation: 2,
+  },
+  juzLabelText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  verseRange: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  verseGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  startIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#10b981',
+    marginLeft: 6,
+  },
+  endIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+    marginLeft: 6,
+  },
+  surahName: {
+    color: '#e5e7eb',
+    fontWeight: '600',
+  },
+  verseNumber: {
+    color: '#9ca3af',
+    fontWeight: '500',
+  },
+  arrow: {
+    color: '#3b82f6',
+    fontSize: 18,
+    fontWeight: '300',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  verseCount: {
+    color: '#9ca3af',
+    fontSize: 13,
+  },
+  percentage: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  progressContainer: {
+    width: '100%',
+    height: 6,
+    backgroundColor: '#404040',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    borderRadius: 4,
   },
   actionButtonTopRight: {
     position: 'absolute',

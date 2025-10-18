@@ -1,13 +1,16 @@
 import { surahsData } from '@/data/surahs';
+import { getTranslationRemote } from '@/services/remoteTranslation';
+import { cacheGet, cacheSet } from '@/services/verseCache';
+import { getVerseFromLocalDB } from '@/services/verseDbService';
 import { useBookmarkStore } from '@/store/bookmarkStore';
 import { useProgressStore } from '@/store/progressStore';
 import { PLAYBACK_SPEED_OPTIONS, useSettingsStore, type PlaybackSpeed } from '@/store/settingsStore';
+import { setPlaybackSpeed as setAudioPlaybackSpeed } from '@/utils/audioUtils';
 import { Verse } from '@/types';
-import { pauseAudio, playVerseWithOptionalBismillah, setPlaybackSpeed, type AudioStatus } from '@/utils/audioUtils';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
 import * as Haptics from 'expo-haptics';
-import { Bookmark as BookmarkIcon, BookOpen, Infinity as InfinityIcon, Pause, Play, Repeat, X as XIcon } from 'lucide-react-native';
+import { Bookmark as BookmarkIcon, BookOpen, Infinity as InfinityIcon, Play, Repeat, X as XIcon } from 'lucide-react-native';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import TajweedVerse from 'rn-tajweed-verse';
@@ -15,7 +18,8 @@ import TafsirModal from './TafsirModal';
 
 interface VerseItemProps {
   verse: Verse;
-  onPlayAudio: (verse: Verse) => void;
+  // Parent will handle audio generation & playback. Provide surah/verse/global id when play pressed.
+  onPlayAudio?: (surahNum: number, verseNum: number, globalId?: number, repeats?: number, isInfinite?: boolean) => void;
   // Global/Surah-level state and handlers
   surahMemorizedGlobally?: boolean;
   surahRevisedGlobally?: boolean;
@@ -61,9 +65,7 @@ const VerseItem = ({
     infiniteLoop,
     setInfiniteLoop
   } = useSettingsStore();
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [audioError, setAudioError] = useState<string | null>(null);
-  const [audioFallback, setAudioFallback] = useState(false);
+  // Audio playback is handled by parent. VerseItem no longer generates URLs or auto-loads audio.
   // Derive memorized/revised status directly from stores for accuracy
   const memorizedVerseDates = useProgressStore(state => state.memorizedVerseDates);
   const memorizedVerses = useProgressStore(state => state.memorizedVerses);
@@ -95,47 +97,7 @@ const VerseItem = ({
   const bookmarksSet = useBookmarkStore(state => state.bookmarksSet);
   const bookmarked = useMemo(() => bookmarksSet.has(verse.id), [bookmarksSet, verse.id]);
 
-  const onStatus = useCallback((status: AudioStatus) => {
-    // isPlaying from the audio engine is the source of truth
-    if (typeof status.isPlaying === 'boolean') {
-      setIsPlaying(status.isPlaying);
-    }
-
-    // Handle errors
-    if (status?.error) {
-      setAudioError(status.error);
-      setAudioFallback(false);
-    } else {
-      setAudioError(null);
-    }
-
-    // Handle fallback UI
-    if (status?.fallbackUsed) {
-      setAudioFallback(true);
-    }
-  }, [setIsPlaying, setAudioError, setAudioFallback]);
-
-  const handlePlayAudio = useCallback(async () => {
-    console.log(`VerseItem: Attempting to play verse ${verse.verseNumber} from surah ${verse.surahId || verse.surahNumber}`);
-    try {
-      if (isPlaying) {
-        console.log('VerseItem: Pausing audio');
-        await pauseAudio();
-      } else {
-        console.log('VerseItem: Starting audio playback');
-        // Use 0 for infinite loop, otherwise use the selected repeat count
-        const { infiniteLoop } = useSettingsStore.getState();
-        const repeats = infiniteLoop ? 0 : repeatCount;
-        console.log(`VerseItem: Playing with ${repeats} repeats`);
-        await playVerseWithOptionalBismillah(verse, repeats, onStatus);
-      }
-    } catch (error) {
-      console.error('VerseItem: Audio playback error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      setAudioError(errorMessage);
-      setIsPlaying(false);
-    }
-  }, [verse, repeatCount, onStatus, isPlaying]);
+  // Play action is delegated to parent via onPlayAudio prop. No audio work here.
 
   const bookmarkBusyRef = useRef(false);
   const handleToggleBookmark = useCallback(async () => {
@@ -166,9 +128,7 @@ const VerseItem = ({
     }
   }, [bookmarked, addBookmark, removeBookmark, verse]);
 
-  useEffect(() => {
-    return () => { pauseAudio().catch(console.error); };
-  }, []);
+  // No local audio cleanup needed; parent handles audio lifecycle.
 
   const handleMarkMemorized = useCallback(() => { 
     // Simple toggle: only mark/unmark individual verse using store directly
@@ -190,19 +150,19 @@ const VerseItem = ({
 
   const handlePlaybackSpeedPress = useCallback(async (speed: PlaybackSpeed) => {
     setStorePlaybackSpeed(speed);
-    await setPlaybackSpeed(speed);
-  }, []);
+    // Also update the currently loaded audio player (if any)
+    try {
+      await setAudioPlaybackSpeed(speed);
+    } catch (e) {
+      // swallow errors from audio util - store update already applied
+      console.warn('[VerseItem] failed to set audio playback speed:', e);
+    }
+  }, [setStorePlaybackSpeed]);
 
   const toggleInfiniteLoop = useCallback(() => {
     const newInfiniteLoop = !infiniteLoop;
     setInfiniteLoop(newInfiniteLoop);
-    
-    // If enabling infinite loop and audio is playing, update the playback
-    if (newInfiniteLoop && isPlaying) {
-      // Restart with infinite loop
-      handlePlayAudio();
-    }
-  }, [infiniteLoop, isPlaying, handlePlayAudio, setInfiniteLoop]);
+  }, [infiniteLoop, setInfiniteLoop]);
 
   useEffect(() => {
     if (repeatMode && repeatMode !== repeatCount) {
@@ -328,6 +288,83 @@ const VerseItem = ({
     }
   }, [isMemorizedAnywhere, isRevisedAnywhere]);
 
+  // Local DB loader: attempt to load local Arabic/transliteration when possible
+  const [localArabic, setLocalArabic] = useState<string | null>(null);
+  const [localTransliteration, setLocalTransliteration] = useState<string | null>(null);
+  const [localTranslation, setLocalTranslation] = useState<string | null>(null);
+  const [loadingLocal, setLoadingLocal] = useState(false);
+  const localLoaderRef = useRef({ cancelled: false });
+
+  useEffect(() => {
+    localLoaderRef.current.cancelled = false;
+    async function loadLocal() {
+      // If settings indicate Arabic display or if we always want Arabic from local DB
+      setLoadingLocal(true);
+      try {
+        const surahId = verse.surahId || (verse as any).surahNumber || verse.surah?.number;
+        if (!surahId) return;
+
+        // quick cache check for arabic
+        const cached = cacheGet<string>(surahId, verse.verseNumber, 'local_ar');
+        if (cached) { setLocalArabic(cached); }
+
+        const row = await getVerseFromLocalDB(surahId, verse.verseNumber);
+        if (localLoaderRef.current.cancelled) return;
+        if (row) {
+          if (row.ayah) { setLocalArabic(row.ayah); cacheSet(surahId, verse.verseNumber, 'local_ar', row.ayah); }
+          if (row.transliteration) { setLocalTransliteration(row.transliteration); cacheSet(surahId, verse.verseNumber, 'local_tr', row.transliteration); }
+          if (row.translation) { setLocalTranslation(row.translation); cacheSet(surahId, verse.verseNumber, 'local_en', row.translation); }
+        }
+      } catch (e) {
+        // ignore - we keep existing remote-provided text
+        console.warn('[VerseItem] local DB load failed', e);
+      } finally {
+        setLoadingLocal(false);
+      }
+    }
+    loadLocal();
+    return () => { localLoaderRef.current.cancelled = true; };
+  }, [verse.surahId, verse.verseNumber]);
+
+  const displayedArabic = localArabic || arabicText;
+  const displayedTransliteration = localTransliteration || transliteration;
+
+  // Ensure translation: prefer local English translation (if present) and do NOT call remote for English.
+  // Only fetch remote translation when user selects a non-English translation language.
+  const [displayedTranslation, setDisplayedTranslation] = useState<string | null>(localTranslation || translation || null);
+  useEffect(() => {
+    let cancelled = false;
+    async function ensureTranslation() {
+      const surahId = verse.surahId || (verse as any).surahNumber || verse.surah?.number;
+      if (!surahId) return;
+
+      // If selected language is English (starts with 'en') then prefer local translation and do not call remote.
+      const langBase = (translationLanguage || '').split('.')[0].toLowerCase();
+      if (langBase === 'en') {
+        // Use localTranslation if available, otherwise keep existing prop translation (already set in state)
+        const cachedLocal = cacheGet<string>(surahId, verse.verseNumber, 'local_en');
+        if (cachedLocal) { setDisplayedTranslation(cachedLocal); return; }
+        // If no cached local but row loaded earlier might have set it; otherwise keep prop translation.
+        return;
+      }
+
+      // Non-English language selected: try cache, then remote fetch
+      const cacheVal = cacheGet<string>(surahId, verse.verseNumber, translationLanguage);
+      if (cacheVal) { setDisplayedTranslation(cacheVal); return; }
+      try {
+        const remote = await getTranslationRemote(surahId, verse.verseNumber, translationLanguage);
+        if (!cancelled && remote) {
+          setDisplayedTranslation(remote);
+          cacheSet(surahId, verse.verseNumber, translationLanguage, remote);
+        }
+      } catch (e) {
+        console.warn('[VerseItem] remote translation failed', e);
+      }
+    }
+    ensureTranslation();
+    return () => { cancelled = true; };
+  }, [translationLanguage, verse.id, verse.verseNumber]);
+
   return (
     <Pressable
       style={[
@@ -346,8 +383,7 @@ const VerseItem = ({
           <Text style={[styles.verseInfoText, { color: '#ffffff' }]}>
             Juz {verse.juzNumber || 1} • Page {verse.pageNumber || 1}
           </Text>
-          {audioError && <Text style={[styles.audioErrorText, { color: '#ff5252' }]}>{audioError}</Text>}
-          {audioFallback && <Text style={[styles.audioFallbackText, { color: '#FFD700' }]}>Using fallback reciter (Alafasy)</Text>}
+          {/* Audio status moved to parent; VerseItem no longer displays audio error/fallback text here */}
         </View>
 
         {/* 1) Tafsir first */}
@@ -372,15 +408,17 @@ const VerseItem = ({
           <BookmarkIcon size={16} color={bookmarked ? '#FFD700' : '#888888'} fill={bookmarked ? '#FFD700' : 'transparent'} />
         </Pressable>
 
-        {/* 3) Play/Pause */}
+        {/* 3) Play */}
         <Pressable 
-          style={[styles.audioButton, { 
-            backgroundColor: primary,
-            marginRight: 8
-          }]} 
-          onPress={handlePlayAudio}
+          style={[styles.audioButton, { backgroundColor: primary, marginRight: 8 }]} 
+          onPress={() => {
+            const surahNum = verse.surahId || (verse as any).surahNumber || (verse.surah && verse.surah.number) || 0;
+            const verseNum = verse.verseNumber || 0;
+            const globalId = undefined; // parent may compute if needed
+            onPlayAudio?.(surahNum, verseNum, globalId, repeatCount, infiniteLoop);
+          }}
         >
-          {isPlaying ? <Pause size={16} color="#ffffff" /> : <Play size={16} color="#ffffff" />}
+          <Play size={16} color="#ffffff" />
         </Pressable>
         
         {/* 4) Repeat options */}
@@ -400,7 +438,7 @@ const VerseItem = ({
       {arabicFont === 'tajweed' && verse.tajweedText ? (
         <View style={styles.arabicContainer}>
           <TajweedVerse
-            verse={verse.tajweedText}
+            verse={displayedArabic}
             config={{
               style: {
                 fontSize: arabicTypography.fontSize,
@@ -414,19 +452,19 @@ const VerseItem = ({
         </View>
       ) : (
         <Text style={arabicTextStyle}>
-          {arabicText}
+          {displayedArabic}
         </Text>
       )}
 
-      {showTransliteration && transliteration && (
+      {showTransliteration && displayedTransliteration && (
         <Text style={transliterationTextStyle}>
-          {transliteration}
+          {displayedTransliteration}
         </Text>
       )}
 
-      {showTranslation && (
+      {showTranslation && displayedTranslation && (
         <Text style={translationTextStyle}>
-          {translation}
+          {displayedTranslation}
         </Text>
       )}
 

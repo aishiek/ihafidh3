@@ -1,6 +1,6 @@
 // Legacy _app.tsx stub (fonts now loaded once in _layout.tsx)
 // Kept to avoid accidental re-creation; perform optional warmup tasks here if needed.
-import { getAllMemorizedVerseIds, getAllRevisedVerseIds } from '@/database/QuranDatabase';
+import { getAllMemorizedVerseIds, getAllRevisedVerseIds } from '@/assets/database/QuranDatabase';
 import MemorizationCache from '@/utils/MemorizationCache';
 import { requestNotificationPermissions, scheduleRevisionReminders } from '@/utils/notificationUtils';
 import { isDailyRevisionGoalMet, isWeeklyRevisionGoalMet } from '@/utils/revisionGoalUtils';

@@ -1,6 +1,6 @@
+import { logVerseActivity } from '@/assets/database/QuranDatabase';
 import { TOTAL_VERSES } from '@/constants/quran';
 import { surahsData } from '@/data/surahs';
-import { logVerseActivity } from '@/database/QuranDatabase';
 import { Verse } from '@/types';
 import { logAyahMemorized, logAyahRevised, logBadgeEarned } from '@/utils/analyticsUniversal';
 import { formatDate } from '@/utils/dateUtils';
@@ -224,7 +224,7 @@ export const useProgressStore = create<ProgressState>()(
       // Optimized bulk operation for memorizing/unmarking multiple verses
       bulkMarkVersesMemorized: async (verseIds: number[], isMemorized: boolean = true) => {
         try {
-          const { bulkMarkVersesMemorized } = await import('../database/QuranDatabase');
+          const { bulkMarkVersesMemorized } = await import('../assets/database/QuranDatabase');
           
           // Update database first (batch operation)
           await bulkMarkVersesMemorized(verseIds, isMemorized);
@@ -376,7 +376,7 @@ export const useProgressStore = create<ProgressState>()(
       // Optimized bulk operation for marking multiple verses as revised
       bulkMarkVersesRevised: async (verseIds: number[]) => {
         try {
-          const { bulkLogRevisions } = await import('../database/QuranDatabase');
+          const { bulkLogRevisions } = await import('../assets/database/QuranDatabase');
           
           // Log bulk revisions to database
           await bulkLogRevisions(verseIds);
