@@ -3,14 +3,24 @@ import { getVersesByJuz } from '@/data/verses';
 import { useProgressStore } from '@/store/progressStore';
 import { Verse } from '@/types';
 import { useCustomColors } from '@/utils/themeUtils';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 export default function JuzScreen() {
   const { number } = useLocalSearchParams<{ number: string }>();
+  const router = useRouter();
   const juzNumber = parseInt(number || '1');
-  
+
   // Validate juzNumber to prevent crashes
   const validJuzNumber = useMemo(() => {
     const num = isNaN(juzNumber) ? 1 : juzNumber;
@@ -208,10 +218,15 @@ export default function JuzScreen() {
   
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Stack.Screen 
-        options={{ 
+      <Stack.Screen
+        options={{
           title: 'Recite',
-        }} 
+          headerLeft: () => (
+            <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 10 }}>
+              <Ionicons name="arrow-back" size={24} color={colors.primary} />
+            </TouchableOpacity>
+          ),
+        }}
       />
       
       <View style={[styles.juzHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
