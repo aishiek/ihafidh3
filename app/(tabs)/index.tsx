@@ -1,3 +1,4 @@
+import { MushafDownloadCard } from '@/app/mushaf/components/MushafDownloadCard';
 import { getJuzProgress } from '@/assets/database/QuranDatabase';
 import AyahOfTheDayCard from '@/components/AyahOfTheDayCard';
 import MinimalTopStrip from '@/components/MinimalTopStrip';
@@ -99,9 +100,10 @@ const FireStreakIcon = ({ size = 32 }) => (
   </Svg>
 );
 
+
 export default function HomeScreen() {
   const primary = useThemeColor({}, 'tint');
-  const { plansByDate } = usePlannerStore();
+  const { plansByDate, mode: plannerMode, selectedSurahId, verseStatsByMonth } = usePlannerStore();
   const {
     memorizedVerses,
     revisedVerses,
@@ -164,22 +166,33 @@ export default function HomeScreen() {
     const now = new Date();
     const month = now.getMonth();
     const year = now.getFullYear();
-    const monthName = now.toLocaleDateString(undefined, { month: 'long' });
+  const monthName = now.toLocaleDateString(undefined, { month: 'long' });
+  const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
 
     const allPlannedVerseIds = new Set<number>();
     const plannedBySurah = new Map<number, Set<number>>();
+    const plannedSurahIds = new Set<number>();
 
     // Collect all planned verses for keys in this month
     Object.entries(plansByDate).forEach(([key, entries]) => {
       const d = parseDMY(key);
       if (!d || d.getMonth() !== month || d.getFullYear() !== year) return;
       (entries as any[]).forEach((p: any) => {
-        const sId = toVerseId(p.surahId, p.startVerse);
-        const eId = toVerseId(p.surahId, p.endVerse);
+        const surahId = Number(p.surahId) || 0;
+        if (surahId <= 0) return; // guard against malformed entries
+
+        // If in surah mode and a surah is selected, only include that surah's plans
+        if (plannerMode === 'surah' && selectedSurahId != null && selectedSurahId !== surahId) return;
+
+        plannedSurahIds.add(surahId);
+
+        const sId = toVerseId(surahId, p.startVerse);
+        const eId = toVerseId(surahId, p.endVerse);
+        if (!plannedBySurah.has(surahId)) plannedBySurah.set(surahId, new Set<number>());
+        const setForSurah = plannedBySurah.get(surahId)!;
         for (let id = sId; id <= eId; id++) {
           allPlannedVerseIds.add(id);
-          if (!plannedBySurah.has(p.surahId)) plannedBySurah.set(p.surahId, new Set<number>());
-          plannedBySurah.get(p.surahId)!.add(id);
+          setForSurah.add(id);
         }
       });
     });
@@ -195,7 +208,7 @@ export default function HomeScreen() {
       };
     }
 
-    const isRevised = (id: number) => revisedVerses.some((rv) => rv.verseId === id);
+  const isRevised = (id: number) => revisedVerses.some((rv) => rv.verseId === id) || (plannerMode === 'verse' && !!(verseStatsByMonth[monthKey] && verseStatsByMonth[monthKey][id] && verseStatsByMonth[monthKey][id].completed));
 
     let completedPlannedVerses = 0;
     allPlannedVerseIds.forEach((id) => {
@@ -204,14 +217,18 @@ export default function HomeScreen() {
 
     // Surah in-progress: some of its planned verses are done but not all
     let inProgressSurahs = 0;
-    plannedBySurah.forEach((ids) => {
+    plannedBySurah.forEach((ids, sid) => {
+      // If in surah mode, only consider the selected surah
+      if (plannerMode === 'surah' && selectedSurahId != null && sid !== selectedSurahId) return;
       let done = 0; const total = ids.size;
       ids.forEach((id) => { if (memorizedVerses.includes(id) || isRevised(id)) done++; });
       if (done > 0 && done < total) inProgressSurahs++;
     });
 
-    const totalPlannedVerses = allPlannedVerseIds.size;
-    const totalPlannedSurahs = plannedBySurah.size;
+  const totalPlannedVerses = allPlannedVerseIds.size;
+  // Prefer deduped surah ids set (robust against malformed keys)
+  // If in surah mode with a selected surah, report 1 if that surah was planned this month, otherwise 0
+  const totalPlannedSurahs = plannerMode === 'surah' && selectedSurahId != null ? (plannedSurahIds.has(selectedSurahId) ? 1 : 0) : (plannedSurahIds.size || plannedBySurah.size);
     const percent = totalPlannedVerses > 0 ? Math.round((completedPlannedVerses / totalPlannedVerses) * 100) : 0;
     return { monthName, totalPlannedVerses, completedPlannedVerses, inProgressSurahs, totalPlannedSurahs, percent };
   }, [plansByDate, memorizedVerses, revisedVerses]);
@@ -554,10 +571,11 @@ export default function HomeScreen() {
         subtitle: surah ? `${surah.name} (${surah.arabicName})` : 'Resume',
         icon: Play,
         color: '#4CAF50',
-        action: async () => {
+            action: async () => {
           if (surah) {
             await saveLastRead(surah.id, verseDetails.verseNumber);
-            router.push(`/(tabs)/read?surahId=${surah.id}&verseId=${verseDetails.verseNumber}`);
+            // Use replace to avoid stacking duplicate Read entries when resuming
+            try { router.replace(`/(tabs)/read?surahId=${surah.id}&verseId=${verseDetails.verseNumber}`); } catch { router.push(`/(tabs)/read?surahId=${surah.id}&verseId=${verseDetails.verseNumber}`); }
           }
         },
       });
@@ -593,7 +611,7 @@ export default function HomeScreen() {
     );
   };
 
-  const ProgressCard = ({ title, data, cardWidth, minHeight }:{title:string; data:ProgressData; cardWidth: number; minHeight?: number}) => {
+  const ProgressCard = ({ title, data, cardWidth, minHeight, showJuzCompletedLabel }:{title:string; data:ProgressData; cardWidth: number; minHeight?: number; showJuzCompletedLabel?: boolean}) => {
     const circleSize = cardWidth < 120 ? 56 : cardWidth < 150 ? 64 : 80;
     const isSmall = cardWidth < 120;
     return (
@@ -602,8 +620,10 @@ export default function HomeScreen() {
         <View style={styles.progressCircleContainer}>
           <CircularProgress progress={(data.completed/data.total)*100} size={circleSize} completed={data.completed} inProgress={data.inProgress} total={data.total} />
         </View>
-  <View style={styles.progressLegend}>
-          <View style={styles.legendItem}><View style={[styles.legendDot,{backgroundColor:'#2196F3'}]} /><Text style={[styles.legendText, isSmall && { fontSize:11 }]}>{data.completed} Completed</Text></View>
+          <View style={styles.progressLegend}>
+          <View style={styles.legendItem}><View style={[styles.legendDot,{backgroundColor:'#2196F3'}]} />
+            <Text style={[styles.legendText, isSmall && { fontSize:11 }]}> {showJuzCompletedLabel ? `${data.completed} of 30 completed` : `${data.completed} Completed`}</Text>
+          </View>
           <View style={styles.legendItem}><View style={[styles.legendDot,{backgroundColor:'#FF9800'}]} /><Text style={[styles.legendText, isSmall && { fontSize:11 }]}>{data.inProgress} In Progress</Text></View>
           <View style={styles.legendItem}><View style={[styles.legendDot,{backgroundColor:'#666'}]} /><Text style={[styles.legendText, isSmall && { fontSize:11 }]}>{data.notStarted} Idle</Text></View>
         </View>
@@ -820,10 +840,10 @@ export default function HomeScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Overall Progress</Text>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <ProgressCard title="Verses" data={stats.verses} cardWidth={cardWidth} minHeight={computedMinHeight} />
           <ProgressCard title="Surahs" data={stats.surahs} cardWidth={cardWidth} minHeight={computedMinHeight} />
-          <ProgressCard title="Juz" data={stats.juz as any} cardWidth={cardWidth} minHeight={computedMinHeight} />
+          <ProgressCard title="Juz" data={stats.juz as any} cardWidth={cardWidth} minHeight={computedMinHeight} showJuzCompletedLabel={true} />
         </View>
       </View>
 
@@ -866,21 +886,25 @@ export default function HomeScreen() {
                 <Info size={18} color="#a855f7" />
               </Pressable>
             </View>
-            {plannerSummary.totalPlannedVerses > 0 ? (
-              <>
-                <Text style={styles.plannerSubtitle}>{plannerSummary.completedPlannedVerses} of {plannerSummary.totalPlannedVerses} verses completed</Text>
-                <View style={styles.plannerProgressBar}>
-                  <View style={[styles.plannerProgressFill, { width: `${plannerSummary.percent}%` }]} />
-                </View>
-                <View style={styles.plannerStatsRow}>
-                  <Text style={styles.plannerStatText}>{plannerSummary.inProgressSurahs} surahs in progress</Text>
-                  <Text style={styles.plannerStatText}>{plannerSummary.totalPlannedSurahs} planned</Text>
-                </View>
-              </>
-            ) : (
-              <Text style={styles.plannerEmptyText}>No plans yet for {plannerSummary.monthName}. Add your Hifdh plans in Revision.</Text>
-            )}
+            <>
+              <Text style={styles.plannerSubtitle}>{plannerSummary.completedPlannedVerses} of {plannerSummary.totalPlannedVerses} verses completed</Text>
+              <View style={styles.plannerProgressBar}>
+                <View style={[styles.plannerProgressFill, { width: `${plannerSummary.percent}%` }]} />
+              </View>
+              <View style={styles.plannerStatsRow}>
+                <Text style={styles.plannerStatText}>{plannerSummary.inProgressSurahs} surahs in progress</Text>
+                <Text style={styles.plannerStatText}>{plannerSummary.totalPlannedSurahs} planned</Text>
+              </View>
+              {plannerSummary.totalPlannedVerses === 0 && (
+                <Text style={styles.plannerEmptyText}>No plans yet for {plannerSummary.monthName}. Add your Hifdh plans in Revision.</Text>
+              )}
+            </>
           </Pressable>
+
+          {/* Mushaf Card - added below Hifdh Planner */}
+          <View style={styles.quickActionItem}>
+            <MushafDownloadCard />
+          </View>
 
           {quickActions.map((a,i) => <ActionCard key={i} {...a} />)}
           
@@ -930,7 +954,7 @@ export default function HomeScreen() {
         <LinearGradient colors={['#2a2a2a','#1f1f1f']} start={{x:0,y:0}} end={{x:1,y:1}} style={styles.mustahabbahCard}>
           <MustahabbahGrid
             items={mustahabbahItems.map(it => ({ key: it.key, label: it.label, status: getSurahStatus(it) }))}
-            onItemPress={(item) => { const surahId = parseInt(item.key,10); useQuranStore.getState().setLastViewedSurahId(surahId); router.push('/(tabs)/read'); }}
+            onItemPress={(item) => { const surahId = parseInt(item.key,10); useQuranStore.getState().setLastViewedSurahId(surahId); router.replace(`/(tabs)/read?surahId=${surahId}`); }}
           />
           <View style={styles.progressSummary}>
             <View style={styles.progressItem}><View style={styles.memorizedDot} /><Text style={styles.progressText}>{mustahabbahMemorized} Memorized</Text></View>
@@ -1294,4 +1318,11 @@ const styles = StyleSheet.create({
   plannerStatsRow: { flexDirection:'row', justifyContent:'space-between', marginTop:6 },
   plannerStatText: { color:'#94a3b8', fontSize:12, fontWeight:'600' },
   plannerEmptyText: { color:'#94a3b8', fontSize:12 },
+  quickActionItem: {
+    marginHorizontal: 0,
+    paddingHorizontal: 0,
+    width: '100%',
+  },
+  // Mushaf card styles
+  // removed old mushaf styles - replaced by MushafDownloadCard component
 });

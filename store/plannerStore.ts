@@ -14,16 +14,29 @@ export interface PlannerEntry {
 export interface PlannerState {
   // yyyy-MM-dd -> entries
   plansByDate: Record<string, PlannerEntry[]>;
+  // UI: selected surah and mode for planner stats
+  selectedSurahId?: number | null;
+  mode?: 'surah' | 'verse';
+  // verse-level stats persisted by month: yyyy-MM -> { globalVerseId: { planned?: boolean; completed?: boolean } }
+  verseStatsByMonth: Record<string, Record<number, { planned?: boolean; completed?: boolean }>>;
   addPlan: (date: string, entry: Omit<PlannerEntry, 'id' | 'createdAt'> & { id?: string }) => void;
   updatePlan: (date: string, id: string, updates: Partial<Omit<PlannerEntry, 'id' | 'createdAt'>>) => void;
   removePlan: (date: string, id: string) => void;
   clearDateIfEmpty: (date: string) => void;
+  setSelectedSurahId: (id?: number|null) => void;
+  setMode: (m: 'surah'|'verse') => void;
+  // record or update a verse stat for a given month
+  recordVerseStat: (monthKey: string, verseGlobalId: number, data: { planned?: boolean; completed?: boolean }) => void;
+  clearVerseStatsForMonth: (monthKey: string) => void;
 }
 
 export const usePlannerStore = create<PlannerState>()(
   persist(
     (set, get) => ({
       plansByDate: {},
+      selectedSurahId: null,
+      mode: 'surah',
+      verseStatsByMonth: {},
       addPlan: (date, entry) => {
         set((state) => {
           const list = state.plansByDate[date] || [];
@@ -44,6 +57,18 @@ export const usePlannerStore = create<PlannerState>()(
           };
         });
       },
+      setSelectedSurahId: (id?: number|null) => set((s) => ({ ...s, selectedSurahId: id ?? null })),
+      setMode: (m: 'surah'|'verse') => set((s) => ({ ...s, mode: m })),
+      recordVerseStat: (monthKey: string, verseGlobalId: number, data: { planned?: boolean; completed?: boolean }) => {
+        set((state) => {
+          const copy = { ...(state.verseStatsByMonth || {}) } as Record<string, Record<number, { planned?: boolean; completed?: boolean }>>;
+          if (!copy[monthKey]) copy[monthKey] = {};
+          const entry = { ...(copy[monthKey][verseGlobalId] || {}), ...data };
+          copy[monthKey][verseGlobalId] = entry;
+          return { verseStatsByMonth: copy };
+        });
+      },
+      clearVerseStatsForMonth: (monthKey: string) => set((state) => ({ verseStatsByMonth: { ...(state.verseStatsByMonth || {}) } })),
       updatePlan: (date, id, updates) => {
         set((state) => {
           const list = state.plansByDate[date] || [];

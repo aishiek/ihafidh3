@@ -10,5 +10,6 @@
   "typescript.disableAutomaticTypeAcquisition": true,
   "typescript.tsserver.experimental.enableProjectDiagnostics": false,
   "typescript.tsserver.enableSeparateSyntaxServer": false,
-  "typescript.tsserver.maxTsServerMemory": 4096
+  "typescript.tsserver.maxTsServerMemory": 4096,
+  "chat.agent.maxRequests": 75
 }

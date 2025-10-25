@@ -1,6 +1,6 @@
-import { fetchTafsirByAyah, TafsirResult } from './tafsirApi';
-import { getTamilTafsir } from './localTamilTafsir';
 import { isTamilLanguage } from '@/utils/language';
+import { getTamilTafsir } from './localTamilTafsir';
+import { fetchTafsirByAyah } from './tafsirApi';
 
 export type TafsirSource = 'local' | 'remote';
 

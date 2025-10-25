@@ -45,7 +45,7 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
 }
 
 // Persist font load state across Fast Refresh using global flag
-declare global { // eslint-disable-next-line no-var
+declare global {  
   var __IHAFIDH_FONTS_LOADED: boolean | undefined;
 }
 
@@ -167,7 +167,8 @@ export default function RootLayout() {
         const data: any = response?.notification?.request?.content?.data || {};
         if (data?.type === 'daily_ayah') {
           const today = getTodayCardVerse(new Date());
-          router.push(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`);
+          // Use replace for notification deep-links to avoid creating stacked Read entries
+          try { router.replace(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); } catch { router.push(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); }
         }
       } catch (e) {
         console.log('[AyahNotif] deep link failed', e);

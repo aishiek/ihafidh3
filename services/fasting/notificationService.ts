@@ -11,11 +11,15 @@ export class FastingNotificationService {
 
   /**
    * Initialize notification service
+   * Returns true if initialization succeeded and permissions granted.
    */
-  static async initialize(): Promise<void> {
-    if (this.isInitialized) return;
+  static async initialize(): Promise<boolean> {
+    if (this.isInitialized) return true;
 
     try {
+      // Always set a handler when possible. It's recommended to call this
+      // as early as possible (app startup) to ensure consistent behavior
+      // on Android.
       if (Notifications?.setNotificationHandler) {
         Notifications.setNotificationHandler({
           handleNotification: async () => ({
@@ -26,23 +30,29 @@ export class FastingNotificationService {
             shouldShowList: true,
           }),
         });
+        console.log('[Notifications] setNotificationHandler configured');
       }
 
-      if (Notifications?.requestPermissionsAsync) {
-        const { status } = await Notifications.requestPermissionsAsync();
-        if (status !== 'granted') {
-          console.warn('Notification permission not granted');
-          return;
-        }
-      } else {
+      if (!Notifications?.requestPermissionsAsync) {
         console.warn('[Notifications] requestPermissionsAsync unavailable');
-        return;
+        this.isInitialized = false;
+        return false;
+      }
+
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        console.warn('❌ Notification permission not granted');
+        this.isInitialized = false;
+        return false;
       }
 
       this.isInitialized = true;
       console.log('📱 Fasting notification service initialized');
+      return true;
     } catch (error) {
       console.error('Error initializing notification service:', error);
+      this.isInitialized = false;
+      return false;
     }
   }
 
@@ -105,14 +115,24 @@ export class FastingNotificationService {
       notificationDate.setDate(notificationDate.getDate() - beforeDays);
       const [hours, minutes] = time.split(':').map(Number);
       notificationDate.setHours(hours, minutes, 0, 0);
-      if (notificationDate <= new Date()) return null;
+
+      if (notificationDate <= new Date()) {
+        console.warn(`⚠️ Notification date is in the past. Requested: ${notificationDate.toISOString()}, Now: ${new Date().toISOString()}`);
+        return null;
+      }
+
       const fastingInfo = this.getFastingTypeInfo(fastingType);
       const identifier = `fasting_${fastingType}_${day.date}`;
-      await Notifications.scheduleNotificationAsync({
+
+      // Human-friendly day label
+      const daysUntil = beforeDays;
+      const dayLabel = daysUntil === 0 ? 'Today' : daysUntil === 1 ? 'Tomorrow' : `in ${daysUntil} days`;
+
+      const scheduledId = await Notifications.scheduleNotificationAsync({
         identifier,
         content: {
           title: `🌙 ${fastingInfo.name} Reminder`,
-          body: `Tomorrow is ${fastingInfo.name} fasting day. ${fastingInfo.description}`,
+          body: `${fastingInfo.name} fasting day is ${dayLabel}. ${fastingInfo.description}`,
           data: { type: 'fasting_reminder', fastingType, date: day.date, hijriDate: day.hijriDate.date },
         },
         trigger: { 
@@ -120,7 +140,23 @@ export class FastingNotificationService {
           date: notificationDate 
         } as Notifications.DateTriggerInput,
       });
-      return identifier;
+
+      // Verify scheduling succeeded by fetching scheduled notifications
+      try {
+        if (Notifications?.getAllScheduledNotificationsAsync) {
+          const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+          const found = scheduled.find((n) => n.identifier === scheduledId || n.identifier === identifier);
+          if (found) {
+            console.log(`📱 Scheduled notification: ${identifier} at ${notificationDate.toISOString()}`);
+          } else {
+            console.warn(`⚠️ Scheduled notification not found in registry: ${identifier}`);
+          }
+        }
+      } catch (verifyErr) {
+        console.warn('⚠️ Could not verify scheduled notification:', verifyErr);
+      }
+
+      return scheduledId || identifier;
     } catch (error) {
       console.error(`Error scheduling notification for ${fastingType}:`, error);
       return null;

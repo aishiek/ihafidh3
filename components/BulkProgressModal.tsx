@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
-import { Modal, View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { useThemeColor } from '@/utils/useThemeColor';
+import React, { useMemo } from 'react';
+import { ActivityIndicator, Modal, StyleSheet, Text, View } from 'react-native';
 
 interface BulkProgressModalProps {
   visible: boolean;

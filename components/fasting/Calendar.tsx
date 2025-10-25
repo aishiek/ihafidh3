@@ -242,7 +242,7 @@ export default function Calendar({
     const h = toHijri(ref.getFullYear(), ref.getMonth() + 1, ref.getDate());
     const hy = h.hy;
     const hm = h.hm;
-    const days: Array<{ key: string; hijriDay: number; hijriMonth: number; gregDate: Date; dateString: string; isToday: boolean; fastingTypes: FastingType[]; }> = [];
+    const days: { key: string; hijriDay: number; hijriMonth: number; gregDate: Date; dateString: string; isToday: boolean; fastingTypes: FastingType[]; }[] = [];
     // Build a UTC-normalized ISO for "today" based on local date to avoid timezone shift
     const now = new Date();
     const todayUtcMidnight = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));

@@ -2,11 +2,11 @@ import VerseItem from "@/components/VerseItem";
 import { surahsData } from "@/data/surahs";
 import { getSurahById, isSurahFullyCached } from "@/services/quranApi";
 import { useProgressStore } from "@/store/progressStore";
+import { useSettingsStore } from '@/store/settingsStore';
+import { getAudioUrl, playAudio } from '@/utils/audioUtils';
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
-import { getAudioUrl, playAudio } from '@/utils/audioUtils';
-import { useSettingsStore } from '@/store/settingsStore';
 
 export default function SurahScreen() {
   const { id: surahId } = useLocalSearchParams<{ id: string }>();

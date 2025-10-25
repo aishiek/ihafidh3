@@ -3,8 +3,8 @@ import { usePlannerStore } from '@/store/plannerStore';
 import { useProgressStore } from '@/store/progressStore';
 import { useThemeColor } from '@/utils/useThemeColor';
 import { Plus, Trash2 } from 'lucide-react-native';
-import React, { useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Alert, FlatList, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import SurahRangePicker from './SurahRangePicker';
 
 type DateItem = { key: string; label: string; isToday: boolean };
@@ -53,6 +53,7 @@ export default function HifdhPlannerCard() {
 
   const memorizedVerses = useProgressStore((s) => s.memorizedVerses);
   const revised = useProgressStore((s) => s.revisedVerses);
+  const unmarkVerseAsRevised = useProgressStore((s) => s.unmarkVerseAsRevised);
 
   const [pickerVisible, setPickerVisible] = useState(false);
   const [selectedDate, setSelectedDate] = useState(formatDMY(new Date()));
@@ -96,9 +97,90 @@ export default function HifdhPlannerCard() {
     return { total, completed, percent: total ? Math.round((completed / total) * 100) : 0 };
   }, [entries, memorizedVerses, revised]);
 
+  const monthSummary = useMemo(() => {
+    const now = new Date();
+    const month = now.getMonth();
+    const year = now.getFullYear();
+    let planned = 0;
+    let inProgress = 0;
+
+    for (const [dateStr, arr] of Object.entries(plansByDate)) {
+      const d = parseDMY(dateStr);
+      if (!d) continue;
+      if (d.getMonth() === month && d.getFullYear() === year) {
+        planned += arr.length;
+        for (const p of arr) {
+          const s = computeEntryStatus(p.surahId, p.startVerse, p.endVerse);
+          if (s.completed > 0 && s.completed < s.total) inProgress += 1;
+        }
+      }
+    }
+    return { planned, inProgress };
+  }, [plansByDate, memorizedVerses, revised]);
+
+  const handleSurahRangeConfirm = useCallback(
+    (params: { surahId: number; startVerse: number; endVerse: number; note?: string }) => {
+      const { surahId, startVerse, endVerse, note } = params;
+      // Determine if the entire surah is memorized and revised
+      const surah = surahsData.find((s) => s.id === surahId);
+      if (!surah) {
+        addPlan(selectedDate, { surahId, startVerse, endVerse, note });
+        setPickerVisible(false);
+        return;
+      }
+
+      const surahStart = getGlobalStartIdForSurah(surahId);
+      const surahEnd = surahStart + surah.versesCount - 1;
+      const memCount = memorizedVerses.filter((id) => id >= surahStart && id <= surahEnd).length;
+      const revCount = revised.filter((r) => r.verseId >= surahStart && r.verseId <= surahEnd).length;
+  const isMemorized = memCount === surah.versesCount;
+  const isRevised = revCount === surah.versesCount;
+
+      if (isMemorized && isRevised) {
+        Alert.alert(
+          'Surah already revised',
+          'This surah is already marked as revised. Do you want to unmark it before adding to plan?',
+          [
+            {
+              text: 'Yes, Unmark',
+              onPress: () => {
+                for (let id = surahStart; id <= surahEnd; id++) {
+                  try {
+                    unmarkVerseAsRevised(id);
+                  } catch (e) {
+                    // continue on error
+                  }
+                }
+                addPlan(selectedDate, { surahId, startVerse, endVerse, note });
+                setPickerVisible(false);
+              },
+            },
+            {
+              text: 'Cancel',
+              style: 'cancel',
+              onPress: () => {
+                // Keep revised but still add to plan
+                addPlan(selectedDate, { surahId, startVerse, endVerse, note });
+                setPickerVisible(false);
+              },
+            },
+          ],
+        );
+      } else {
+        addPlan(selectedDate, { surahId, startVerse, endVerse, note });
+        setPickerVisible(false);
+      }
+    },
+    [addPlan, memorizedVerses, revised, selectedDate, unmarkVerseAsRevised],
+  );
+
   return (
     <View style={styles.card}>
       <Text style={styles.header}>Hifdh Planner</Text>
+
+      <Text style={styles.monthSummary}>
+        Month: {monthSummary.planned} planned, {monthSummary.inProgress} in progress
+      </Text>
 
       <FlatList
         data={dates}
@@ -160,14 +242,7 @@ export default function HifdhPlannerCard() {
         <Text style={styles.addText}>Add plan</Text>
       </Pressable>
 
-      <SurahRangePicker
-        visible={pickerVisible}
-        onClose={() => setPickerVisible(false)}
-        onConfirm={({ surahId, startVerse, endVerse, note }) => {
-          addPlan(selectedDate, { surahId, startVerse, endVerse, note });
-          setPickerVisible(false);
-        }}
-      />
+      <SurahRangePicker visible={pickerVisible} onClose={() => setPickerVisible(false)} onConfirm={handleSurahRangeConfirm} />
     </View>
   );
 }
@@ -189,4 +264,5 @@ const styles = StyleSheet.create({
   delBtn: { padding: 8, backgroundColor: '#3a3a3a', borderRadius: 8 },
   addBtn: { marginTop: 12, paddingVertical: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
   addText: { color: '#000', fontWeight: '700' },
+  monthSummary: { color: '#ddd', marginTop: 8 },
 });

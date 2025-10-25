@@ -37,3 +37,7 @@ export interface MushafPageLayout {
   totalWords: number;
   timestamp: number;
 }
+
+// Expo Router expects a default export for all route files. This is a types-only file, so export a dummy React component.
+const DummyMushafTypes = () => null;
+export default DummyMushafTypes;

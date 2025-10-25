@@ -1,4 +1,3 @@
-import { fetchTafsirByAyah } from '@/services/tafsirApi';
 import { getTafsirFromSource } from '@/services/tafsirService';
 import { useSettingsStore } from '@/store/settingsStore';
 import { LinearGradient } from 'expo-linear-gradient';

@@ -100,7 +100,7 @@ export const TRANSLATION_LANGUAGES: TranslationLanguage[] = [
   // Indonesian
   {
     identifier: 'id.indonesian',
-    name: 'Bahasa Indonesia',
+    name: 'Bahasa',
     englishName: 'Unknown',
     language: 'id',
     direction: 'ltr'
@@ -124,14 +124,6 @@ export const TRANSLATION_LANGUAGES: TranslationLanguage[] = [
     direction: 'ltr'
   },
 
-  // Malay
-  {
-    identifier: 'ms.basmeih',
-    name: 'Bahasa Melayu',
-    englishName: 'Abdullah Muhammad Basmeih',
-    language: 'ms',
-    direction: 'ltr'
-  }
 ];
 
 export const getTranslationLanguageByIdentifier = (identifier: string): TranslationLanguage | undefined => {

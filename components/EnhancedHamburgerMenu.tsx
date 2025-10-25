@@ -3,6 +3,7 @@
  * Demonstrates unified theme and mixed state management approach
  */
 
+// diagnostics entry removed for production build
 import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
 import { useBookmarkStore } from '@/store/bookmarkStore';
 import { StateMigrationUtils, useContextAwareTheme } from '@/utils/stateManagementBridge';
@@ -112,6 +113,8 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
         router.push('/moon-phases');
       }
     }
+    ,
+    // diagnostics menu intentionally removed
   ];
 
   const handleThemeDemo = async () => {

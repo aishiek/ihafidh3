@@ -1,0 +1,1 @@
+This file marks that all tajweed DBs have been deleted as per user request. Do not add any tajweed_data.db or tajweed_words.db files until further notice.

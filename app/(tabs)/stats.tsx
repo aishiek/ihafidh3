@@ -444,7 +444,7 @@ export default function StatsScreen() {
                     onPress={() => {
                       setSelectedItem(null);
                       useQuranStore.getState().setLastViewedSurahId(selectedItem.id);
-                      router.push('/(tabs)/read');
+                      try { router.replace('/(tabs)/read'); } catch { router.push('/(tabs)/read'); }
                     }}
                   >
                     <Text style={[styles.modalButtonText, { color: '#ffffff' }]}>Open Surah</Text>

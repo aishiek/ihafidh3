@@ -1,13 +1,13 @@
+import BulkProgressModal from '@/components/BulkProgressModal';
 import JUZ_MAPPING from '@/data/juzMapping';
 import { surahsData } from '@/data/surahs';
+import { useBulkProgressModal } from '@/hooks/useBulkProgressModal';
 import { useProgressStore } from '@/store/progressStore';
 import { calculateJuzProgress, getJuzVerseRange } from '@/utils/juzCalculator';
 import { useCustomColors } from '@/utils/themeUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
-import React, { useCallback, useMemo, useRef } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import BulkProgressModal from '@/components/BulkProgressModal';
-import { useBulkProgressModal } from '@/hooks/useBulkProgressModal';
+import React, { useCallback, useMemo } from 'react';
+import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 function getSurahIdByName(name: string): number | null {
   const surah = surahsData.find(s => s.name === name || s.englishName === name || s.arabicName === name);
@@ -334,9 +334,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   arrow: {
-    color: '#3b82f6',
-    fontSize: 18,
-    fontWeight: '300',
+    color: '#60a5fa',
+    fontSize: 22,
+    fontWeight: '500',
   },
   statsRow: {
     flexDirection: 'row',

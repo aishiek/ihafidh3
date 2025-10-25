@@ -10,6 +10,9 @@ export const DEFAULT_PLAYBACK_SPEED: PlaybackSpeed = 1;
 
 export const PLAYBACK_SPEED_OPTIONS: PlaybackSpeed[] = [0.5, 0.75, 1, 1.25];
 
+// Keep 'tajweed' in the type for backward compatibility with existing storage
+type ArabicFont = 'default' | 'uthman-taha' | 'scheherazade' | 'scheherazade-bold' | 'indo-pak' | 'amiri-quran' | 'tajweed';
+
 export interface SettingsState extends AppSettings {
   userName: string;
   userEmail: string;
@@ -17,7 +20,7 @@ export interface SettingsState extends AppSettings {
   translationLanguage: string;
   reciterIdentifier: string;
   showTransliteration: boolean;
-  arabicFont: 'default' | 'uthman-taha' | 'scheherazade' | 'scheherazade-bold' | 'tajweed' | 'indo-pak' | 'amiri-quran';
+  arabicFont: ArabicFont;
   playbackSpeed: PlaybackSpeed;
   infiniteLoop: boolean;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
@@ -25,7 +28,7 @@ export interface SettingsState extends AppSettings {
   setFontSizeArabic: (size: number) => void;
   setFontSizeTransliteration: (size: number) => void;
   setFontSizeTranslation: (size: number) => void;
-  setArabicFont: (font: 'default' | 'uthman-taha' | 'scheherazade' | 'scheherazade-bold' | 'tajweed' | 'indo-pak' | 'amiri-quran') => void;
+  setArabicFont: (font: ArabicFont) => void;
   setShowTranslation: (show: boolean) => void;
   setShowTransliteration: (show: boolean) => void;
   setAutoPlayAudio: (autoPlay: boolean) => void;
@@ -87,7 +90,7 @@ export const useSettingsStore = create<SettingsState>()(
       quizVerseCount: 5,
       translationLanguage: 'en.sahih',
       reciterIdentifier: 'ar.alafasy',
-  arabicFont: 'uthman-taha',
+      arabicFont: 'default',
       playbackSpeed: DEFAULT_PLAYBACK_SPEED,
       infiniteLoop: false,
   ayahDailyNotificationsEnabled: false,
@@ -97,7 +100,14 @@ export const useSettingsStore = create<SettingsState>()(
       setFontSizeArabic: (fontSizeArabic) => set({ fontSizeArabic }),
       setFontSizeTransliteration: (fontSizeTransliteration) => set({ fontSizeTransliteration }),
       setFontSizeTranslation: (fontSizeTranslation) => set({ fontSizeTranslation }),
-      setArabicFont: (arabicFont) => set({ arabicFont }),
+      setArabicFont: (arabicFont) => {
+        // Handle case where 'tajweed' might be in AsyncStorage from previous version
+        const font = (arabicFont === 'tajweed') ? 'scheherazade' : 
+                   (['default', 'uthman-taha', 'scheherazade', 'scheherazade-bold', 'indo-pak', 'amiri-quran'].includes(arabicFont) 
+                     ? arabicFont 
+                     : 'default');
+        set({ arabicFont: font });
+      },
       setShowTranslation: (showTranslation) => set({ showTranslation }),
       setShowTransliteration: (showTransliteration) => set({ showTransliteration }),
       setAutoPlayAudio: (autoPlayAudio) => set({ autoPlayAudio }),
@@ -109,15 +119,20 @@ export const useSettingsStore = create<SettingsState>()(
         set({ userName });
       },
       setUserEmail: (userEmail) => {
-        set({ userEmail });
-        // also persist to AsyncStorage for early init
-        AsyncStorage.setItem('user_email', userEmail).catch(() => {});
+        // Basic email validation
+        if (userEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userEmail)) {
+          console.warn('Invalid email format');
+          return;
+        }
+        AsyncStorage.setItem('user_email', userEmail || '');
+        set({ userEmail: userEmail || '' });
       },
       setQuizVerseCount: (quizVerseCount) => set({ quizVerseCount }),
       setTranslationLanguage: (translationLanguage) => set({ translationLanguage }),
       setReciterIdentifier: (reciterIdentifier) => {
-        set({ reciterIdentifier });
+        // Clear audio cache when changing reciter
         clearAudioCache();
+        set({ reciterIdentifier });
       },
       setPlaybackSpeed: (playbackSpeed) => set({ playbackSpeed }),
       setInfiniteLoop: (infiniteLoop) => set({ infiniteLoop }),

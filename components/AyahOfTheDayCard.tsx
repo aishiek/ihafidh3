@@ -298,7 +298,8 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style }) => 
         ayah.translation
       );
     } catch {}
-    router.push(`/(tabs)/read?surahId=${ayah.surahId}&verseId=${ayah.verseNumber}`);
+    // Replace navigation when opening a specific verse to avoid duplicate Read entries
+    try { router.replace(`/(tabs)/read?surahId=${ayah.surahId}&verseId=${ayah.verseNumber}`); } catch { router.push(`/(tabs)/read?surahId=${ayah.surahId}&verseId=${ayah.verseNumber}`); }
   };
 
   const handleShare = async () => {
@@ -314,7 +315,7 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style }) => 
       let waited = 0;
       while (!cardLayout && waited < maxWait) {
         // small delay to allow layout pass
-        // eslint-disable-next-line no-await-in-loop
+         
         await new Promise(resolve => setTimeout(resolve, pollInterval));
         waited += pollInterval;
       }

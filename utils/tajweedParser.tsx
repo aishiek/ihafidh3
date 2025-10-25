@@ -2,7 +2,7 @@ import React from 'react';
 import { Text, TextStyle } from 'react-native';
 
 // Tajweed color codes mapping
-const TAJWEED_COLORS = {
+const TAJWEED_COLORS: Record<string, string> = {
   'h': '#FF6B6B',     // Red - Ghunnah (Nasalization)
   'l': '#4ECDC4',     // Teal - Qalqalah (Echoing sound)
   'n': '#45B7D1',     // Blue - Noon and Meem Mushaddad
@@ -19,7 +19,7 @@ const TAJWEED_COLORS = {
   'i': '#81ECEC',     // Light Cyan - Ikhfa Shafawi
 };
 
-const TAJWEED_RULES = {
+const TAJWEED_RULES: Record<string, string> = {
   'h': 'Ghunnah',
   'l': 'Qalqalah', 
   'n': 'Noon/Meem',

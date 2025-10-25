@@ -188,13 +188,27 @@ export default function ReadScreen() {
         );
   }, [searchQuery]);
 
+  // Cache the average verse height calculation
   const averageVerseHeight = useMemo(() => {
-    return getAverageVerseHeight(verses, {
+    // Only calculate if we have verses
+    if (!verses.length) return 200; // Default height when no verses
+    
+    return getAverageVerseHeight(verses.slice(0, 10), { // Sample first 10 verses for better performance
       arabicFontSize: fontSizeArabic,
       showTranslation: showTranslation,
       translationFontSize: fontSizeTranslation,
     });
-  }, [verses, fontSizeArabic, showTranslation, fontSizeTranslation]);
+    // Only recalculate when these specific dependencies change
+  }, [
+    // Only include dependencies that actually affect the calculation
+    fontSizeArabic,
+    showTranslation,
+    fontSizeTranslation,
+    // Add a dependency on the verses length to handle initial load
+    // but use a stable reference to the current verses length
+    verses.length > 0 ? verses[0]?.id : 0, // Use first verse id as a stable reference
+    verses.length // Include length to handle empty state changes
+  ]);
 
   const getSurahVerseRange = useCallback((surahObj: { id: number; versesCount: number }) => {
     let startVerseId = 0;

@@ -3,8 +3,8 @@ import * as Notifications from 'expo-notifications';
 export class AyahNotificationService {
   private static isInitialized = false;
 
-  static async initialize(): Promise<void> {
-    if (this.isInitialized) return;
+  static async initialize(): Promise<boolean> {
+    if (this.isInitialized) return true;
     try {
       if (Notifications?.setNotificationHandler) {
         Notifications.setNotificationHandler({
@@ -16,30 +16,37 @@ export class AyahNotificationService {
             shouldShowList: true,
           }),
         });
+        console.log('[Notifications] Ayah handler configured');
       }
 
-      if (Notifications?.requestPermissionsAsync) {
-        const { status } = await Notifications.requestPermissionsAsync();
-        if (status !== 'granted') {
-          console.warn('Notification permission not granted');
-          return;
-        }
-      } else {
+      if (!Notifications?.requestPermissionsAsync) {
         console.warn('[Notifications] requestPermissionsAsync unavailable');
-        return;
+        this.isInitialized = false;
+        return false;
+      }
+
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        console.warn('❌ Notification permission not granted');
+        this.isInitialized = false;
+        return false;
       }
 
       this.isInitialized = true;
       console.log('📱 Ayah notification service initialized');
+      return true;
     } catch (e) {
       console.error('[AyahNotificationService] init error:', e);
+      this.isInitialized = false;
+      return false;
     }
   }
 
   static async scheduleDailyAyahReminder(time: string): Promise<string | null> {
     try {
       if (!this.isInitialized) {
-        await this.initialize();
+        const ok = await this.initialize();
+        if (!ok) return null;
       }
       if (!Notifications?.scheduleNotificationAsync) return null;
 
@@ -51,22 +58,33 @@ export class AyahNotificationService {
       const minute = Number(minuteStr);
 
       const identifier = 'daily_ayah';
-      // Prefer typed daily trigger if available, otherwise fallback to legacy calendar trigger shape
-      const trigger: any = (Notifications as any).DailyTriggerInput
-        ? ({ type: 'daily', hour, minute } as any)
-        : ({ hour, minute, repeats: true } as any);
 
-      await Notifications.scheduleNotificationAsync({
+      // Use a typed daily trigger input. This shape is supported by expo-notifications.
+      const trigger: Notifications.DailyTriggerInput = { type: 'daily', hour, minute } as any;
+
+      const scheduledId = await Notifications.scheduleNotificationAsync({
         identifier,
         content: {
           title: '📖 Ayah of the Day',
-          body: 'Tap to open today\'s verse in iHafidh.',
+          body: "Tap to open today's verse in iHafidh.",
           data: { type: 'daily_ayah' },
         },
         trigger,
       });
-      console.log('📱 Scheduled daily ayah notification at', time);
-      return identifier;
+
+      // Verify scheduling
+      try {
+        if (Notifications?.getAllScheduledNotificationsAsync) {
+          const all = await Notifications.getAllScheduledNotificationsAsync();
+          const found = all.find(n => n.identifier === scheduledId || n.identifier === identifier);
+          if (found) console.log('📱 Scheduled daily ayah notification at', time);
+          else console.warn('⚠️ Scheduled daily ayah notification not present in registry');
+        }
+      } catch (verifyErr) {
+        console.warn('⚠️ Could not verify daily ayah scheduling', verifyErr);
+      }
+
+      return scheduledId || identifier;
     } catch (e) {
       console.error('[AyahNotificationService] schedule error:', e);
       return null;

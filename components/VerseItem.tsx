@@ -1,19 +1,17 @@
-import { surahsData } from '@/data/surahs';
 import { getTranslationRemote } from '@/services/remoteTranslation';
 import { cacheGet, cacheSet } from '@/services/verseCache';
 import { getVerseFromLocalDB } from '@/services/verseDbService';
 import { useBookmarkStore } from '@/store/bookmarkStore';
 import { useProgressStore } from '@/store/progressStore';
 import { PLAYBACK_SPEED_OPTIONS, useSettingsStore, type PlaybackSpeed } from '@/store/settingsStore';
-import { setPlaybackSpeed as setAudioPlaybackSpeed } from '@/utils/audioUtils';
 import { Verse } from '@/types';
+import { setPlaybackSpeed as setAudioPlaybackSpeed } from '@/utils/audioUtils';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
 import * as Haptics from 'expo-haptics';
 import { Bookmark as BookmarkIcon, BookOpen, Infinity as InfinityIcon, Play, Repeat, X as XIcon } from 'lucide-react-native';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import TajweedVerse from 'rn-tajweed-verse';
 import TafsirModal from './TafsirModal';
 
 interface VerseItemProps {
@@ -77,7 +75,7 @@ const VerseItem = ({
   
   // Individual verse state (not affected by surah-level)
   const memorized = memorizedVerses.includes(verse.id);
-  const revised = revisedVerses.some(v => v.verseId === verse.id);
+  const revised = revisedVerses.some(revisedVerse => revisedVerse.verseId === verse.id);
   
   // Get dates for display - memoized to avoid recalculation
   const memorizedDate = useMemo(() => {
@@ -86,7 +84,7 @@ const VerseItem = ({
   }, [memorizedVerseDates, verse.id]);
   
   const revisedDate = useMemo(() => {
-    const entry = revisedVerses.find(v => v.verseId === verse.id);
+    const entry = (revisedVerses || []).find((v) => v.verseId === verse.id);
     return formatDate(entry?.revisionDate || null);
   }, [revisedVerses, verse.id]);
   const [repeatCount, setRepeatCount] = useState(repeatMode || 1);
@@ -176,88 +174,14 @@ const VerseItem = ({
   const translation = verse.translation?.trim() || 'In the name of Allah, the Entirely Merciful, the Especially Merciful.';
   const transliteration = verse.transliteration?.trim();
   const { translationLanguage } = useSettingsStore();
-  const surahMeta = useMemo(() => {
-    if (verse?.surah) {
-      return {
-        revelationType: verse.surah.revelationType,
-        numberOfAyahs: verse.surah.numberOfAyahs,
-      };
-    }
-    const lookupId = verse.surahId ?? verse.surahNumber;
-    if (!lookupId) return null;
-    const fallback = surahsData.find(s => s.id === lookupId);
-    if (!fallback) return null;
-    return {
-      revelationType: fallback.revelationType,
-      numberOfAyahs: fallback.versesCount,
-    };
-  }, [verse]);
+  // surahMeta calculation removed (dead code)
 
   // Determine if verse is marked (individual OR surah-level)
-  const isMemorizedAnywhere = memorized || surahMemorizedGlobally;
-  const isRevisedAnywhere = revised || surahRevisedGlobally;
-
-  // PERFORMANCE: Memoize Arabic text style to avoid recreation
-  const arabicTextStyle = useMemo(() => ({
-    color: '#ffffff',
-    fontFamily: arabicFamily,
-    includeFontPadding: false,
-    paddingHorizontal: 4,
-    ...arabicTypography,
-    lineHeight: arabicTypography.lineHeight || Math.round(fontSizeArabic * 2.0),
-  }), [arabicFamily, arabicTypography, fontSizeArabic]);
-
-  // PERFORMANCE: Memoize action button styles
-  const memorizedButtonStyle = useMemo(() => ({
-    flex: 1,
-    marginHorizontal: 4,
-    paddingVertical: 9,
-    borderRadius: 8,
-    alignItems: 'center' as const,
-    backgroundColor: memorized ? '#4CAF50' : '#000000',
-    borderColor: memorized ? '#4CAF50' : '#ffffff',
-    borderWidth: memorized ? 2 : 1,
-  }), [memorized]);
-
-  const revisedButtonStyle = useMemo(() => ({
-    flex: 1,
-    marginHorizontal: 4,
-    paddingVertical: 9,
-    borderRadius: 8,
-    alignItems: 'center' as const,
-    backgroundColor: revised ? '#FF9800' : '#000000',
-    borderColor: revised ? '#FF9800' : '#ffffff',
-    borderWidth: revised ? 2 : 1,
-  }), [revised]);
-
-  const memorizedTextStyle = useMemo(() => ({
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: '#ffffff',
-  }), []);
-
-  const revisedTextStyle = useMemo(() => ({
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: '#ffffff',
-  }), []);
-
-  // PERFORMANCE: Memoize transliteration and translation styles
-  const transliterationTextStyle = useMemo(() => ({
-    color: '#FFD700',
-    fontSize: fontSizeTransliteration,
-    marginTop: 8,
-  }), [fontSizeTransliteration]);
-
-  const translationTextStyle = useMemo(() => ({
-    color: '#ffffff',
-    fontSize: fontSizeTranslation,
-    marginTop: 4,
-  }), [fontSizeTranslation]);
-
-  // PERFORMANCE: Memoize container style to avoid recalculation on every render
-  const containerStyle = useMemo(() => {
-    if (isMemorizedAnywhere && isRevisedAnywhere) {
+  // Memoize container style (bottleneck fix)
+  const containerStyle = React.useMemo(() => {
+    const isMemorized = memorized || surahMemorizedGlobally;
+    const isRevised = revised || surahRevisedGlobally;
+    if (isMemorized && isRevised) {
       return {
         backgroundColor: '#4CAF5015',
         borderColor: '#4CAF50',
@@ -267,13 +191,13 @@ const VerseItem = ({
         borderLeftColor: '#4CAF50',
         borderRightColor: '#FF9800',
       };
-    } else if (isMemorizedAnywhere) {
+    } else if (isMemorized) {
       return {
         backgroundColor: '#4CAF5020',
         borderColor: '#4CAF50',
         borderWidth: 2,
       };
-    } else if (isRevisedAnywhere) {
+    } else if (isRevised) {
       return {
         backgroundColor: '#211f1e',
         borderColor: '#FF9800',
@@ -286,84 +210,141 @@ const VerseItem = ({
         borderWidth: 1,
       };
     }
-  }, [isMemorizedAnywhere, isRevisedAnywhere]);
+  }, [memorized, surahMemorizedGlobally, revised, surahRevisedGlobally]);
 
-  // Local DB loader: attempt to load local Arabic/transliteration when possible
-  const [localArabic, setLocalArabic] = useState<string | null>(null);
-  const [localTransliteration, setLocalTransliteration] = useState<string | null>(null);
-  const [localTranslation, setLocalTranslation] = useState<string | null>(null);
-  const [loadingLocal, setLoadingLocal] = useState(false);
-  const localLoaderRef = useRef({ cancelled: false });
+  // Inline styles (acceptable)
+  const arabicTextStyle = {
+    color: '#ffffff',
+    fontFamily: arabicFamily,
+    includeFontPadding: false,
+    paddingHorizontal: 4,
+    ...arabicTypography,
+    lineHeight: arabicTypography.lineHeight || Math.round(fontSizeArabic * 2.0),
+  };
+  const memorizedButtonStyle = {
+    flex: 1,
+    marginHorizontal: 4,
+    paddingVertical: 9,
+    borderRadius: 8,
+    alignItems: 'center' as const,
+    backgroundColor: memorized ? '#4CAF50' : '#000000',
+    borderColor: memorized ? '#4CAF50' : '#ffffff',
+    borderWidth: memorized ? 2 : 1,
+  };
+  const revisedButtonStyle = {
+    flex: 1,
+    marginHorizontal: 4,
+    paddingVertical: 9,
+    borderRadius: 8,
+    alignItems: 'center' as const,
+    backgroundColor: revised ? '#FF9800' : '#000000',
+    borderColor: revised ? '#FF9800' : '#ffffff',
+    borderWidth: revised ? 2 : 1,
+  };
+  const memorizedTextStyle = {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: '#ffffff',
+  };
+  const revisedTextStyle = {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: '#ffffff',
+  };
+  const transliterationTextStyle = {
+    color: '#FFD700',
+    fontSize: fontSizeTransliteration,
+    marginTop: 8,
+  };
+  const translationTextStyle = {
+    color: '#ffffff',
+    fontSize: fontSizeTranslation,
+    marginTop: 4,
+  };
+
+
+  // Aggressive simplification: batch local DB loading
+  const [localData, setLocalData] = useState({
+    arabic: null as string | null,
+    transliteration: null as string | null,
+    translation: null as string | null,
+  });
 
   useEffect(() => {
-    localLoaderRef.current.cancelled = false;
+    let mounted = true;
     async function loadLocal() {
-      // If settings indicate Arabic display or if we always want Arabic from local DB
-      setLoadingLocal(true);
       try {
         const surahId = verse.surahId || (verse as any).surahNumber || verse.surah?.number;
         if (!surahId) return;
-
-        // quick cache check for arabic
-        const cached = cacheGet<string>(surahId, verse.verseNumber, 'local_ar');
-        if (cached) { setLocalArabic(cached); }
-
-        const row = await getVerseFromLocalDB(surahId, verse.verseNumber);
-        if (localLoaderRef.current.cancelled) return;
-        if (row) {
-          if (row.ayah) { setLocalArabic(row.ayah); cacheSet(surahId, verse.verseNumber, 'local_ar', row.ayah); }
-          if (row.transliteration) { setLocalTransliteration(row.transliteration); cacheSet(surahId, verse.verseNumber, 'local_tr', row.transliteration); }
-          if (row.translation) { setLocalTranslation(row.translation); cacheSet(surahId, verse.verseNumber, 'local_en', row.translation); }
+        // Check cache first
+        const cachedArabic = cacheGet<string>(surahId, verse.verseNumber, 'local_ar');
+        const cachedTranslit = cacheGet<string>(surahId, verse.verseNumber, 'local_tr');
+        const cachedTrans = cacheGet<string>(surahId, verse.verseNumber, 'local_en');
+        if (cachedArabic || cachedTranslit || cachedTrans) {
+          if (mounted) {
+            setLocalData({
+              arabic: cachedArabic || null,
+              transliteration: cachedTranslit || null,
+              translation: cachedTrans || null,
+            });
+          }
+          return;
         }
+        // Only query DB if not in cache
+        const row = await getVerseFromLocalDB(surahId, verse.verseNumber);
+        if (!mounted) return;
+        setLocalData({
+          arabic: row?.ayah || null,
+          transliteration: row?.transliteration || null,
+          translation: row?.translation || null,
+        });
+        if (row?.ayah) cacheSet(surahId, verse.verseNumber, 'local_ar', row.ayah);
+        if (row?.transliteration) cacheSet(surahId, verse.verseNumber, 'local_tr', row.transliteration);
+        if (row?.translation) cacheSet(surahId, verse.verseNumber, 'local_en', row.translation);
       } catch (e) {
-        // ignore - we keep existing remote-provided text
         console.warn('[VerseItem] local DB load failed', e);
-      } finally {
-        setLoadingLocal(false);
       }
     }
     loadLocal();
-    return () => { localLoaderRef.current.cancelled = true; };
+    return () => { mounted = false; };
   }, [verse.surahId, verse.verseNumber]);
 
-  const displayedArabic = localArabic || arabicText;
-  const displayedTransliteration = localTransliteration || transliteration;
+  const displayedArabic = localData.arabic || arabicText;
+  const displayedTransliteration = localData.transliteration || transliteration;
 
-  // Ensure translation: prefer local English translation (if present) and do NOT call remote for English.
-  // Only fetch remote translation when user selects a non-English translation language.
-  const [displayedTranslation, setDisplayedTranslation] = useState<string | null>(localTranslation || translation || null);
+
+  // Derive displayedTranslation: prefer remote, then local, then prop
+  const [remoteTranslation, setRemoteTranslation] = useState<string | null>(null);
   useEffect(() => {
-    let cancelled = false;
-    async function ensureTranslation() {
-      const surahId = verse.surahId || (verse as any).surahNumber || verse.surah?.number;
+    let mounted = true;
+    const loadTranslation = async () => {
+      const surahId = verse.surahId || verse.surahNumber || verse.surah?.number;
       if (!surahId) return;
-
-      // If selected language is English (starts with 'en') then prefer local translation and do not call remote.
       const langBase = (translationLanguage || '').split('.')[0].toLowerCase();
       if (langBase === 'en') {
-        // Use localTranslation if available, otherwise keep existing prop translation (already set in state)
-        const cachedLocal = cacheGet<string>(surahId, verse.verseNumber, 'local_en');
-        if (cachedLocal) { setDisplayedTranslation(cachedLocal); return; }
-        // If no cached local but row loaded earlier might have set it; otherwise keep prop translation.
+        setRemoteTranslation(null); // always use local/prop for English
         return;
       }
-
-      // Non-English language selected: try cache, then remote fetch
-      const cacheVal = cacheGet<string>(surahId, verse.verseNumber, translationLanguage);
-      if (cacheVal) { setDisplayedTranslation(cacheVal); return; }
+      const cached = cacheGet<string>(surahId, verse.verseNumber, translationLanguage);
+      if (cached) {
+        if (mounted) setRemoteTranslation(cached);
+        return;
+      }
       try {
         const remote = await getTranslationRemote(surahId, verse.verseNumber, translationLanguage);
-        if (!cancelled && remote) {
-          setDisplayedTranslation(remote);
+        if (mounted && remote) {
+          setRemoteTranslation(remote);
           cacheSet(surahId, verse.verseNumber, translationLanguage, remote);
         }
       } catch (e) {
         console.warn('[VerseItem] remote translation failed', e);
       }
-    }
-    ensureTranslation();
-    return () => { cancelled = true; };
-  }, [translationLanguage, verse.id, verse.verseNumber]);
+    };
+    loadTranslation();
+    return () => { mounted = false; };
+  }, [translationLanguage, verse.verseNumber, localData.translation]);
+
+  const displayedTranslation = remoteTranslation || localData.translation || translation || null;
 
   return (
     <Pressable
@@ -435,26 +416,9 @@ const VerseItem = ({
       </View>
 
 
-      {arabicFont === 'tajweed' && verse.tajweedText ? (
-        <View style={styles.arabicContainer}>
-          <TajweedVerse
-            verse={displayedArabic}
-            config={{
-              style: {
-                fontSize: arabicTypography.fontSize,
-                lineHeight: arabicTypography.lineHeight,
-                color: '#FFFFFF',
-                direction: 'rtl',
-                fontFamily: arabicFamily,
-              }
-            }}
-          />
-        </View>
-      ) : (
-        <Text style={arabicTextStyle}>
-          {displayedArabic}
-        </Text>
-      )}
+      <Text style={arabicTextStyle}>
+        {displayedArabic}
+      </Text>
 
       {showTransliteration && displayedTransliteration && (
         <Text style={transliterationTextStyle}>

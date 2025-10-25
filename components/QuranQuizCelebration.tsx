@@ -145,8 +145,6 @@ export default function QuranQuizCelebration({ visible, onComplete }: { visible:
         return 'ScheherazadeNew-Regular';
       case 'scheherazade-bold':
         return 'ScheherazadeNew-Bold';
-      case 'tajweed':
-        return 'ScheherazadeNew-Regular';
       case 'indo-pak':
         return 'NooreHuda-Regular';
       default:

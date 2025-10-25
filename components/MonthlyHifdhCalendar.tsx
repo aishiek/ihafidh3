@@ -1,3 +1,4 @@
+import HifdhPlannerStats from '@/components/HifdhPlannerStats';
 import { surahsData } from '@/data/surahs';
 import { usePlannerStore } from '@/store/plannerStore';
 import { useProgressStore } from '@/store/progressStore';
@@ -163,6 +164,7 @@ export default function MonthlyHifdhCalendar() {
             <Text key={d} style={styles.weekHeaderText}>{d}</Text>
           ))}
         </View>
+            <HifdhPlannerStats />
 
         {/* Grid */}
         <View style={styles.grid}>

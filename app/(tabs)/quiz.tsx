@@ -629,7 +629,8 @@ export default function QuizScreen() {
                         <Pressable 
                         style={styles.practiceButton}
                         onPress={() => {
-                          router.push(`/(tabs)/read?surahId=${failedSurah.surahId}`);
+                          // Use replace to open the target surah in Read without stacking duplicates
+                          try { router.replace(`/(tabs)/read?surahId=${failedSurah.surahId}`); } catch { router.push(`/(tabs)/read?surahId=${failedSurah.surahId}`); }
                         }}
                       >
                         <Text style={styles.practiceButtonText}>Practice</Text>

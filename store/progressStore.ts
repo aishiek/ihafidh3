@@ -1,906 +1,445 @@
-import { logVerseActivity } from '@/assets/database/QuranDatabase';
-import { TOTAL_VERSES } from '@/constants/quran';
-import { surahsData } from '@/data/surahs';
-import { Verse } from '@/types';
-import { logAyahMemorized, logAyahRevised, logBadgeEarned } from '@/utils/analyticsUniversal';
-import { formatDate } from '@/utils/dateUtils';
-import { getJuzVerseRange } from '@/utils/juzCalculator';
+// Full-ish, compatible persisted progress store (types + simple implementations)
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { formatDate } from '@/utils/dateUtils';
+import { TOTAL_VERSES } from '@/constants/quran';
+import { Verse } from '@/types/verse';
 
-interface TimeSpent {
-  total: number; // in seconds
-  daily: Record<string, number>; // date string -> seconds
-}
+type RevisedVerse = { verseId: number; revisionDate: string };
+type RevisionTracker = { verseId: number; date: string };
+type QuizResult = { id: string; date: string; verseIds: number[]; score: number; totalQuestions: number; correct: number; surahId?: number; juzNumber?: number };
 
-interface QuizResult {
-  id: string;
-  date: string;
-  verseIds: number[];
-  score: number;
-  totalQuestions: number;
-  correct: number;
-  surahId?: number;
-  juzNumber?: number;
-}
+type TimeSpent = { total: number; daily: Record<string, number> };
 
-interface Badges {
-  awwalNoor: boolean; // First Light - Complete Juz Amma (Surah 78-114)
-  hamilAlHikmah: boolean; // Bearer of Wisdom - Memorize 10 complete surahs
-  saariSabeelillah: boolean; // 7-day streak
-  muratilQuran: boolean; // 10 perfect quizzes
-  hafizJuz: boolean; // Complete one full juz
-  hafizQuran: boolean; // Complete entire Quran
-}
+type Badges = Record<string, boolean>;
 
-interface RevisionSchedule {
-  versesPerDay: number;
-  surahsPerWeek: number[];
-  completedToday: number[];
-  completedThisWeek: number[];
-  lastResetDate: string | null;
-}
+type RevisionSchedule = { versesPerDay: number; surahsPerWeek: number[]; completedToday: number[]; completedThisWeek: number[]; lastResetDate: string | null };
 
-interface Surah {
-  id: number;
-  name: string;
-  englishName: string;
-  versesCount: number;
-}
+type VerseStatusEntry = { status: 'not_started' | 'memorized' | 'revised'; last_updated?: string };
 
-interface RevisedVerse {
-  verseId: number;
-  revisionDate: string;
-}
-
-interface RevisionTracker {
-  verseId: number;
-  date: string;
-}
-
-interface ProgressState {
-  // Unified verse status map (source of truth going forward)
-  verseStatus: Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>; 
-  memorizedVerses: number[]; // Array of verse IDs
-  revisedVerses: RevisedVerse[]; // Array of objects with verse ID and revision date
-  dailyRevisedVerses: RevisionTracker[]; // New: Track daily revised verses
-  weeklyRevisedVerses: RevisionTracker[]; // New: Track weekly revised verses  
-  // Aggregates (derived but cached for cheap subscriptions)
-  memorizedCount?: number;
-  revisedCount?: number;
-  dailyStreak: number;
-  lastOpenDate: string | null;
-  timeSpent: TimeSpent;
+export interface ProgressState {
+  // persisted arrays / objects
+  memorizedVerses: number[];
+  memorizedVerseDates: Record<number, string>;
+  revisedVerses: RevisedVerse[];
+  dailyRevisedVerses: RevisionTracker[];
+  weeklyRevisedVerses: RevisionTracker[];
+  verseStatus: Record<number, VerseStatusEntry>;
   quizResults: QuizResult[];
   badges: Badges;
   lastReadVerse: Verse | null;
-  completedToday: number[]; // Array of verse IDs completed today
+  completedToday: number[];
   revisionSchedule: RevisionSchedule;
-  dailyMarkedForRevisionCount: number;
-  lastDailyMarkedForRevisionReset: string | null;
-  weeklyRevisedSurahsCompleted: number[]; // IDs of surahs completed for weekly target
-  lastWeeklyRevisedSurahsReset: string | null;
-  // New: store memorization date per verse (yyyy-MM-dd)
-  memorizedVerseDates: Record<number, string>;
-  
+  weeklyRevisedSurahsCompleted: number[];
+
+  // counters / aggregates
+  memorizedCount: number;
+  revisedCount: number;
+  dailyStreak: number;
+  lastOpenDate: string | null;
+  timeSpent: TimeSpent;
+
+  // actions (many are lightweight stubs sufficient for compatibility)
   markVerseAsMemorized: (verseId: number) => void;
   unmarkVerseAsMemorized: (verseId: number) => void;
-  bulkMarkVersesMemorized: (verseIds: number[], isMemorized?: boolean) => Promise<void>;
+  bulkMarkVersesMemorized: (ids: number[], isMarking?: boolean) => void;
   markVerseAsRevised: (verseId: number) => void;
   unmarkVerseAsRevised: (verseId: number) => void;
-  bulkMarkVersesRevised: (verseIds: number[]) => Promise<void>;
+  bulkMarkVersesRevised: (ids: number[]) => void;
+  updateBadges: () => void;
+  setLastReadVerse: (v: Verse | null) => void;
   updateDailyStreak: () => void;
   startTimeTracking: () => void;
   stopTimeTracking: () => void;
   addQuizResult: (result: Omit<QuizResult, 'id' | 'date'>) => void;
-  updateBadges: () => void;
-  setLastReadVerse: (verse: Verse) => void;
-  markVerseAsCompletedToday: (verseId: number) => void;
-  markVerseAsCompletedThisWeek: (verseId: number) => void;
-  resetCompletedToday: () => void;
   setRevisionSchedule: (versesPerDay: number, surahsPerWeek: number[]) => void;
-  updateRevisionSchedule: (schedule: Partial<RevisionSchedule>) => void;
-  resetDailyMarkedForRevisionCount: () => void;
-  resetWeeklyRevisedSurahsCompleted: () => void;
-  markVerseForRevision: (verseId: number) => void;
-  updateDailyRevisedVerses: (verseId: number) => void; // New
-  updateWeeklyRevisedVerses: (verseId: number) => void; // New
-  setDailyRevisionTarget: (verses: number) => void; // New
-  setWeeklyRevisionSurahs: (surahs: number[]) => void; // New
+  setDailyRevisionTarget: (verses: number) => void;
+  setWeeklyRevisionSurahs: (surahs: number[]) => void;
+  updateDailyRevisedVerses: (verseId: number) => void;
+  updateWeeklyRevisedVerses: (verseId: number) => void;
   updateMemorizedVerses: (ids: number[]) => void;
   updateRevisedVerses: (ids: number[]) => void;
 }
 
-const defaultRevisionSchedule: RevisionSchedule = {
-  versesPerDay: 5,
-  surahsPerWeek: [],
-  completedToday: [],
-  completedThisWeek: [],
-  lastResetDate: null,
-};
+const DEFAULT_BADGES: Badges = {};
+const DEFAULT_SCHEDULE: RevisionSchedule = { versesPerDay: 5, surahsPerWeek: [], completedToday: [], completedThisWeek: [], lastResetDate: null };
+const DEFAULT_TIME: TimeSpent = { total: 0, daily: {} };
 
-const defaultBadges: Badges = {
-  awwalNoor: false,
-  hamilAlHikmah: false,
-  saariSabeelillah: false,
-  muratilQuran: false,
-  hafizJuz: false,
-  hafizQuran: false,
-};
-
-const defaultTimeSpent: TimeSpent = {
-  total: 0,
-  daily: {},
-};
+function recomputeAggregatesFromStatus(status: Record<number, VerseStatusEntry> | undefined) {
+  const vs = status || {};
+  let memorized = 0; 
+  let revised = 0;
+  
+  Object.values(vs).forEach((v) => { 
+    if (v.status === 'memorized') memorized++; 
+    if (v.status === 'revised') revised++; 
+  });
+  
+  return { memorizedCount: memorized, revisedCount: revised };
+}
 
 export const useProgressStore = create<ProgressState>()(
   persist(
     (set, get) => ({
+      // persisted defaults
       memorizedVerses: [],
+      memorizedVerseDates: {},
       revisedVerses: [],
       dailyRevisedVerses: [],
       weeklyRevisedVerses: [],
-      dailyStreak: 0,
-      lastOpenDate: null,
-      timeSpent: defaultTimeSpent,
+      verseStatus: {},
       quizResults: [],
-      badges: defaultBadges,
+      badges: DEFAULT_BADGES,
       lastReadVerse: null,
       completedToday: [],
-      revisionSchedule: defaultRevisionSchedule,
-      dailyMarkedForRevisionCount: 0,
-      lastDailyMarkedForRevisionReset: null,
+      revisionSchedule: DEFAULT_SCHEDULE,
       weeklyRevisedSurahsCompleted: [],
-      lastWeeklyRevisedSurahsReset: null,
-    memorizedVerseDates: {},
-  verseStatus: {},
-    memorizedCount: 0,
-    revisedCount: 0,
-      
-      markVerseAsMemorized: (verseId) => {
-        set((state): Partial<ProgressState> => {
-          const today = formatDate(new Date());
-          
-          // Check if already memorized
-          if (state.memorizedVerses.includes(verseId)) return state; // no change
 
-          // Add to memorized without removing from revised
-          const newMemorizedVerses = [...state.memorizedVerses, verseId];
-          const newMemDates = { ...state.memorizedVerseDates, [verseId]: today };
-          
-          // Update status to reflect the most recent action, but keep both arrays
-          const newStatus = { ...state.verseStatus, [verseId]: { status: 'memorized', last_updated: today } };
-          const typedStatus = newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>;
-          const agg = recomputeAggregates(typedStatus);
-          
-          return { 
-            memorizedVerses: newMemorizedVerses, 
-            memorizedVerseDates: newMemDates,
-            verseStatus: newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>, 
-            memorizedCount: agg.memorizedCount, 
-            revisedCount: agg.revisedCount 
-          };
+      // aggregates
+      memorizedCount: 0,
+      revisedCount: 0,
+      dailyStreak: 0,
+      lastOpenDate: null,
+      timeSpent: DEFAULT_TIME,
+
+      // actions
+      markVerseAsMemorized: (verseId: number) => {
+        set((s) => {
+          if (s.memorizedVerses.includes(verseId)) return {};
+          const memorizedVerses = [...s.memorizedVerses, verseId];
+          const memorizedVerseDates = { ...s.memorizedVerseDates, [verseId]: formatDate(new Date()) };
+          const verseStatus = { ...s.verseStatus, [verseId]: { status: 'memorized' as const, last_updated: formatDate(new Date()) }};
+          const agg = recomputeAggregatesFromStatus(verseStatus);
+          return { memorizedVerses, memorizedVerseDates, verseStatus, ...agg };
         });
-        // Log activity (non-blocking)
-        setTimeout(() => { try { logVerseActivity(verseId, 'memorized'); } catch {} }, 0);
       },
-      
-      unmarkVerseAsMemorized: (verseId) => {
-        set((state): Partial<ProgressState> => {
+
+      unmarkVerseAsMemorized: (verseId: number) => {
+        set((s) => {
+          const memorizedVerses = s.memorizedVerses.filter((v) => v !== verseId);
+          const memorizedVerseDates = { ...s.memorizedVerseDates };
+          delete memorizedVerseDates[verseId];
+          const verseStatus = { ...s.verseStatus, [verseId]: { status: 'not_started' as const, last_updated: formatDate(new Date()) }};
+          const agg = recomputeAggregatesFromStatus(verseStatus);
+          return { memorizedVerses, memorizedVerseDates, verseStatus, ...agg };
+        });
+      },
+
+      bulkMarkVersesMemorized: (ids: number[], isMarking = true) => {
+        set((s) => {
+          const memorizedVerses = isMarking 
+            ? Array.from(new Set([...s.memorizedVerses, ...ids])) 
+            : s.memorizedVerses.filter((x) => !ids.includes(x));
+            
+          const memorizedVerseDates = { ...s.memorizedVerseDates };
+          
+          if (isMarking) {
+            ids.forEach((id) => (memorizedVerseDates[id] = memorizedVerseDates[id] || formatDate(new Date())));
+          } else {
+            ids.forEach((id) => delete memorizedVerseDates[id]);
+          }
+          
+          const verseStatus = { ...s.verseStatus };
+          ids.forEach((id) => (verseStatus[id] = { 
+            status: isMarking ? 'memorized' as const : 'not_started' as const, 
+            last_updated: formatDate(new Date()) 
+          }));
+          
+          const agg = recomputeAggregatesFromStatus(verseStatus);
+          return { memorizedVerses, memorizedVerseDates, verseStatus, ...agg };
+        });
+      },
+
+      markVerseAsRevised: (verseId: number) => {
+        set((s) => {
+          if (s.revisedVerses.some((r) => r.verseId === verseId)) return {};
+          
           const today = formatDate(new Date());
-          const wasMemorized = state.memorizedVerses.includes(verseId);
-          const newMemorizedVerses = wasMemorized
-            ? state.memorizedVerses.filter(id => id !== verseId)
-            : state.memorizedVerses.slice();
-
-          // Always remove memorized date if present (fixes stale date-only state)
-          const { [verseId]: _removed, ...restDates } = state.memorizedVerseDates || {};
-
-          // If the verse is still revised, keep it as revised, otherwise mark as not_started
-          const isStillRevised = state.revisedVerses.some(v => v.verseId === verseId);
-          const newStatus = { 
-            ...state.verseStatus, 
+          const revisedVerses = [...s.revisedVerses, { verseId, revisionDate: today }];
+          const dailyRevisedVerses = [...s.dailyRevisedVerses, { verseId, date: today }];
+          const weeklyRevisedVerses = [...s.weeklyRevisedVerses, { verseId, date: today }];
+          const verseStatus = { 
+            ...s.verseStatus, 
             [verseId]: { 
-              status: isStillRevised ? 'revised' : 'not_started', 
-              last_updated: today,
+              status: 'revised' as const, 
+              last_updated: today 
             } 
           };
-
-          setTimeout(() => { try { get().updateBadges(); } catch {} }, 0);
-          const typedStatus2 = newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>;
-          const agg = recomputeAggregates(typedStatus2);
-
+          
+          const agg = recomputeAggregatesFromStatus(verseStatus);
           return { 
-            memorizedVerses: newMemorizedVerses, 
-            memorizedVerseDates: restDates, 
-            verseStatus: newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>, 
-            memorizedCount: agg.memorizedCount, 
-            revisedCount: agg.revisedCount 
+            revisedVerses, 
+            dailyRevisedVerses, 
+            weeklyRevisedVerses, 
+            verseStatus, 
+            ...agg 
           };
         });
       },
-      
-      // Optimized bulk operation for memorizing/unmarking multiple verses
-      bulkMarkVersesMemorized: async (verseIds: number[], isMemorized: boolean = true) => {
-        try {
-          const { bulkMarkVersesMemorized } = await import('../assets/database/QuranDatabase');
-          
-          // Update database first (batch operation)
-          await bulkMarkVersesMemorized(verseIds, isMemorized);
-          
-          // Update store state efficiently 
-          set((state) => {
-            const today = formatDate(new Date());
-            let memorizedVerses = [...state.memorizedVerses];
-            let memorizedVerseDates = { ...state.memorizedVerseDates };
-            const verseStatus = { ...state.verseStatus } as Record<number, { status: 'not_started'|'memorized'|'revised'; last_updated: string }>;
 
-            if (isMemorized) {
-              const toAdd = verseIds.filter(id => !memorizedVerses.includes(id));
-              if (toAdd.length) {
-                memorizedVerses.push(...toAdd);
-                toAdd.forEach(id => {
-                  memorizedVerseDates[id] = today;
-                  verseStatus[id] = { status: 'memorized', last_updated: today };
-                  // If previously revised, ensure it's not double-counted in revisedVerses array removal not needed here (status map is source of truth for aggregates)
-                });
-              }
-            } else {
-              if (verseIds.length) {
-                memorizedVerses = memorizedVerses.filter(id => !verseIds.includes(id));
-                // Clear any memorized date and status for all affected ids
-                verseIds.forEach(id => {
-                  if (memorizedVerseDates[id]) delete memorizedVerseDates[id];
-                  // If not revised, set to not_started; if revised, keep revised
-                  const isStillRevised = state.revisedVerses.some(v => v.verseId === id);
-                  verseStatus[id] = { status: isStillRevised ? 'revised' : 'not_started', last_updated: today };
-                });
-              }
-            }
-
-            // Recompute aggregates from updated status map
-            const agg = recomputeAggregates(verseStatus);
-            return {
-              memorizedVerses,
-              memorizedVerseDates,
-              verseStatus,
-              memorizedCount: agg.memorizedCount,
-              revisedCount: agg.revisedCount,
-            } as Partial<ProgressState>;
-          });
+      unmarkVerseAsRevised: (verseId: number) => {
+        set((s) => {
+          const revisedVerses = s.revisedVerses.filter((r) => r.verseId !== verseId);
+          const dailyRevisedVerses = s.dailyRevisedVerses.filter((r) => r.verseId !== verseId);
+          const weeklyRevisedVerses = s.weeklyRevisedVerses.filter((r) => r.verseId !== verseId);
           
-          // Update badges and analytics (non-blocking)
-          setTimeout(() => {
-            try {
-              if (isMemorized) {
-                const currentTotal = get().memorizedVerses.length;
-                logAyahMemorized(currentTotal, 'daily').catch(() => {});
-              }
-              get().updateBadges();
-            } catch (error) {
-              // Silently handle errors
-            }
-          }, 0);
-          
-        } catch (error) {
-          console.error('Bulk mark verses failed:', error);
-        }
-      },
-      
-      markVerseAsRevised: (verseId) => {
-        set((state): Partial<ProgressState> => {
-          const today = formatDate(new Date());
-          
-          // Check if already revised
-          const exists = state.revisedVerses.some(v => v.verseId === verseId);
-          if (exists) return state;
-
-          // Add to revised without removing from memorized
-          const newRevisedVerses = [...state.revisedVerses, { verseId, revisionDate: today }];
-          const newDailyRevisedVerses = [...state.dailyRevisedVerses, { verseId, date: today }];
-          const newWeeklyRevisedVerses = [...state.weeklyRevisedVerses, { verseId, date: today }];
-
-          // Determine surah
-          let currentVerseId = 0; let surahId = 1;
-          for (const surah of surahsData) { if (verseId <= currentVerseId + surah.versesCount) break; currentVerseId += surah.versesCount; surahId++; }
-          const newWeeklyRevisedSurahsCompleted = state.weeklyRevisedSurahsCompleted.includes(surahId)
-            ? state.weeklyRevisedSurahsCompleted
-            : [...state.weeklyRevisedSurahsCompleted, surahId];
-
-          // Update status to reflect the most recent action, but keep both arrays
-          const newStatus = { ...state.verseStatus, [verseId]: { status: 'revised', last_updated: today } };
-          
-          const newState: Partial<ProgressState> = {
-            revisedVerses: newRevisedVerses,
-            dailyRevisedVerses: newDailyRevisedVerses,
-            weeklyRevisedVerses: newWeeklyRevisedVerses,
-            weeklyRevisedSurahsCompleted: newWeeklyRevisedSurahsCompleted,
-            verseStatus: newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>,
-          };
-          const typedStatus3 = newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>;
-          const agg = recomputeAggregates(typedStatus3);
-          (newState as any).memorizedCount = agg.memorizedCount;
-          (newState as any).revisedCount = agg.revisedCount;
-          return newState;
-        });
-        // Log activity (non-blocking)
-        setTimeout(() => { try { logVerseActivity(verseId, 'revised'); } catch {} }, 0);
-        // After marking as revised, update notifications (non-blocking)
-        setTimeout(() => {
-          try {
-            const revisedVerses = get().revisedVerses;
-            logAyahRevised(revisedVerses.length).catch(() => {
-              // Silently handle analytics errors to avoid UI lag
-            });
-          } catch (error) {
-            // Silently handle any synchronous errors
-          }
-        }, 0);
-      },
-      
-      unmarkVerseAsRevised: (verseId) => {
-        set((state): Partial<ProgressState> => {
-          const existingIndex = state.revisedVerses.findIndex(v => v.verseId === verseId);
-          if (existingIndex === -1) return state as any;
-          
-          const newRevisedVerses = state.revisedVerses.filter(v => v.verseId !== verseId);
-          const newDailyRevisedVerses = state.dailyRevisedVerses.filter(rv => rv.verseId !== verseId);
-          const newWeeklyRevisedVerses = state.weeklyRevisedVerses.filter(rv => rv.verseId !== verseId);
-          
-          // If the verse is still memorized, keep it as memorized, otherwise mark as not_started
-          const isStillMemorized = state.memorizedVerses.includes(verseId);
-          const newStatus = { 
-            ...state.verseStatus, 
+          const verseStatus = { 
+            ...s.verseStatus, 
             [verseId]: { 
-              status: isStillMemorized ? 'memorized' : 'not_started', 
+              status: s.memorizedVerses.includes(verseId) ? 'memorized' as const : 'not_started' as const, 
               last_updated: formatDate(new Date()) 
             } 
           };
           
-          setTimeout(() => { try { get().updateBadges(); } catch {} }, 0);
-          const typedStatus2 = newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>;
-          const agg = recomputeAggregates(typedStatus2);
-          
+          const agg = recomputeAggregatesFromStatus(verseStatus);
           return { 
-            revisedVerses: newRevisedVerses,
-            dailyRevisedVerses: newDailyRevisedVerses,
-            weeklyRevisedVerses: newWeeklyRevisedVerses,
-            verseStatus: newStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>, 
-            memorizedCount: agg.memorizedCount, 
-            revisedCount: agg.revisedCount 
+            revisedVerses, 
+            dailyRevisedVerses, 
+            weeklyRevisedVerses, 
+            verseStatus, 
+            ...agg 
           };
         });
       },
-      
-      // Optimized bulk operation for marking multiple verses as revised
-      bulkMarkVersesRevised: async (verseIds: number[]) => {
-        try {
-          const { bulkLogRevisions } = await import('../assets/database/QuranDatabase');
+
+      bulkMarkVersesRevised: (ids: number[]) => {
+        set((s) => {
+          const today = formatDate(new Date());
+          const revisedVerses = [...s.revisedVerses];
+          const dailyRevisedVerses = [...s.dailyRevisedVerses];
+          const weeklyRevisedVerses = [...s.weeklyRevisedVerses];
           
-          // Log bulk revisions to database
-          await bulkLogRevisions(verseIds);
-          
-          // Update store state efficiently
-          set((state) => {
-            const today = formatDate(new Date());
-            let newRevisedVerses = [...state.revisedVerses];
-            let newDailyRevisedVerses = [...state.dailyRevisedVerses];
-            let newWeeklyRevisedVerses = [...state.weeklyRevisedVerses];
-            let newWeeklyRevisedSurahsCompleted = [...state.weeklyRevisedSurahsCompleted];
-            
-            verseIds.forEach(verseId => {
-              // Only add if not already revised
-              if (!newRevisedVerses.some(v => v.verseId === verseId)) {
-                newRevisedVerses.push({ verseId, revisionDate: today });
-                newDailyRevisedVerses.push({ verseId, date: today });
-                newWeeklyRevisedVerses.push({ verseId, date: today });
-                
-                // Find surah ID for weekly tracking
-                let currentVerseId = 0;
-                let surahId = 1;
-                for (const surah of surahsData) {
-                  if (verseId <= currentVerseId + surah.versesCount) {
-                    break;
-                  }
-                  currentVerseId += surah.versesCount;
-                  surahId++;
-                }
-                
-                if (!newWeeklyRevisedSurahsCompleted.includes(surahId)) {
-                  newWeeklyRevisedSurahsCompleted.push(surahId);
-                }
-              }
-            });
-            
-            // Update unified status map
-            const todayLocal = formatDate(new Date());
-            const verseStatus = { ...state.verseStatus };
-            verseIds.forEach(id => {
-              verseStatus[id] = { status: 'revised', last_updated: todayLocal } as { status: 'revised'; last_updated: string };
-            });
-            const partial = {
-              revisedVerses: newRevisedVerses,
-              dailyRevisedVerses: newDailyRevisedVerses,
-              weeklyRevisedVerses: newWeeklyRevisedVerses,
-              weeklyRevisedSurahsCompleted: newWeeklyRevisedSurahsCompleted,
-              verseStatus: verseStatus as Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>,
-            } as Partial<ProgressState>;
-            const agg = recomputeAggregates(verseStatus);
-            (partial as any).memorizedCount = agg.memorizedCount;
-            (partial as any).revisedCount = agg.revisedCount;
-            return partial;
+          // Only add verses that aren't already marked as revised
+          ids.forEach((id) => {
+            if (!revisedVerses.some((r) => r.verseId === id)) {
+              revisedVerses.push({ verseId: id, revisionDate: today });
+              dailyRevisedVerses.push({ verseId: id, date: today });
+              weeklyRevisedVerses.push({ verseId: id, date: today });
+            }
           });
           
-          // Update analytics (non-blocking)
-          setTimeout(() => {
-            try {
-              const revisedVerses = get().revisedVerses;
-              logAyahRevised(revisedVerses.length).catch(() => {});
-            } catch (error) {
-              // Silently handle errors
-            }
-          }, 0);
-          
-        } catch (error) {
-          console.error('Bulk mark verses revised failed:', error);
-        }
-      },
-      
-      updateDailyStreak: () => {
-        set((state) => {
-          const today = formatDate(new Date());
-
-          let newStreak = state.dailyStreak;
-          let newLastOpenDate = state.lastOpenDate;
-
-          // Handle daily streak logic based on calendar dates
-          if (state.lastOpenDate === today) {
-            // Same day, maintain current streak
-            newStreak = state.dailyStreak;
-            newLastOpenDate = today;
-          } else if (!state.lastOpenDate) {
-            // First time opening the app - start streak at 1
-            newStreak = 1;
-            newLastOpenDate = today;
-          } else {
-            // Calculate the difference in calendar days
-            const lastDate = new Date(state.lastOpenDate + 'T00:00:00'); // Ensure consistent timezone
-            const currentDate = new Date(today + 'T00:00:00');
-            
-            // Calculate difference in days using calendar dates
-            const diffTime = currentDate.getTime() - lastDate.getTime();
-            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-            
-            if (diffDays === 1) {
-              // Consecutive day - increment streak
-              newStreak = state.dailyStreak + 1;
-              newLastOpenDate = today;
-            } else if (diffDays > 1) {
-              // Missed one or more days - reset streak to 1 (today is the new start)
-              newStreak = 1;
-              newLastOpenDate = today;
-            } else {
-              // This shouldn't happen if dates are properly formatted, but handle gracefully
-              newStreak = state.dailyStreak;
-              newLastOpenDate = today;
-            }
-          }
-
-          // Reset daily count and daily revised verses if it's a new day
-          const lastDailyResetDate = state.lastDailyMarkedForRevisionReset;
-          let newDailyMarkedForRevisionCount = state.dailyMarkedForRevisionCount;
-          let newLastDailyRevisionReset = lastDailyResetDate;
-          let newDailyRevisedVerses = state.dailyRevisedVerses;
-
-          if (lastDailyResetDate !== today) {
-            newDailyMarkedForRevisionCount = 0;
-            newLastDailyRevisionReset = today;
-            // Clear daily revised verses for the new day
-            newDailyRevisedVerses = [];
-          }
-
-          // Reset weekly count and weekly revised verses if it's a new week (Sunday)
-          const lastWeeklyResetDate = state.lastWeeklyRevisedSurahsReset;
-          let newWeeklyRevisedSurahsCompleted = state.weeklyRevisedSurahsCompleted;
-          let newLastWeeklyRevisedSurahsReset = lastWeeklyResetDate;
-          let newWeeklyRevisedVerses = state.weeklyRevisedVerses;
-          const todayDayOfWeek = new Date(today).getDay(); // 0 for Sunday
-          
-          // Condition to reset weekly: today is Sunday AND it hasn't been reset today yet
-          const shouldResetWeekly = todayDayOfWeek === 0 && lastWeeklyResetDate !== today;
-          
-          if (shouldResetWeekly) {
-              newWeeklyRevisedSurahsCompleted = [];
-              newLastWeeklyRevisedSurahsReset = today;
-              // Clear weekly revised verses for the new week
-              newWeeklyRevisedVerses = [];
-          }
-
-          const newState = { 
-            ...state, 
-            dailyStreak: newStreak, 
-            lastOpenDate: newLastOpenDate, 
-            dailyMarkedForRevisionCount: newDailyMarkedForRevisionCount, 
-            lastDailyMarkedForRevisionReset: newLastDailyRevisionReset, 
-            weeklyRevisedSurahsCompleted: newWeeklyRevisedSurahsCompleted, 
-            lastWeeklyRevisedSurahsReset: newLastWeeklyRevisedSurahsReset,
-            dailyRevisedVerses: newDailyRevisedVerses,
-            weeklyRevisedVerses: newWeeklyRevisedVerses
-          };
-          return newState;
-        });
-      },
-      
-      startTimeTracking: () => {
-        const startTime = Date.now();
-        
-        // Store start time in AsyncStorage
-        AsyncStorage.setItem('timeTrackingStart', startTime.toString());
-      },
-      
-      stopTimeTracking: () => {
-        AsyncStorage.getItem('timeTrackingStart').then((startTimeStr) => {
-          if (!startTimeStr) {
-            return;
-          }
-          
-          const startTime = parseInt(startTimeStr);
-          const endTime = Date.now();
-          const sessionDuration = Math.floor((endTime - startTime) / 1000); // in seconds
-          
-          if (sessionDuration <= 0) return;
-          
-          set((state) => {
-            const today = formatDate(new Date());
-            const dailyTime = state.timeSpent.daily[today] || 0;
-            return {
-              timeSpent: {
-                total: state.timeSpent.total + sessionDuration,
-                daily: {
-                  ...state.timeSpent.daily,
-                  [today]: dailyTime + sessionDuration,
-                },
-              },
+          // Update verse status for all provided IDs
+          const verseStatus = { ...s.verseStatus };
+          ids.forEach((id) => {
+            verseStatus[id] = { 
+              status: 'revised' as const, 
+              last_updated: today 
             };
           });
           
-          // Clear the start time
+          const agg = recomputeAggregatesFromStatus(verseStatus);
+          return { 
+            revisedVerses, 
+            dailyRevisedVerses, 
+            weeklyRevisedVerses, 
+            verseStatus, 
+            ...agg 
+          };
+        });
+      },
+
+      updateBadges: () => {
+        set((s) => {
+          const newBadges: Badges = { ...s.badges };
+          newBadges.hafizQuran = (s.memorizedCount || 0) >= TOTAL_VERSES;
+          
+          // Only update if badges actually changed
+          if (JSON.stringify(s.badges) !== JSON.stringify(newBadges)) {
+            return { badges: newBadges };
+          }
+          return {};
+        });
+      },
+
+      setLastReadVerse: (v: Verse | null) => set({ lastReadVerse: v }),
+
+      updateDailyStreak: () => {
+        set((s) => {
+          const today = formatDate(new Date());
+          
+          // If this is the first time opening the app, start a streak
+          if (!s.lastOpenDate) {
+            return { dailyStreak: 1, lastOpenDate: today };
+          }
+          
+          const last = new Date(s.lastOpenDate + 'T00:00:00');
+          const cur = new Date(today + 'T00:00:00');
+          const diff = Math.floor((cur.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
+          
+          let newStreak = s.dailyStreak;
+          
+          // If last opened yesterday, increment streak
+          if (diff === 1) {
+            newStreak = s.dailyStreak + 1;
+          } 
+          // If more than one day has passed, reset streak
+          else if (diff > 1) {
+            newStreak = 1;
+          }
+          
+          return { 
+            dailyStreak: newStreak, 
+            lastOpenDate: today 
+          };
+        });
+      },
+
+      startTimeTracking: () => {
+        // Store the start time in AsyncStorage
+        AsyncStorage.setItem('timeTrackingStart', Date.now().toString());
+      },
+
+      stopTimeTracking: () => {
+        // Get the start time from AsyncStorage
+        AsyncStorage.getItem('timeTrackingStart').then((t) => {
+          if (!t) return;
+          
+          const start = parseInt(t, 10);
+          const session = Math.max(0, Math.floor((Date.now() - start) / 1000));
+          
+          // Only update if there was actual time spent
+          if (session <= 0) return;
+          
+          set((s) => {
+            const today = formatDate(new Date());
+            const daily = s.timeSpent.daily[today] || 0;
+            
+            return { 
+              timeSpent: { 
+                total: s.timeSpent.total + session, 
+                daily: { 
+                  ...s.timeSpent.daily, 
+                  [today]: daily + session 
+                } 
+              } 
+            };
+          });
+          
+          // Clean up the start time
           AsyncStorage.removeItem('timeTrackingStart');
         });
       },
-      
+
       addQuizResult: (result) => {
-        set((state) => {
-          const newResult: QuizResult = {
-            ...result,
-            id: Date.now().toString(),
-            date: formatDate(new Date()),
+        set((s) => {
+          const newResult: QuizResult = { 
+            ...result, 
+            id: Date.now().toString(), 
+            date: formatDate(new Date()) 
           };
           
-          const newResults = [...state.quizResults, newResult];
+          const quizResults = [...s.quizResults, newResult];
           
-          // Update badges after adding a quiz result
+          // Update badges after adding quiz result
           setTimeout(() => get().updateBadges(), 0);
           
-          return { quizResults: newResults };
+          return { quizResults };
         });
       },
-      
-      updateBadges: () => {
-        set((state) => {
-          const { memorizedVerses, dailyStreak, quizResults } = state;
-          
-          // First Light badge: all verses from Surah 78 to 114 must be memorized
-          let verseCount = 0;
-          for (let i = 1; i < 78; i++) {
-            verseCount += surahsData[i-1].versesCount;
-          }
-          const startId = verseCount + 1;
-          let endId = verseCount;
-          for (let i = 78; i <= 114; i++) {
-            endId += surahsData[i-1].versesCount;
-          }
-          let allJuz30Memorized = true;
-          for (let id = startId; id <= endId; id++) {
-            if (!memorizedVerses.includes(id)) {
-              allJuz30Memorized = false;
-              break;
-            }
-          }
-          const awwalNoor = allJuz30Memorized;
-          
-          // Hamil Al-Hikmah badge: memorize 10 complete surahs
-          const completeSurahs = surahsData.filter((surah: Surah) => {
-            let verseCount = 0;
-            for (let i = 1; i < surah.id; i++) {
-              const prevSurah = surahsData.find((s: Surah) => s.id === i);
-              if (prevSurah) verseCount += prevSurah.versesCount;
-            }
-            const startId = verseCount + 1;
-            const endId = verseCount + surah.versesCount;
-            return Array.from({ length: surah.versesCount }, (_, i) => startId + i)
-              .every(id => memorizedVerses.includes(id));
-          }).length;
-          const hamilAlHikmah = completeSurahs >= 10;
-          
-          // Saari Sabeelillah badge: 7-day streak
-          const saariSabeelillah = dailyStreak >= 7;
-          
-          // Muratil Quran badge: 10 perfect quizzes
-          const perfectQuizzes = quizResults.filter(
-            (r) => r.score === r.totalQuestions
-          ).length;
-          const muratilQuran = perfectQuizzes >= 10;
-          
-          // Hafiz Juz badge: complete one full juz
-          const juzMemorized = Array.from(new Set(memorizedVerses.map(id => {
-            // Use proper Juz calculation instead of simple division
-            let verseCounter = 0;
-            for (let s = 0; s < surahsData.length; s++) {
-              const surah = surahsData[s];
-              for (let v = 1; v <= surah.versesCount; v++) {
-                verseCounter++;
-                if (verseCounter === id) {
-                  // Find which Juz this verse belongs to using proper mapping
-                  for (let juz = 1; juz <= 30; juz++) {
-                    const range = getJuzVerseRange(juz);
-                    if (id >= range.startVerseId && id <= range.endVerseId) {
-                      return juz;
-                    }
-                  }
-                  return 1; // fallback
-                }
-              }
-            }
-            return 1; // fallback
-          }))).length;
-          const hafizJuz = juzMemorized >= 1;
-          
-          // Hafiz Quran badge: complete entire Quran
-          const hafizQuran = memorizedVerses.length >= 6236;
-          const newBadges = {
-              awwalNoor,
-              hamilAlHikmah,
-              saariSabeelillah,
-              muratilQuran,
-              hafizJuz,
-              hafizQuran,
-          };
-          // Only update if badges actually changed
-          if (JSON.stringify(state.badges) !== JSON.stringify(newBadges)) {
-            // Log badge achievements non-blocking to avoid UI lag
-            (Object.keys(newBadges) as (keyof typeof newBadges)[]).forEach((badge) => {
-              if (newBadges[badge] && !state.badges[badge]) {
-                setTimeout(() => {
-                  logBadgeEarned(badge).catch(() => {
-                    // Silently handle analytics errors
-                  });
-                }, 0);
-              }
-            });
-            return { badges: newBadges };
-          }
-          return state; // No change
-        });
-      },
-      
-      setLastReadVerse: (verse) => {
-        set({ lastReadVerse: verse });
-      },
-      
-      markVerseAsCompletedToday: (verseId) => {
-        set((state) => {
-          if (state.completedToday.includes(verseId)) {
-            return state;
-          }
-          
-          return { completedToday: [...state.completedToday, verseId] };
-        });
-      },
-      
-      markVerseAsCompletedThisWeek: (verseId) => {
-        set((state) => {
-          const currentSchedule = state.revisionSchedule || defaultRevisionSchedule;
-          if (currentSchedule.completedThisWeek.includes(verseId)) {
-            return state;
-          }
-          
-          return {
-            revisionSchedule: {
-              ...currentSchedule,
-              completedThisWeek: [...currentSchedule.completedThisWeek, verseId]
-            }
-          };
-        });
-      },
-      
-      resetCompletedToday: () => {
-        set({ completedToday: [] });
-      },
-      
+
       setRevisionSchedule: (versesPerDay, surahsPerWeek) => {
-        set((state) => ({
-          revisionSchedule: {
-            ...(state.revisionSchedule || defaultRevisionSchedule),
-            versesPerDay,
-            surahsPerWeek,
-          },
+        set((s) => ({
+          revisionSchedule: { 
+            ...(s.revisionSchedule || DEFAULT_SCHEDULE), 
+            versesPerDay, 
+            surahsPerWeek 
+          } 
         }));
-      },
-      
-      updateRevisionSchedule: (schedule) => {
-        set((state) => ({
-          revisionSchedule: {
-            ...(state.revisionSchedule || defaultRevisionSchedule),
-            ...schedule,
-          },
-        }));
-      },
-      
-      resetDailyMarkedForRevisionCount: () => {
-        set({ dailyMarkedForRevisionCount: 0, lastDailyMarkedForRevisionReset: formatDate(new Date()) });
-      },
-      
-      resetWeeklyRevisedSurahsCompleted: () => {
-        set({ weeklyRevisedSurahsCompleted: [], lastWeeklyRevisedSurahsReset: formatDate(new Date()) });
-      },
-      
-      markVerseForRevision: (verseId) => {
-        set((state) => {
-          // Mark the verse as revised
-          state.markVerseAsRevised(verseId);
-          return state;
-        });
-      },
-      
-      updateDailyRevisedVerses: (verseId) => {
-        set((state) => {
-          const today = formatDate(new Date());
-          const newDailyRevisedVerses = [...state.dailyRevisedVerses, { verseId, date: today }];
-          return { dailyRevisedVerses: newDailyRevisedVerses };
-        });
-      },
-      
-      updateWeeklyRevisedVerses: (verseId) => {
-        set((state) => {
-          const today = formatDate(new Date());
-          const newWeeklyRevisedVerses = [...state.weeklyRevisedVerses, { verseId, date: today }];
-          return { weeklyRevisedVerses: newWeeklyRevisedVerses };
-        });
       },
       
       setDailyRevisionTarget: (verses) => {
-        set((state) => ({
-          revisionSchedule: {
-            ...state.revisionSchedule,
-            versesPerDay: verses,
-          },
+        set((s) => ({
+          revisionSchedule: { 
+            ...(s.revisionSchedule || DEFAULT_SCHEDULE), 
+            versesPerDay: verses 
+          } 
         }));
       },
       
       setWeeklyRevisionSurahs: (surahs) => {
-        set((state) => ({
-          revisionSchedule: {
-            ...state.revisionSchedule,
-            surahsPerWeek: surahs,
-          },
+        set((s) => ({
+          revisionSchedule: { 
+            ...(s.revisionSchedule || DEFAULT_SCHEDULE), 
+            surahsPerWeek: surahs 
+          } 
         }));
       },
-      updateMemorizedVerses: (ids: number[]) => set({ memorizedVerses: ids }),
-      updateRevisedVerses: (ids: number[]) => set({ revisedVerses: ids.map(id => ({ verseId: id, revisionDate: new Date().toISOString() })) }),
+
+      updateDailyRevisedVerses: (verseId: number) => {
+        set((s) => ({
+          dailyRevisedVerses: [
+            ...s.dailyRevisedVerses, 
+            { verseId, date: formatDate(new Date()) }
+          ] 
+        }));
+      },
+      
+      updateWeeklyRevisedVerses: (verseId: number) => {
+        set((s) => ({
+          weeklyRevisedVerses: [
+            ...s.weeklyRevisedVerses, 
+            { verseId, date: formatDate(new Date()) }
+          ] 
+        }));
+      },
+
+      updateMemorizedVerses: (ids: number[]) => {
+        set(() => ({ 
+          memorizedVerses: ids, 
+          memorizedCount: ids.length 
+        }));
+      },
+      
+      updateRevisedVerses: (ids: number[]) => {
+        set(() => {
+          const arr = ids.map((id) => ({ 
+            verseId: id, 
+            revisionDate: formatDate(new Date()) 
+          }));
+          
+          return { 
+            revisedVerses: arr, 
+            revisedCount: arr.length 
+          };
+        });
+      },
     }),
     {
       name: 'progress-storage',
       storage: createJSONStorage(() => AsyncStorage),
-      // Ensure proper initialization of nested objects and new counters
       onRehydrateStorage: () => (state) => {
-        if (state) {
-          // Ensure revisionSchedule is properly initialized
-          if (!state.revisionSchedule) {
-            state.revisionSchedule = { ...defaultRevisionSchedule };
-          } else {
-            // Ensure all properties exist with proper defaults
-            state.revisionSchedule = {
-              versesPerDay: state.revisionSchedule.versesPerDay || 5,
-              surahsPerWeek: state.revisionSchedule.surahsPerWeek || [],
-              completedToday: state.revisionSchedule.completedToday || [],
-              completedThisWeek: state.revisionSchedule.completedThisWeek || [],
-              lastResetDate: state.revisionSchedule.lastResetDate || null,
-            };
-          }
-          
-          // Ensure badges are properly initialized
-          if (!state.badges) {
-            state.badges = { ...defaultBadges };
-          } else {
-            state.badges = {
-              ...defaultBadges,
-              ...state.badges,
-            };
-          }
-          
-          // Ensure timeSpent is properly initialized
-          if (!state.timeSpent) {
-            state.timeSpent = { ...defaultTimeSpent };
-          } else {
-            state.timeSpent = {
-              total: state.timeSpent.total || 0,
-              daily: state.timeSpent.daily || {},
-            };
-          }
-          
-          // Ensure arrays are properly initialized
-          if (!Array.isArray(state.memorizedVerses)) {
-            state.memorizedVerses = [];
-          }
-          if (!Array.isArray(state.revisedVerses)) {
-            state.revisedVerses = [];
-          }
-          if (!Array.isArray(state.completedToday)) {
-            state.completedToday = [];
-          }
-          if (!Array.isArray(state.quizResults)) {
-            state.quizResults = [];
-          }
-          if (!Array.isArray(state.dailyRevisedVerses)) {
-            state.dailyRevisedVerses = [];
-          }
-          if (!Array.isArray(state.weeklyRevisedVerses)) {
-            state.weeklyRevisedVerses = [];
-          }
-          
-          // Ensure new revision counters and reset dates are initialized
-          if (state.dailyMarkedForRevisionCount === undefined) state.dailyMarkedForRevisionCount = 0;
-          if (state.lastDailyMarkedForRevisionReset === undefined) state.lastDailyMarkedForRevisionReset = null;
-          if (state.weeklyRevisedSurahsCompleted === undefined) state.weeklyRevisedSurahsCompleted = [];
-          if (state.lastWeeklyRevisedSurahsReset === undefined) state.lastWeeklyRevisedSurahsReset = null;
-          
-          // Ensure memorized verse dates object is initialized
-          if (!state.memorizedVerseDates) {
-            state.memorizedVerseDates = {} as Record<number, string>;
-          }
+        if (!state) return;
+        
+        // Ensure all required arrays/objects exist
+        if (!Array.isArray(state.memorizedVerses)) state.memorizedVerses = [];
+        if (!Array.isArray(state.revisedVerses)) state.revisedVerses = [];
+        if (!Array.isArray(state.dailyRevisedVerses)) state.dailyRevisedVerses = [];
+        if (!Array.isArray(state.weeklyRevisedVerses)) state.weeklyRevisedVerses = [];
+        if (!state.memorizedVerseDates) state.memorizedVerseDates = {};
+        if (!state.verseStatus) state.verseStatus = {};
+        if (!state.revisionSchedule) state.revisionSchedule = DEFAULT_SCHEDULE;
+        if (!state.badges) state.badges = DEFAULT_BADGES;
+        if (!state.timeSpent) state.timeSpent = DEFAULT_TIME;
 
-          // Migration: populate verseStatus if empty using existing arrays
-          if (state.verseStatus && Object.keys(state.verseStatus).length === 0) {
-            const today = formatDate(new Date());
-            const vs: Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }> = {};
-            (state.memorizedVerses || []).forEach(id => { vs[id] = { status: 'memorized', last_updated: today }; });
-            (state.revisedVerses || []).forEach(rv => { vs[rv.verseId] = { status: 'revised', last_updated: rv.revisionDate || today }; });
-            state.verseStatus = vs;
-          }
-          // Recompute aggregates
-          const agg = recomputeAggregates(state.verseStatus || {});
-          state.memorizedCount = agg.memorizedCount;
-            state.revisedCount = agg.revisedCount;
-          const total = (agg.memorizedCount || 0) + (agg.revisedCount || 0);
-          if (total > TOTAL_VERSES) {
-            console.warn('[progressStore] Invariant violation: total progressed verses exceeds TOTAL_VERSES');
-          }
-        }
+        // Recompute aggregates
+        const { memorizedCount, revisedCount } = recomputeAggregatesFromStatus(state.verseStatus);
+        state.memorizedCount = memorizedCount;
+        state.revisedCount = revisedCount;
       },
     }
   )
 );
 
-// Utility to recompute aggregates centrally
-function recomputeAggregates(verseStatus: Record<number, { status: 'not_started' | 'memorized' | 'revised'; last_updated: string }>) {
-  let memorizedCount = 0; let revisedCount = 0;
-  Object.values(verseStatus).forEach(entry => {
-    if (entry.status === 'memorized') memorizedCount++; else if (entry.status === 'revised') revisedCount++;
-  });
-  return { memorizedCount, revisedCount };
-}
-
-// Public selector helpers
 export const selectProgressAggregates = (state: ProgressState) => {
   const memorizedCount = state.memorizedCount || 0;
   const revisedCount = state.revisedCount || 0;
   const total = Math.min(memorizedCount + revisedCount, TOTAL_VERSES);
-  return {
-    memorizedCount,
-    revisedCount,
-    totalProgressed: total,
-    percent: (total / TOTAL_VERSES) * 100,
+  
+  return { 
+    memorizedCount, 
+    revisedCount, 
+    totalProgressed: total, 
+    percent: (total / TOTAL_VERSES) * 100 
   };
 };

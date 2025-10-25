@@ -1,10 +1,10 @@
-import React, { useMemo } from 'react';
-import { StyleSheet, Text, View, ScrollView, Pressable } from 'react-native';
-import { BarChart2, Clock, Award } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
-import { useCustomColors } from '@/utils/themeUtils';
 import { useProgressStore } from '@/store/progressStore';
 import { formatTime } from '@/utils/dateUtils';
+import { useCustomColors } from '@/utils/themeUtils';
+import { useRouter } from 'expo-router';
+import { Award, BarChart2, Clock } from 'lucide-react-native';
+import React, { useMemo } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export default function StatsScreen() {
   const router = useRouter();
@@ -29,17 +29,19 @@ export default function StatsScreen() {
     
     // Fix week calculation - this was potentially problematic
     const startOfYear = new Date(now.getFullYear(), 0, 1);
-    const pastDaysOfYear = Math.floor((now - startOfYear) / 86400000);
+  const pastDaysOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / 86400000);
     const currentWeek = Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
     const weekKey = `${now.getFullYear()}-${currentWeek}`;
     
     const currentMonth = `${now.getFullYear()}-${now.getMonth() + 1}`;
     
-    // Safely access timeSpent properties with fallbacks
-    const timeToday = timeSpent?.daily?.[today] || 0;
-    const timeThisWeek = timeSpent?.weekly?.[weekKey] || 0;
-    const timeThisMonth = timeSpent?.monthly?.[currentMonth] || 0;
-    const totalTime = timeSpent?.total || 0;
+  // Safely access timeSpent properties with fallbacks. Cast to any because store's TimeSpent
+  // type may be narrower in some builds (daily-only). This keeps the UI resilient.
+  const ts: any = timeSpent || {};
+  const timeToday = ts.daily ? (ts.daily[today] || 0) : 0;
+  const timeThisWeek = ts.weekly ? (ts.weekly[weekKey] || 0) : 0;
+  const timeThisMonth = ts.monthly ? (ts.monthly[currentMonth] || 0) : 0;
+  const totalTime = ts.total || 0;
     
     // Safely count earned badges
     const earnedBadges = badges ? Object.values(badges).filter(Boolean).length : 0;
@@ -149,7 +151,7 @@ export default function StatsScreen() {
           </View>
           
           <View style={styles.timeStatsRow}>
-            <View style={[styles.timeStatItem, { backgroundColor: colors.highlight }]}>
+            <View style={[styles.timeStatItem, { backgroundColor: (colors as any).highlight || colors.card }]}>
               <Text style={[styles.timeStatValue, { color: colors.primary }]}>
                 {formatTime(stats.timeToday)}
               </Text>
@@ -158,7 +160,7 @@ export default function StatsScreen() {
               </Text>
             </View>
             
-            <View style={[styles.timeStatItem, { backgroundColor: colors.highlight }]}>
+            <View style={[styles.timeStatItem, { backgroundColor: (colors as any).highlight || colors.card }]}>
               <Text style={[styles.timeStatValue, { color: colors.primary }]}>
                 {formatTime(stats.timeThisWeek)}
               </Text>
@@ -169,7 +171,7 @@ export default function StatsScreen() {
           </View>
           
           <View style={styles.timeStatsRow}>
-            <View style={[styles.timeStatItem, { backgroundColor: colors.highlight }]}>
+            <View style={[styles.timeStatItem, { backgroundColor: (colors as any).highlight || colors.card }]}>
               <Text style={[styles.timeStatValue, { color: colors.primary }]}>
                 {formatTime(stats.timeThisMonth)}
               </Text>
@@ -178,7 +180,7 @@ export default function StatsScreen() {
               </Text>
             </View>
             
-            <View style={[styles.timeStatItem, { backgroundColor: colors.highlight }]}>
+            <View style={[styles.timeStatItem, { backgroundColor: (colors as any).highlight || colors.card }]}>
               <Text style={[styles.timeStatValue, { color: colors.primary }]}>
                 {formatTime(stats.totalTime)}
               </Text>

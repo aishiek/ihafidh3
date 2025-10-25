@@ -18,6 +18,7 @@ import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useActivityStore } from '../store/activityStore';
 import { ColorScheme, useThemeStore } from '../store/themeStore';
+import { runFullDiagnostic } from './mushaf/utils/mushafDiagnostics';
 
 export default function SettingsScreen() {
   const colors = useCustomColors();
@@ -399,6 +400,30 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Diagnostic (debug) - temporary button */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Diagnostics (debug)</Text>
+          <View style={styles.settingItem}>
+            <TouchableOpacity
+              onPress={async () => {
+                try {
+                  const ok = await runFullDiagnostic();
+                  // runFullDiagnostic already shows alerts, but give a quick toast-like feedback
+                  // using simple Alert
+                  if (ok) {
+                    // nothing else
+                  }
+                } catch (e) {
+                  // ignored - runFullDiagnostic alerts
+                }
+              }}
+              style={[styles.downloadButton, { paddingVertical: 12 }]}
+            >
+              <Text style={styles.downloadButtonText}>Run RNFS Diagnostic</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* App version label */}
         <View style={styles.versionRow}>
           <Text style={styles.versionText}>Ver-1.2.1</Text>
@@ -650,5 +675,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#888888',
     fontWeight: '500',
+  },
+  downloadButton: {
+    backgroundColor: '#2196F3',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  downloadButtonText: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 14,
   },
 });

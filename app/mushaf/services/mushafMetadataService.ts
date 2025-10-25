@@ -1,15 +1,15 @@
-import SQLite from 'react-native-sqlite-storage';
+import { openDatabaseAsync } from 'expo-sqlite';
 import type { MushafInfo, MushafPageRow } from '../types/mushaf.types';
 
 export async function initMushafDB() {
-  const db = await SQLite.openDatabase({ name: 'MushafLayout.db', location: 'default' });
+  // Opens (or creates) the MushafLayout.db in app sandbox using the async API
+  const db = await openDatabaseAsync('MushafLayout.db');
   return db;
 }
 
 export async function getMushafInfo(db: any): Promise<MushafInfo | null> {
-  const res = await db.executeSql('SELECT * FROM info LIMIT 1');
-  if (!res || res.length === 0) return null;
-  const row = res[0].rows.item(0);
+  const row = await db.getFirstAsync('SELECT * FROM info LIMIT 1');
+  if (!row) return null;
   return {
     name: row.name,
     number_of_pages: row.number_of_pages,
@@ -19,15 +19,18 @@ export async function getMushafInfo(db: any): Promise<MushafInfo | null> {
 }
 
 export async function getPageInfo(db: any, pageNumber: number): Promise<MushafPageRow | null> {
-  const res = await db.executeSql('SELECT * FROM pages WHERE page_number = ?', [pageNumber]);
-  if (!res || res.length === 0 || res[0].rows.length === 0) return null;
-  return res[0].rows.item(0) as MushafPageRow;
+  const row = await db.getFirstAsync('SELECT * FROM pages WHERE page_number = ?', [pageNumber]);
+  if (!row) return null;
+  return row as MushafPageRow;
 }
 
 export async function getPageRange(db: any, startPage: number, endPage: number): Promise<MushafPageRow[]> {
-  const res = await db.executeSql('SELECT * FROM pages WHERE page_number BETWEEN ? AND ?', [startPage, endPage]);
-  if (!res || res.length === 0) return [];
-  const raw = [] as MushafPageRow[];
-  for (let i = 0; i < res[0].rows.length; i++) raw.push(res[0].rows.item(i));
-  return raw;
+  const rows = await db.getAllAsync('SELECT * FROM pages WHERE page_number BETWEEN ? AND ?', [startPage, endPage]);
+  return (rows || []) as MushafPageRow[];
+}
+
+export async function getWordsInRange(db: any, firstId: number, lastId: number): Promise<{id:number;text:string,tajweed_rule?:string}[]> {
+  if (!db) return [];
+  const rows = await db.getAllAsync('SELECT id, text, tajweed_rule FROM items WHERE id BETWEEN ? AND ? ORDER BY id ASC', [firstId, lastId]);
+  return (rows || []) as {id:number;text:string,tajweed_rule?:string}[];
 }

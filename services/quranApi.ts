@@ -216,13 +216,11 @@ export async function fetchSingleVerse(
   return lazyQueue.add(key, async () =>
     fetchWithRetry(async () => {
       try {
-        const arabicFont = useSettingsStore.getState().arabicFont;
-        const useTajweed = arabicFont === 'tajweed';
         const wantTransliteration = !!useSettingsStore.getState().showTransliteration;
         const preferredLang = (translationLanguage.split('.')[0] || 'en').toLowerCase();
 
         const [arabicResp, translationResp] = await Promise.all([
-          fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${useTajweed ? 'quran-tajweed' : 'ar.alafasy'}`),
+          fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/ar.alafasy`),
           fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${translationLanguage}`)
         ]);
         const arabicData: AlQuranCloudAyahResponse = await arabicResp.json();
@@ -232,20 +230,30 @@ export async function fetchSingleVerse(
           ? await fetchTransliterationText(surahNumber, verseNumber, preferredLang)
           : undefined;
 
-  const audioUrl = getAudioUrl(reciterIdentifier, surahNumber, verseNumber);
+        const audioUrl = getAudioUrl(reciterIdentifier, surahNumber, verseNumber);
+
+        // Safely extract data with fallbacks
+        const arabicText = arabicData?.data?.text || '';
+        const translationText = translationData?.data?.text || '';
+        const juzNumber = arabicData?.data?.juz || 1;
+        const hizbQuarter = arabicData?.data?.hizbQuarter || 1;
+        const pageNumber = arabicData?.data?.page || 1;
+
+        if (!arabicText) {
+          console.warn(`No Arabic text found for verse ${surahNumber}:${verseNumber}`);
+        }
 
         const verse: Verse = {
           id: calculateVerseId(surahNumber, verseNumber),
           surahId: surahNumber,
           verseNumber,
-          arabicText: arabicData.data.text || '',
-          tajweedText: useTajweed ? arabicData.data.text || '' : undefined,
-          translation: translationData.data.text || '',
+          arabicText,
+          translation: translationText,
           transliteration: transliterationText,
           audioUrl,
-          juzNumber: arabicData.data.juz || 1,
-          hizbNumber: Math.ceil((arabicData.data.hizbQuarter || 1) / 4),
-          pageNumber: arabicData.data.page || 1
+          juzNumber,
+          hizbNumber: Math.ceil(hizbQuarter / 4),
+          pageNumber
         };
 
         circuitBreaker.onSuccess();

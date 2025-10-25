@@ -155,7 +155,7 @@ export default function SettingsScreen() {
     },
     inputLabel: {
       fontSize: 14,
-      color: theme.inactive,
+      color: '#FFFFFF',
       marginBottom: 8,
     },
     input: {
@@ -198,7 +198,7 @@ export default function SettingsScreen() {
     },
     feedbackText: {
       fontSize: 14,
-      color: theme.inactive,
+      color: '#FFFFFF',
       textAlign: 'center',
       marginBottom: 16,
       lineHeight: 20,
@@ -257,7 +257,7 @@ export default function SettingsScreen() {
     },
     languageOptionSubtext: {
       fontSize: 10,
-      color: theme.inactive,
+      color: '#FFFFFF',
       textAlign: 'center',
       marginTop: 2,
     },
@@ -299,7 +299,7 @@ export default function SettingsScreen() {
     },
     saveButtonHint: {
       fontSize: 12,
-      color: theme.inactive,
+      color: '#FFFFFF',
       marginTop: 4,
     },
     noChangesContainer: {
@@ -310,12 +310,12 @@ export default function SettingsScreen() {
       borderRadius: 12,
       padding: 16,
       borderWidth: 1,
-      borderColor: theme.inactive,
+      borderColor: '#FFFFFF',
       borderStyle: 'dashed',
     },
     noChangesText: {
       fontSize: 14,
-      color: theme.inactive,
+      color: '#FFFFFF',
       textAlign: 'center',
       marginTop: 4,
     },
@@ -346,7 +346,7 @@ export default function SettingsScreen() {
       alignItems: 'center',
     },
     versionText: {
-      color: '#777',
+      color: '#FFFFFF',
       fontSize: 12,
       letterSpacing: 0.5,
     },
@@ -364,7 +364,8 @@ export default function SettingsScreen() {
       es: 'Spanish',
       fr: 'French',
       hi: 'Hindi',
-      id: 'Indonesian',
+  id: 'Bahasa',
+      
       ru: 'Russian',
       tr: 'Turkish',
       ms: 'Malay',
@@ -737,7 +738,7 @@ export default function SettingsScreen() {
           {/* Fasting Notifications Status (Global Master) */}
           <View style={styles.displayOption}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Bell size={16} color={theme.textSecondary} style={{ marginRight: 8 }} />
+              <Bell size={16} color={'#FFFFFF'} style={{ marginRight: 8 }} />
               <Text style={[styles.displayOptionText, { color: theme.text }]}>Enable Fasting Notifications</Text>
             </View>
             <Pressable
@@ -762,11 +763,11 @@ export default function SettingsScreen() {
              onPress={() => setShowLocationSelector(true)}
            >
              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-               <Globe size={16} color={theme.textSecondary} style={{ marginRight: 8 }} />
+               <Globe size={16} color={'#FFFFFF'} style={{ marginRight: 8 }} />
                <Text style={[styles.displayOptionText, { color: theme.text }]}>Location</Text>
              </View>
              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-               <Text style={[styles.displayOptionText, { color: theme.textSecondary, fontSize: 12 }]}>
+               <Text style={[styles.displayOptionText, { color: '#FFFFFF', fontSize: 12 }]}> 
                  {fastingContext.state.settings.location.city}, {fastingContext.state.settings.location.country}
                </Text>
                <Text style={[styles.displayOptionText, { color: theme.primary, fontSize: 12, marginLeft: 8 }]}>

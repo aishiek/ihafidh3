@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { surahsData } from '@/data/surahs'; // Use existing surahsData
 import { Verse } from '@/types'; // Assuming Verse type is here
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect, useState } from 'react';
 
 // Types (re-defined or imported as needed)
 interface Surah {
@@ -209,15 +209,16 @@ export const useRevisionLogic = () => {
           const newProgress = { ...prevWeekly.surahProgress };
           let newIsCompleted = prevWeekly.isCompleted; // Keep previous completion status by default
 
-          if (revisedVerse && prevWeekly.selectedSurahs.includes(revisedVerse.surahNumber)) {
-              if (!newProgress[revisedVerse.surahNumber]) {
-                const surah = surahsData.find(s => s.id === revisedVerse.surahNumber);
+          if (revisedVerse && typeof revisedVerse.surahNumber === 'number' && prevWeekly.selectedSurahs.includes(revisedVerse.surahNumber)) {
+              const sNum = revisedVerse.surahNumber as number;
+              if (!newProgress[sNum]) {
+                const surah = surahsData.find(s => s.id === sNum);
                  // Use versesCount from surahsData
-                newProgress[revisedVerse.surahNumber] = { completed: 0, total: surah?.versesCount || 0 };
+                newProgress[sNum] = { completed: 0, total: surah?.versesCount || 0 };
               }
 
               // Increment completed count for the specific surah
-              newProgress[revisedVerse.surahNumber].completed += 1;
+              newProgress[sNum].completed += 1;
 
               // Check if all selected surahs are completed after this update
               const allSelectedSurahsFullyCompleted = prevWeekly.selectedSurahs.length > 0 && prevWeekly.selectedSurahs.every(surahId => {
@@ -296,4 +297,4 @@ export const useRevisionLogic = () => {
 
 // Export necessary components and utilities as well if they are used elsewhere
 // For now, only the hook is intended for external use by VerseItem.
-export { getCurrentDate, getWeekStart }; 
+export { getCurrentDate, getWeekStart };
