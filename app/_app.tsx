@@ -48,6 +48,10 @@ export default function App() {
     registerGlobalErrorHandlers();
     (async () => {
       try {
+        // Ensure mushaf/json and mushaf/images directories exist
+        const { ensureMushafDirs } = await import('./initDirs');
+        await ensureMushafDirs();
+
         const memorizedIds = await getAllMemorizedVerseIds();
         const revisedIds = await getAllRevisedVerseIds();
         MemorizationCache.warmUp(memorizedIds, revisedIds);

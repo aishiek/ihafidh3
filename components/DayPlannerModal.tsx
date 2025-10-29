@@ -4,7 +4,7 @@ import { useProgressStore } from '@/store/progressStore';
 import { LinearGradient } from 'expo-linear-gradient';
 import { X } from 'lucide-react-native';
 import React, { useMemo, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import SurahRangePicker from './SurahRangePicker';
 
 function formatDMY(d: Date): string { const dd=String(d.getDate()).padStart(2,'0'); const mm=String(d.getMonth()+1).padStart(2,'0'); const yyyy=d.getFullYear(); return `${dd}-${mm}-${yyyy}`; }
@@ -31,6 +31,8 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
   const revised = useProgressStore(s => s.revisedVerses);
   const markMem = useProgressStore(s => s.markVerseAsMemorized);
   const markRev = useProgressStore(s => s.markVerseAsRevised);
+  const unmarkMem = useProgressStore(s => s.unmarkVerseAsMemorized);
+  const unmarkRev = useProgressStore(s => s.unmarkVerseAsRevised);
 
   const today = new Date();
   const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -183,7 +185,64 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
           visible={pickerVisible}
           onClose={() => setPickerVisible(false)}
           onConfirm={({ surahId, startVerse, endVerse, note }) => {
-            if (dateISO) addPlan(dateISO, { surahId, startVerse, endVerse, note });
+            if (!dateISO) return;
+            
+            // Calculate all verse IDs in the selected range
+            const verseIds: number[] = [];
+            const sId = toVerseId(surahId, startVerse);
+            const eId = toVerseId(surahId, endVerse);
+            for (let id = sId; id <= eId; id++) {
+              verseIds.push(id);
+            }
+            
+            // Check if ALL verses in the range are BOTH memorized AND revised
+            const allVersesBothMarked = verseIds.every((id) => {
+              const isMem = memorized.includes(id);
+              const isRev = revised.some((rv) => rv.verseId === id);
+              return isMem && isRev; // Must be BOTH
+            });
+            
+            if (allVersesBothMarked && verseIds.length > 0) {
+              // Show alert dialog
+              const surah = surahsData.find(s => s.id === surahId);
+              const rangeText = startVerse === endVerse 
+                ? `Verse ${startVerse}` 
+                : `Verses ${startVerse}-${endVerse}`;
+              const surahText = surah ? `${surah.name} (${surah.englishName})` : `Surah ${surahId}`;
+              
+              Alert.alert(
+                'Already Memorized & Revised',
+                `${surahText} ${rangeText} is already marked as both Memorized and Revised.\n\nDo you want to unmark these verses?`,
+                [
+                  {
+                    text: 'Cancel',
+                    style: 'cancel',
+                    onPress: () => {
+                      // Cancel unmark but continue normal flow - add plan with * marking
+                      addPlan(dateISO, { surahId, startVerse, endVerse, note });
+                    }
+                  },
+                  {
+                    text: 'Yes, Unmark',
+                    style: 'destructive',
+                    onPress: () => {
+                      // Unmark all verses in the range
+                      verseIds.forEach((id) => {
+                        unmarkMem(id);
+                        unmarkRev(id);
+                      });
+                      
+                      // Add the plan (but DON'T mark as completed since we just unmarked)
+                      addPlan(dateISO, { surahId, startVerse, endVerse, note });
+                    }
+                  }
+                ],
+                { cancelable: true }
+              );
+            } else {
+              // Normal flow: just add the plan
+              addPlan(dateISO, { surahId, startVerse, endVerse, note });
+            }
             // Keep picker open so user can add multiple if desired
           }}
         />
@@ -192,7 +251,8 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
           <Text style={styles.infoBoxTitle}>Tips</Text>
           <Text style={styles.infoBoxText}>
             You can add multiple plans for the same day. Choose full surahs or custom verse ranges.
-            Your progress updates automatically when you mark verses as Memorized or Revised anywhere in the app.
+            Your progress updates automatically when you mark verses as Memorized or Revised anywhere in the app. 
+            You can hit the X (close) mark on top corner once plans are added. 
           </Text>
           <Text style={[styles.infoBoxText, { marginTop: 6 }]}>
             Overlapping ranges are handled smartly and won’t be double-counted.

@@ -36,7 +36,6 @@ import {
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
 import { getAverageVerseHeight } from '@/utils/verseLayoutUtils';
-import { AutoSizeText, ResizeTextMode } from 'react-native-auto-size-text';
 
 // Constants
 const MAX_CACHE_SIZE = 50;
@@ -58,10 +57,9 @@ export default function ReadScreen() {
   const arabicTypography = getArabicTypographySizing(fontSizeArabic, arabicFont);
   const arabicFontFamily = getArabicFontFamily(arabicFont);
 
-  const { surahId: paramSurahId, verseId: paramVerseId, source: paramSource } = useLocalSearchParams<{
+  const { surahId: paramSurahId, verseId: paramVerseId } = useLocalSearchParams<{
     surahId?: string;
     verseId?: string;
-    source?: string;
   }>();
 
   const {
@@ -84,7 +82,6 @@ export default function ReadScreen() {
   const [tab, setTab] = useState<'surah' | 'juz'>('surah');
   const [selectedSurah, setSelectedSurah] = useState<Surah | null>(null);
   const [selectedJuz, setSelectedJuz] = useState<number | null>(null);
-  const [navigationSource, setNavigationSource] = useState<'surahList' | 'juzList' | 'mustahabbah' | 'continueReading' | 'stats' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [verses, setVerses] = useState<Verse[]>([]);
   const [juzVerses, setJuzVerses] = useState<JuzVerse[]>([]);
@@ -233,9 +230,9 @@ export default function ReadScreen() {
     return allIds.length > 0 && allIds.every((id) => revisedVerses.some((rv) => rv.verseId === id));
   }, [selectedSurah, revisedVerses, getSurahVerseRange]);
 
-  // Async loaders - Enhanced with robust retry logic and error handling
+  // Async loaders - Simplified to match Juz implementation
   const loadInitialVerses = useCallback(
-    async (surah: Surah, retryCount = 0) => {
+    async (surah: Surah) => {
       const lockKey = `surah_${surah.id}_${translationLanguage}`;
       if (loadingLocks.current.has(lockKey)) return loadingLocks.current.get(lockKey);
 
@@ -244,18 +241,8 @@ export default function ReadScreen() {
         setLoadingError(null);
 
         try {
-          console.log(`[read] Loading verses for ${surah.name} (attempt ${retryCount + 1}/3)...`);
-          
           // Load ALL verses from local DB at once (same as Juz implementation)
           const allVersesFromDB = await fetchVersesForSurah(surah.id);
-          
-          // Validate DB returned data
-          if (!allVersesFromDB || allVersesFromDB.length === 0) {
-            throw new Error(`No verses returned from database for ${surah.name}`);
-          }
-          
-          console.log(`[read] Successfully loaded ${allVersesFromDB.length} verses for ${surah.name}`);
-          
           const reciterIdentifier = useSettingsStore.getState().reciterIdentifier;
           
           let mappedVerses: Verse[] = allVersesFromDB.map((v: any) => ({
@@ -270,54 +257,27 @@ export default function ReadScreen() {
             audioUrl: getAudioUrl(reciterIdentifier, v.chapter_id || surah.id, v.verse_number),
           }));
 
-          // PERFORMANCE FIX: Local DB already has translations!
-          // Removed API call that was causing 3-10 second delays for non-English languages
-          // The AlQurandb.sqlite3 database contains English translations (collection_id = 2)
-          // For Tamil/Malay/other languages, use the translation services instead of API
-          // This matches the Juz implementation which loads instantly
+          // Only fetch translations from API if non-English language selected
+          const langBase = (translationLanguage.split('.')[0] || 'en').toLowerCase();
+          if (langBase !== 'en') {
+            const translations = await fetchTranslationsForVerses(
+              surah.id,
+              mappedVerses.map((m) => ({ verse_number: m.verseNumber })),
+              translationLanguage
+            );
+            mappedVerses = mappedVerses.map((mv, idx) => ({
+              ...mv,
+              translation: translations[idx] || mv.translation || '',
+            }));
+          }
 
           // Set ALL verses at once - FlatList handles virtualization automatically
           setVerses(mappedVerses);
           setLastReadVerse(mappedVerses[0]);
-          console.log(`[read] Verses loaded and set successfully for ${surah.name}`);
           
-        } catch (err: any) {
-          console.error(`[read] Failed to load verses for ${surah.name}, attempt ${retryCount + 1}:`, err);
-          
-          // CRITICAL: Retry for ANY error on Android, not just database errors
-          // Android can have various initialization timing issues
-          if (retryCount < 2) {
-            console.log(`[read] Retrying loadInitialVerses for ${surah.name} (attempt ${retryCount + 2}/3)...`);
-            // Exponential backoff: 600ms, 1200ms
-            const delay = 600 * (retryCount + 1);
-            await new Promise(resolve => setTimeout(resolve, delay));
-            loadingLocks.current.delete(lockKey);
-            return loadInitialVerses(surah, retryCount + 1);
-          }
-          
-          // All retries exhausted - show error to user
-          const errorMessage = `Failed to load verses for ${surah.name}`;
-          setLoadingError(errorMessage);
+        } catch (err) {
+          setLoadingError(`Failed to load verses for ${surah.name}`);
           setVerses([]);
-          
-          // Show critical error alert to user
-          Alert.alert(
-            '❌ Failed to Load Verses',
-            `Cannot load ${surah.name} after 3 attempts.\n\nPlease try:\n1. Restart the app\n2. Check device storage\n3. Reinstall if problem persists\n\nError: ${err?.message || 'Unknown error'}`,
-            [
-              {
-                text: 'Try Again',
-                onPress: () => {
-                  // Reset and try one more time
-                  loadingLocks.current.delete(lockKey);
-                  loadInitialVerses(surah, 0);
-                },
-              },
-              { text: 'Cancel', style: 'cancel' }
-            ]
-          );
-          
-          console.error('[read] All retry attempts exhausted for', surah.name, err);
         } finally {
           setIsLoading(false);
         }
@@ -355,30 +315,12 @@ export default function ReadScreen() {
   const handleBackToSurahs = useCallback(() => {
     if (isNavigatingBack.current) return;
     isNavigatingBack.current = true;
-    
     try {
-      // Stop any playback
-      setIsPlayingAudio(false);
-      setIsPlayingSurah(false);
-      setIsSurahPaused(false);
-      
-      // If viewing verses (either Surah or Juz), go back to list view
-      if (selectedSurah || selectedJuz !== null) {
-        console.log('[read] Back from verses to list view - clearing params');
-        // CRITICAL: Clear URL params to allow fresh navigation next time
-        router.replace('/(tabs)/read');
-        setSelectedJuz(null);
-        setSelectedSurah(null);
-        setVerses([]);
-        setJuzVerses([]);
-        setNavigationSource(null);
-      } 
-      // If already on list view (no selection), navigate to home tab
-      else {
-        console.log('[read] Back from list view to home tab');
-        router.replace('/(tabs)/');
+      if (router.canGoBack?.()) {
+        router.back();
+      } else {
+        router.replace('/');
       }
-      
       setTimeout(() => {
         isNavigatingBack.current = false;
       }, 300);
@@ -386,7 +328,7 @@ export default function ReadScreen() {
       console.error('[read] handleBackToSurahs error', e);
       isNavigatingBack.current = false;
     }
-  }, [router, selectedSurah, selectedJuz]);
+  }, [router]);
 
   const handleVersePlayAudio = useCallback(
     async (surahNum: number, verseNum: number, _globalId?: number, repeats?: number, isInfinite?: boolean) => {
@@ -491,61 +433,22 @@ export default function ReadScreen() {
   }, [selectedSurah, isSurahRevisedGlobally, bulkMarkVersesRevised, unmarkVerseAsRevised, getSurahVerseRange]);
 
   const handleSurahPress = (surah: Surah) => {
-    setNavigationSource('surahList');
     setSelectedSurah(surah);
     setLastViewedSurahId(surah.id);
     loadInitialVerses(surah);
   };
 
-  const handleSelectJuz = async (juz: number, retryCount = 0) => {
-    setNavigationSource('juzList');
+  const handleSelectJuz = async (juz: number) => {
     setSelectedJuz(juz);
     setIsJuzLoading(true);
     setJuzLoadingError(null);
-    
     try {
-      console.log(`[read] Loading Juz ${juz} (attempt ${retryCount + 1}/3)...`);
       const versesData = await fetchVersesForJuz(juz);
-      
-      // Validate DB returned data
-      if (!versesData || versesData.length === 0) {
-        throw new Error(`No verses returned from database for Juz ${juz}`);
-      }
-      
-      console.log(`[read] Successfully loaded ${versesData.length} verses for Juz ${juz}`);
       setJuzVerses(versesData);
+    } catch (err) {
+      setJuzLoadingError(`Failed to load Juz ${juz}. Please try again.`);
+    } finally {
       setIsJuzLoading(false);
-      
-    } catch (err: any) {
-      console.error(`[read] Failed to load Juz ${juz}, attempt ${retryCount + 1}:`, err);
-      
-      // CRITICAL: Retry for ANY error on Android
-      if (retryCount < 2) {
-        console.log(`[read] Retrying Juz ${juz} load (attempt ${retryCount + 2}/3)...`);
-        // Exponential backoff: 600ms, 1200ms
-        const delay = 600 * (retryCount + 1);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        setIsJuzLoading(false);
-        return handleSelectJuz(juz, retryCount + 1);
-      }
-      
-      // All retries exhausted
-      setIsJuzLoading(false);
-      const errorMessage = `Failed to load Juz ${juz}. Please try again.`;
-      setJuzLoadingError(errorMessage);
-      
-      // Show critical error alert to user
-      Alert.alert(
-        '❌ Failed to Load Juz',
-        `Cannot load Juz ${juz} after 3 attempts.\n\nPlease try:\n1. Restart the app\n2. Check device storage\n3. Reinstall if problem persists\n\nError: ${err?.message || 'Unknown error'}`,
-        [
-          {
-            text: 'Try Again',
-            onPress: () => handleSelectJuz(juz, 0),
-          },
-          { text: 'Cancel', style: 'cancel' }
-        ]
-      );
     }
   };
 
@@ -710,9 +613,15 @@ export default function ReadScreen() {
     versesRef.current = verses;
   }, [verses]);
 
-  // REMOVED: Auto-open lastViewedSurahId on tab click
-  // This conflicted with direct Read tab navigation (should show Surah List)
-  // Continue Reading card already passes surahId as param, handled by line 690's useEffect
+  useEffect(() => {
+    if (lastViewedSurahId && !selectedSurah && !suppressNextAutoOpen.current) {
+      const surah = surahsData.find((s) => s.id === lastViewedSurahId);
+      if (surah) {
+        setSelectedSurah(surah);
+        loadInitialVerses(surah);
+      }
+    }
+  }, [lastViewedSurahId, selectedSurah, loadInitialVerses]);
 
   useEffect(() => {
     if (selectedSurah) {
@@ -735,25 +644,12 @@ export default function ReadScreen() {
     }
   }, [arabicFont, selectedSurah, translationLanguage, loadInitialVerses]);
 
-  // Navigation: Handle route params for surahId/verseId (e.g., from Mustahabbah or Continue Reading)
   useEffect(() => {
     const sid = paramSurahId ? Number(paramSurahId) : undefined;
     const vid = paramVerseId ? Number(paramVerseId) : undefined;
     if (sid && !Number.isNaN(sid)) {
       const surah = surahsData.find((s) => s.id === sid);
       if (surah && !suppressNextAutoOpen.current) {
-        console.log('[read] Processing navigation params for surah', sid, 'source:', paramSource);
-        
-        // Track where user came from for back button behavior
-        if (paramSource === 'mustahabbah') {
-          setNavigationSource('mustahabbah');
-        } else if (paramSource === 'stats') {
-          setNavigationSource('stats');
-        } else if (paramSource === 'continueReading' || !paramSource) {
-          // Continue Reading doesn't pass source, or no source = from home
-          setNavigationSource('continueReading');
-        }
-        
         setSelectedSurah(surah);
         setLastViewedSurahId(surah.id);
         if (vid && !Number.isNaN(vid)) {
@@ -762,9 +658,42 @@ export default function ReadScreen() {
         loadInitialVerses(surah);
       }
     }
-  }, [paramSurahId, paramVerseId, paramSource, setLastViewedSurahId, loadInitialVerses]);
+  }, [paramSurahId, paramVerseId, setLastViewedSurahId, loadInitialVerses]);
 
-  // Cleanup audio when surah changes
+  useFocusEffect(
+    useCallback(() => {
+      const sid = paramSurahId ? Number(paramSurahId) : undefined;
+      if (sid && !Number.isNaN(sid)) {
+        if ((!selectedSurah || selectedSurah.id !== sid) && !suppressNextAutoOpen.current) {
+          const surah = surahsData.find((s) => s.id === sid);
+          if (surah) {
+            setSelectedSurah(surah);
+            setLastViewedSurahId(surah.id);
+            loadInitialVerses(surah);
+          }
+        }
+      }
+      return () => {};
+    }, [paramSurahId, selectedSurah, loadInitialVerses, setLastViewedSurahId])
+  );
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sid = paramSurahId ? Number(paramSurahId) : undefined;
+    if (!sid || (selectedSurah && selectedSurah.id === sid)) return;
+    const timeout = setTimeout(() => {
+      if (!selectedSurah && !suppressNextAutoOpen.current) {
+        const surah = surahsData.find((s) => s.id === sid);
+        if (surah) {
+          setSelectedSurah(surah);
+          setLastViewedSurahId(surah.id);
+          loadInitialVerses(surah);
+        }
+      }
+    }, 180);
+    return () => clearTimeout(timeout);
+  }, [paramSurahId, selectedSurah, loadInitialVerses, setLastViewedSurahId]);
+
   useEffect(() => {
     if (!selectedSurah) return;
     (async () => {
@@ -775,63 +704,6 @@ export default function ReadScreen() {
       setIsSurahPaused(false);
     })();
   }, [selectedSurah?.id]);
-
-  // Pre-initialize database on component mount to avoid race conditions
-  useEffect(() => {
-    (async () => {
-      try {
-        console.log('[read] Pre-initializing database...');
-        const { getDatabase } = await import('@/services/juzDbService');
-        await getDatabase();
-        console.log('[read] Database pre-initialized successfully');
-      } catch (err) {
-        console.error('[read] Database pre-initialization failed:', err);
-      }
-    })();
-  }, []);
-
-  // Reset to Surah list whenever Recite tab gains focus (UNLESS direct navigation with params)
-  useFocusEffect(
-    React.useCallback(() => {
-      // CRITICAL: Check params FIRST to determine if this is direct navigation
-      const hasNavigationParams = paramSurahId && !suppressNextAutoOpen.current;
-      
-      console.log('[read] Tab gained focus - hasParams:', hasNavigationParams, 'params:', { paramSurahId, paramVerseId, paramSource }, 'current state:', { selectedSurah: selectedSurah?.id, selectedJuz, tab });
-      
-      // CRITICAL: Only reset if this is a TAB CLICK (no params), not direct navigation
-      if (!hasNavigationParams) {
-        console.log('[read] Tab click detected (no params) - resetting to Surah list');
-        
-        // Stop any playing audio
-        (async () => {
-          try {
-            await pauseSurahAudio();
-            await pauseAudio();
-          } catch (err) {
-            console.error('[read] Error stopping audio:', err);
-          }
-        })();
-        
-        // Reset all state to show Surah list
-        setSelectedSurah(null);
-        setSelectedJuz(null);
-        setVerses([]);
-        setJuzVerses([]);
-        setNavigationSource(null);
-        setTab('surah');
-        setIsPlayingAudio(false);
-        setIsPlayingSurah(false);
-        setIsSurahPaused(false);
-      } else {
-        console.log('[read] Direct navigation detected (has params) - preserving state');
-      }
-      
-      // Cleanup function
-      return () => {
-        console.log('[read] Tab lost focus');
-      };
-    }, [paramSurahId, paramVerseId, paramSource])
-  );
 
   useEffect(() => {
     logDatabaseTables();
@@ -845,27 +717,17 @@ export default function ReadScreen() {
       <Modal visible={goToModalVisible} transparent animationType="slide" onRequestClose={() => setGoToModalVisible(false)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
           <View style={{ width: '100%', maxWidth: 400, backgroundColor: '#222', borderRadius: 16, padding: 24, alignItems: 'center' }}>
-            <Text style={{ color: '#FFD700', fontSize: 20, fontWeight: '700', marginBottom: 8 }}>Go to Verse</Text>
-            {selectedJuz != null && (
-              <Text style={{ color: '#FFD700', fontSize: 13, marginBottom: 16, textAlign: 'center' }}>
-                Format: surah:verse (e.g., 2:255)
-              </Text>
-            )}
+            <Text style={{ color: '#FFD700', fontSize: 20, fontWeight: '700', marginBottom: 16 }}>Go to Verse</Text>
             <TextInput
-              style={{ width: '100%', color: '#fff', fontSize: 16, backgroundColor: '#333', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8, borderWidth: 1, borderColor: '#555' }}
-              placeholder={selectedJuz != null ? "e.g., 2:255" : "Enter verse number"}
+              style={{ width: '100%', color: '#fff', fontSize: 16, backgroundColor: '#333', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 16, borderWidth: 1, borderColor: '#555' }}
+              placeholder="Enter verse number"
               placeholderTextColor="#888"
               value={goToInput}
               onChangeText={setGoToInput}
-              keyboardType={selectedJuz != null ? "default" : "numeric"}
+              keyboardType="numeric"
               autoFocus
               editable={!goToSubmitting}
             />
-            {selectedJuz != null && (
-              <Text style={{ color: '#888', fontSize: 12, marginBottom: 8, textAlign: 'center' }}>
-                Enter surah number, then colon, then verse number
-              </Text>
-            )}
             {goToError && <Text style={{ color: '#ff5252', fontSize: 14, marginBottom: 8 }}>{goToError}</Text>}
             <View style={{ flexDirection: 'row', width: '100%', marginTop: 8 }}>
               <Pressable
@@ -878,130 +740,27 @@ export default function ReadScreen() {
               <Pressable
                 style={{ flex: 1, backgroundColor: '#FFD700', borderRadius: 8, alignItems: 'center', paddingVertical: 10, marginLeft: 4 }}
                 onPress={async () => {
-                  if (!selectedSurah && selectedJuz == null) return;
-                  
+                  if (!selectedSurah) return;
+                  const num = parseInt(goToInput, 10);
+                  if (isNaN(num) || num < 1 || num > selectedSurah.versesCount) {
+                    setGoToError('Invalid verse number');
+                    return;
+                  }
                   setGoToSubmitting(true);
                   setGoToError(null);
-                  
-                  let idx = -1;
-                  
-                  // SURAH MODE: Simple verse number
-                  if (selectedSurah) {
-                    const num = parseInt(goToInput, 10);
-                    
-                    if (isNaN(num) || num < 1 || num > selectedSurah.versesCount) {
-                      setGoToError(`Enter verse 1-${selectedSurah.versesCount}`);
-                      setGoToSubmitting(false);
-                      return;
+                  const idx = verses.findIndex((v) => v.verseNumber === num);
+                  if (idx !== -1) {
+                    try {
+                      flatListRef.current?.scrollToIndex({ index: idx, animated: true });
+                      setGoToModalVisible(false);
+                      setGoToInput('');
+                      setGoToError(null);
+                    } catch (e) {
+                      setGoToError('Scroll failed. Try again.');
                     }
-                    
-                    idx = verses.findIndex((v) => v.verseNumber === num);
-                    
-                    if (idx === -1) {
-                      setGoToError('Verse not found. Check the verse number.');
-                      setGoToSubmitting(false);
-                      return;
-                    }
-                  }
-                  
-                  // JUZ MODE: Requires surah:verse format (e.g., 2:255)
-                  else if (selectedJuz != null) {
-                    // Check for surah:verse format
-                    if (!goToInput.includes(':')) {
-                      setGoToError('Use format: surah:verse (e.g., 2:255)');
-                      setGoToSubmitting(false);
-                      return;
-                    }
-                    
-                    const parts = goToInput.split(':');
-                    if (parts.length !== 2) {
-                      setGoToError('Use format: surah:verse (e.g., 2:255)');
-                      setGoToSubmitting(false);
-                      return;
-                    }
-                    
-                    const surahNum = parseInt(parts[0].trim(), 10);
-                    const verseNum = parseInt(parts[1].trim(), 10);
-                    
-                    if (isNaN(surahNum) || isNaN(verseNum) || surahNum < 1 || surahNum > 114 || verseNum < 1) {
-                      setGoToError('Invalid surah or verse number');
-                      setGoToSubmitting(false);
-                      return;
-                    }
-                    
-                    console.log('[read] Go to verse in Juz mode:', { surahNum, verseNum, selectedJuz, juzVersesCount: juzVerses.length });
-                    
-                    // Debug: Log some sample verses from the juz
-                    console.log('[read] Sample juzVerses:', juzVerses.slice(0, 5).map(v => ({ 
-                      chapter_id: v.chapter_id, 
-                      verse_number: v.verse_number,
-                      verse_id: v.verse_id 
-                    })));
-                    
-                    // Check if we have verses from the requested surah
-                    const surahVerses = juzVerses.filter(v => v.chapter_id === surahNum);
-                    console.log('[read] Verses from surah', surahNum, 'in this juz:', surahVerses.length, 
-                      surahVerses.length > 0 ? `(range: ${Math.min(...surahVerses.map(v => v.verse_number))}-${Math.max(...surahVerses.map(v => v.verse_number))})` : '');
-                    
-                    // Find verse by BOTH chapter_id AND verse_number
-                    idx = juzVerses.findIndex((v) => v.chapter_id === surahNum && v.verse_number === verseNum);
-                    
-                    console.log('[read] Search result: idx =', idx, 'for', surahNum + ':' + verseNum);
-                    
-                    if (idx === -1) {
-                      // Check if the surah exists in this juz at all
-                      const surahExistsInJuz = juzVerses.some((v) => v.chapter_id === surahNum);
-                      if (!surahExistsInJuz) {
-                        console.log('[read] Surah not in juz - setting error');
-                        setGoToError(`Surah ${surahNum} not in Juz ${selectedJuz}`);
-                      } else {
-                        // Surah exists but verse doesn't
-                        const versesInSurah = juzVerses.filter((v) => v.chapter_id === surahNum);
-                        if (versesInSurah.length > 0) {
-                          const minVerse = Math.min(...versesInSurah.map(v => v.verse_number));
-                          const maxVerse = Math.max(...versesInSurah.map(v => v.verse_number));
-                          console.log('[read] Verse not in range - setting error. Range:', minVerse, '-', maxVerse);
-                          setGoToError(`Surah ${surahNum} in this Juz has verses ${minVerse}-${maxVerse}`);
-                        } else {
-                          console.log('[read] No verses found for surah - setting generic error');
-                          setGoToError(`Verse ${surahNum}:${verseNum} not found in Juz ${selectedJuz}`);
-                        }
-                      }
-                      setGoToSubmitting(false);
-                      return; // CRITICAL: Must return here to prevent scroll attempt
-                    }
-                  }
-                  
-                  console.log('[read] Found verse at index', idx, '- attempting scroll');
-                  
-                  // Scroll to verse (only if idx is valid)
-                  if (idx !== -1 && idx >= 0) {
-                    // Close modal first
-                    setGoToModalVisible(false);
-                    setGoToInput('');
-                    setGoToError(null);
-                    
-                    // Delay scroll to ensure FlatList has completed layout
-                    setTimeout(() => {
-                      try {
-                        console.log('[read] Executing scrollToIndex for index:', idx);
-                        flatListRef.current?.scrollToIndex({ 
-                          index: idx, 
-                          animated: true,
-                          viewPosition: 0.2 
-                        });
-                      } catch (e) {
-                        console.error('[read] Scroll failed:', e);
-                        // Fallback to scrollToOffset if scrollToIndex fails
-                        const offset = idx * (averageVerseHeight || 200);
-                        flatListRef.current?.scrollToOffset({ offset, animated: true });
-                      }
-                    }, 150);
                   } else {
-                    console.error('[read] Invalid index for scroll:', idx);
-                    setGoToError('Invalid verse index');
+                    setGoToError('Verse not loaded yet. Scroll to load more.');
                   }
-                  
                   setGoToSubmitting(false);
                 }}
                 disabled={goToSubmitting}
@@ -1021,15 +780,7 @@ export default function ReadScreen() {
           {selectedSurah ? (
             <View style={[styles.headerTitleContainer, { alignItems: 'center' }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
-                <AutoSizeText
-                  numberOfLines={1}
-                  mode={ResizeTextMode.min_font_size}
-                  fontSize={20}
-                  minFontSize={12}
-                  style={styles.headerTitle}
-                >
-                  {`${selectedSurah.id}. ${selectedSurah.englishName}`}
-                </AutoSizeText>
+                <Text style={styles.headerTitle}>{`${selectedSurah.id}. ${selectedSurah.englishName}`}</Text>
                 <TouchableOpacity
                   onPress={handleToggleSurahAudio}
                   style={{
@@ -1058,39 +809,10 @@ export default function ReadScreen() {
                 <Text style={{ color: '#ffffff', fontSize: 12 }}>
                   {selectedSurah.revelationType === 'Medinan' ? 'Madani' : 'Makki'}
                 </Text>
-                <AutoSizeText
-                  numberOfLines={1}
-                  mode={ResizeTextMode.min_font_size}
-                  fontSize={arabicTypography.fontSize}
-                  minFontSize={14}
-                  style={[styles.headerSubtitle, { fontFamily: arabicFontFamily, lineHeight: arabicTypography.lineHeight, textAlign: 'center', color: '#ffffff' }]}
-                >
+                <Text style={[styles.headerSubtitle, { fontFamily: arabicFontFamily, ...arabicTypography, textAlign: 'center', color: '#ffffff' }]}>
                   {selectedSurah.arabicName}
-                </AutoSizeText>
+                </Text>
                 <Text style={{ color: '#ffffff', fontSize: 12 }}>{selectedSurah.versesCount} verses</Text>
-              </View>
-            </View>
-          ) : selectedJuz != null ? (
-            <View style={[styles.headerTitleContainer, { alignItems: 'center' }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
-                <AutoSizeText
-                  numberOfLines={1}
-                  mode={ResizeTextMode.min_font_size}
-                  fontSize={20}
-                  minFontSize={12}
-                  style={styles.headerTitle}
-                >
-                  {`Juz ${selectedJuz}`}
-                </AutoSizeText>
-                <Pressable
-                  onPress={() => setGoToModalVisible(true)}
-                  style={{ marginLeft: 8, width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFD700', alignItems: 'center', justifyContent: 'center' }}
-                >
-                  <ArrowRight size={18} color="#000" />
-                </Pressable>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', paddingHorizontal: 8, marginTop: 6 }}>
-                <Text style={{ color: '#888888', fontSize: 12 }}>{juzVerses.length} verses</Text>
               </View>
             </View>
           ) : (
@@ -1116,17 +838,16 @@ export default function ReadScreen() {
         )}
       </View>
 
-      {!selectedSurah && selectedJuz == null && navigationSource !== 'mustahabbah' && navigationSource !== 'stats' && (
+      {!selectedSurah && (
         <View style={[styles.searchBarContainer, { flexDirection: 'row', alignItems: 'center', gap: 12 }]}>
           <View style={[styles.searchInputWrapper, { flex: 1 }]}>
             <Search size={20} color="#888888" />
             <TextInput
               style={[styles.searchInput, { color: '#ffffff' }]}
-              placeholder="Search"
+              placeholder="Search surahs..."
               placeholderTextColor="#888888"
               value={searchQuery}
               onChangeText={setSearchQuery}
-              editable={tab !== 'juz'}
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -1164,11 +885,6 @@ export default function ReadScreen() {
                 data={verses}
                 renderItem={renderVerseOptimized}
                 keyExtractor={(item) => item.id?.toString?.() ?? String(item.verseNumber ?? Math.random())}
-                getItemLayout={(data, index) => ({
-                  length: averageVerseHeight || 200,
-                  offset: (averageVerseHeight || 200) * index,
-                  index,
-                })}
                 initialNumToRender={15}
                 maxToRenderPerBatch={10}
                 windowSize={10}
@@ -1178,19 +894,9 @@ export default function ReadScreen() {
                 contentContainerStyle={styles.verseList}
                 scrollEventThrottle={16}
                 onScrollToIndexFailed={(info) => {
-                  console.log('[read] scrollToIndexFailed for Surah verses:', info);
                   const avg = info.averageItemLength || averageVerseHeight || 200;
                   const offset = Math.max(0, Math.round(info.index * avg));
                   flatListRef.current?.scrollToOffset({ offset, animated: true });
-                  
-                  // Retry scrollToIndex after FlatList settles
-                  setTimeout(() => {
-                    flatListRef.current?.scrollToIndex({
-                      index: info.index,
-                      animated: true,
-                      viewPosition: 0.2,
-                    });
-                  }, 100);
                 }}
               />
             )}
@@ -1211,7 +917,6 @@ export default function ReadScreen() {
               </View>
             ) : (
               <FlatList
-                ref={flatListRef}
                 data={juzVerses}
                 keyExtractor={(item: any, index) => `jz-${item.verse_id ?? index}-${index}`}
                 renderItem={({ item }) => (
@@ -1235,29 +940,9 @@ export default function ReadScreen() {
                   />
                 )}
                 contentContainerStyle={[styles.versesContent, { backgroundColor: '#1a1a1a' }]}
-                getItemLayout={(data, index) => ({
-                  length: averageVerseHeight || 200,
-                  offset: (averageVerseHeight || 200) * index,
-                  index,
-                })}
                 maxToRenderPerBatch={8}
                 windowSize={10}
                 initialNumToRender={8}
-                onScrollToIndexFailed={(info) => {
-                  console.log('[read] scrollToIndexFailed for Juz verses:', info);
-                  const avg = info.averageItemLength || averageVerseHeight || 200;
-                  const offset = Math.max(0, Math.round(info.index * avg));
-                  flatListRef.current?.scrollToOffset({ offset, animated: true });
-                  
-                  // Retry scrollToIndex after FlatList settles
-                  setTimeout(() => {
-                    flatListRef.current?.scrollToIndex({
-                      index: info.index,
-                      animated: true,
-                      viewPosition: 0.2,
-                    });
-                  }, 100);
-                }}
               />
             )}
           </View>
@@ -1320,9 +1005,9 @@ const styles = StyleSheet.create({
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40 },
   emptyText: { fontSize: 16, color: '#888888' },
   searchBarContainer: { padding: 16, paddingTop: 8, paddingBottom: 16, backgroundColor: '#1a1a1a' },
-  searchInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#333333', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 0, height: 36 },
+  searchInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#333333', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
   searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 16, paddingVertical: 0, color: '#ffffff' },
+  searchInput: { flex: 1, fontSize: 16, paddingVertical: 8, color: '#ffffff' },
   clearButton: { marginLeft: 8, padding: 2 },
   tabButton: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: '#333333' },
   tabText: { color: '#888888', fontWeight: '600' },

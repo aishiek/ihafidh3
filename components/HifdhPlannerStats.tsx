@@ -1,8 +1,8 @@
 import { surahsData } from '@/data/surahs';
 import { usePlannerStore } from '@/store/plannerStore';
 import { useProgressStore } from '@/store/progressStore';
-import React, { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { Animated, StyleSheet, Text } from 'react-native';
 
 function getGlobalStartIdForSurah(surahId: number): number {
   let total = 0; for (let i = 1; i < surahId; i++) { const s = surahsData.find(x => x.id === i); if (s) total += s.versesCount; }
@@ -18,12 +18,13 @@ function parseDMY(s: string): Date | null {
   return d.getFullYear() === yyyy && d.getMonth() === mm - 1 && d.getDate() === dd ? d : null;
 }
 
-export default function HifdhPlannerStats() {
+export default function HifdhPlannerStats({ monthDate }: { monthDate?: Date }) {
   const { plansByDate, mode: plannerMode, selectedSurahId, verseStatsByMonth } = usePlannerStore();
   const { memorizedVerses, revisedVerses } = useProgressStore();
+  const opacity = useRef(new Animated.Value(1)).current;
 
   const stats = useMemo(() => {
-    const now = new Date();
+    const now = monthDate ? new Date(monthDate.getFullYear(), monthDate.getMonth(), 1) : new Date();
     const month = now.getMonth();
     const year = now.getFullYear();
     const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
@@ -53,33 +54,52 @@ export default function HifdhPlannerStats() {
     let completedPlannedVerses = 0;
     allPlannedVerseIds.forEach((id) => { if (memorizedVerses.includes(id) || isRevised(id)) completedPlannedVerses++; });
 
+    let completedSurahs = 0;
     let inProgressSurahs = 0;
     plannedBySurah.forEach((ids, sid) => {
       if (plannerMode === 'surah' && selectedSurahId != null && sid !== selectedSurahId) return;
-      let done = 0; const total = ids.size; ids.forEach((id) => { if (memorizedVerses.includes(id) || isRevised(id)) done++; });
-      if (done > 0 && done < total) inProgressSurahs++;
+      let done = 0;
+      const total = ids.size;
+      ids.forEach((id) => { if (memorizedVerses.includes(id) || isRevised(id)) done++; });
+      if (done === total) {
+        completedSurahs++;
+      } else if (done > 0 && done < total) {
+        inProgressSurahs++;
+      }
     });
 
     const totalPlannedVerses = allPlannedVerseIds.size;
     const totalPlannedSurahs = plannerMode === 'surah' && selectedSurahId != null ? (plannedSurahIds.has(selectedSurahId) ? 1 : 0) : (plannedSurahIds.size || plannedBySurah.size);
     const percent = totalPlannedVerses > 0 ? Math.round((completedPlannedVerses / totalPlannedVerses) * 100) : 0;
 
-    return { monthName: now.toLocaleDateString(undefined, { month: 'long' }), totalPlannedVerses, completedPlannedVerses, inProgressSurahs, totalPlannedSurahs, percent };
-  }, [plansByDate, memorizedVerses, revisedVerses, plannerMode, selectedSurahId, verseStatsByMonth]);
+  return { monthName: now.toLocaleDateString(undefined, { month: 'long' }), totalPlannedVerses, completedPlannedVerses, completedSurahs, inProgressSurahs, totalPlannedSurahs, percent };
+  }, [plansByDate, memorizedVerses, revisedVerses, plannerMode, selectedSurahId, verseStatsByMonth, monthDate]);
 
-  // If in surah mode but no surah selected, show nothing small
-  if (plannerMode === 'surah' && (selectedSurahId == null)) {
-    return null;
-  }
+  // Always render stats — show overall month stats even if no surah is selected
+
+  // Fade-out then fade-in on month change for a smooth visual transition
+  useEffect(() => {
+    Animated.sequence([
+      Animated.timing(opacity, { toValue: 0, duration: 140, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: 220, useNativeDriver: true }),
+    ]).start();
+  }, [monthDate, opacity]);
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.line}>{stats.completedPlannedVerses} of {stats.totalPlannedVerses} verses completed</Text>
-      <View style={styles.row}>
-        <Text style={styles.small}>{stats.inProgressSurahs} surahs in progress</Text>
-        <Text style={styles.small}>{stats.totalPlannedSurahs} planned</Text>
-      </View>
-    </View>
+    <Animated.View style={[styles.container, { opacity }] }>
+      {stats.totalPlannedVerses === 0 ? (
+        <Text style={styles.line}>No plans this month</Text>
+      ) : (
+        <>
+          <Text style={styles.line}>{stats.completedPlannedVerses} of {stats.totalPlannedVerses} verses completed</Text>
+          <Animated.View style={styles.row}>
+            <Text style={styles.small}>
+              {`Surahs: ${stats.completedSurahs} completed, ${stats.inProgressSurahs} In Progress, ${stats.totalPlannedSurahs} Planned`}
+            </Text>
+          </Animated.View>
+        </>
+      )}
+    </Animated.View>
   );
 }
 

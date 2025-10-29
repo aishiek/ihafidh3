@@ -5,8 +5,9 @@ import { useProgressStore } from "@/store/progressStore";
 import { useSettingsStore } from '@/store/settingsStore';
 import { getAudioUrl, playAudio } from '@/utils/audioUtils';
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { ArrowRight } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 export default function SurahScreen() {
   const { id: surahId } = useLocalSearchParams<{ id: string }>();
@@ -38,6 +39,36 @@ export default function SurahScreen() {
   // Audio URL cache to avoid regenerating/checking availability repeatedly
   const audioUrlCacheRef = useRef<Record<string, string>>({});
   const { reciterIdentifier } = useSettingsStore();
+
+  // FlatList ref + jump-to-index support (preferred over measuring)
+  const flatListRef = useRef<any | null>(null);
+
+  // Estimated item height. If your VerseItem has variable height, consider
+  // making this dynamic by measuring a sample or using averaged heights.
+  const ESTIMATED_ITEM_HEIGHT = 140;
+  const getItemLayout = (_data: any, index: number) => ({ length: ESTIMATED_ITEM_HEIGHT, offset: ESTIMATED_ITEM_HEIGHT * index, index });
+
+  const handleScrollToIndexFailed = (info: { index: number; highestMeasuredFrameIndex: number; averageItemLength: number }) => {
+    const offset = info.averageItemLength * info.index;
+    flatListRef.current?.scrollToOffset({ offset, animated: true });
+  };
+
+  const jumpToVerse = (verseNumber: number) => {
+    const verseIndex = verses.findIndex(v => (v.verseNumber ?? v.number) === verseNumber);
+    if (verseIndex >= 0) {
+      try {
+        flatListRef.current?.scrollToIndex({ index: verseIndex, animated: true, viewPosition: 0 });
+        return true;
+      } catch (err) {
+        console.warn('[SurahScreen] scrollToIndex failed, will fallback to offset:', err);
+        const approxOffset = ESTIMATED_ITEM_HEIGHT * verseIndex;
+        flatListRef.current?.scrollToOffset({ offset: approxOffset, animated: true });
+        return false;
+      }
+    }
+    console.warn('[SurahScreen] jumpToVerse: verse not found in current data', verseNumber);
+    return false;
+  };
 
   const handlePlayAudio = useCallback(async (surahNum: number, verseNum: number, _globalId?: number, repeats?: number, isInfinite?: boolean) => {
     try {
@@ -133,6 +164,102 @@ export default function SurahScreen() {
   const handlePlaySurah = () => {
     console.log("▶️ Playing surah...");
     // integrate your audioUtils play logic here
+  };
+
+  // Go-to-verse modal state
+  const [showGoModal, setShowGoModal] = useState(false);
+  const [goInput, setGoInput] = useState('');
+  const [goInputError, setGoInputError] = useState<string | null>(null);
+  const [goSubmitting, setGoSubmitting] = useState(false);
+
+  // Ensure surah window (a batch centered around target) is loaded and then jump
+  const ensureSurahWindowAndJump = async (verseNumber: number) => {
+    if (!fullSurahRef.current) {
+      // try to reload surah data
+      try {
+        const surahNum = parseInt(surahId, 10);
+        const fresh = await getSurahById(surahNum);
+        fullSurahRef.current = fresh;
+        if (fresh) setTotalVerses(fresh.versesCount || (fresh.verses || []).length || 0);
+      } catch (err) {
+        console.warn('[SurahScreen] Failed to reload surah while attempting Go-to-verse', err);
+      }
+    }
+
+    const surahData = fullSurahRef.current;
+    if (!surahData || !(surahData.verses || []).length) {
+      Alert.alert('Not available', 'Unable to locate the requested Surah data.');
+      return false;
+    }
+
+    const targetIdx = (surahData.verses || []).findIndex((v: any) => (v.verseNumber ?? v.number) === verseNumber);
+    if (targetIdx < 0) {
+      Alert.alert('Invalid verse', `Verse ${verseNumber} not found in this Surah.`);
+      return false;
+    }
+
+    // If current loaded batches already include the verse, just jump
+    const localIdx = verses.findIndex(v => (v.verseNumber ?? v.number) === verseNumber);
+    if (localIdx >= 0) {
+      try {
+        flatListRef.current?.scrollToIndex({ index: localIdx, animated: true, viewPosition: 0 });
+      } catch (err) {
+        const approxOffset = ESTIMATED_ITEM_HEIGHT * localIdx;
+        flatListRef.current?.scrollToOffset({ offset: approxOffset, animated: true });
+      }
+      return true;
+    }
+
+    // Otherwise, construct a centered window around the target so user can scroll forward/back
+    const half = Math.floor(BATCH_SIZE / 2);
+    const start = Math.max(0, targetIdx - half);
+    const end = Math.min((surahData.verses || []).length, start + BATCH_SIZE);
+    const window = (surahData.verses || []).slice(start, end);
+
+    // Replace currently loaded verses with the focused window and then scroll to the item
+    setVerses(window);
+    setAllVersesLoaded(end >= (surahData.versesCount || surahData.vers.length));
+
+    // wait a tick for FlatList to render the new window then scroll
+    await new Promise(resolve => setTimeout(resolve, 60));
+    const idxInWindow = targetIdx - start;
+    try {
+      flatListRef.current?.scrollToIndex({ index: idxInWindow, animated: true, viewPosition: 0 });
+    } catch (err) {
+      const approxOffset = ESTIMATED_ITEM_HEIGHT * idxInWindow;
+      flatListRef.current?.scrollToOffset({ offset: approxOffset, animated: true });
+    }
+
+    return true;
+  };
+
+  const handleGoConfirm = async () => {
+    setGoInputError(null);
+    const n = parseInt(goInput.trim(), 10);
+    if (!n || n < 1 || n > (totalVerses || 0)) {
+      setGoInputError(`Enter a number between 1 and ${totalVerses || 0}`);
+      return;
+    }
+
+    setGoSubmitting(true);
+    try {
+      // If surah is cached locally fully we can directly jump; otherwise ensure window
+      if (isCached) {
+        const ok = jumpToVerse(n);
+        if (!ok) {
+          // fallback to windowed approach
+          await ensureSurahWindowAndJump(n);
+        }
+      } else {
+        await ensureSurahWindowAndJump(n);
+      }
+      setShowGoModal(false);
+    } catch (err) {
+      console.warn('[SurahScreen] Go-to-verse failed:', err);
+      Alert.alert('Error', 'Failed to jump to verse. Please try again.');
+    } finally {
+      setGoSubmitting(false);
+    }
   };
 
   const handleMarkMemorized = useCallback(async () => {
@@ -239,24 +366,42 @@ export default function SurahScreen() {
 
       {/* 🔹 Actions (Unified Buttons) */}
       <View style={styles.actions}>
-        <Pressable
-          style={{
-            flex: 1,
-            marginHorizontal: 4,
-            paddingVertical: 9,
-            borderRadius: 8,
-            alignItems: 'center',
-            backgroundColor: '#1976D2',
-            borderColor: '#1976D2',
-            borderWidth: 1,
-          }}
-          android_ripple={{ color: 'transparent' }}
-          onPress={handlePlaySurah}
-        >
-          <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff' }}>
-            ▶️ Play Surah
-          </Text>
-        </Pressable>
+        <View style={{ flex: 1, marginHorizontal: 4, flexDirection: 'row', alignItems: 'center' }}>
+          <Pressable
+            style={{
+              flex: 1,
+              paddingVertical: 9,
+              borderRadius: 8,
+              alignItems: 'center',
+              backgroundColor: '#1976D2',
+              borderColor: '#1976D2',
+              borderWidth: 1,
+            }}
+            android_ripple={{ color: 'transparent' }}
+            onPress={handlePlaySurah}
+          >
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff' }}>
+              ▶️ Play Surah
+            </Text>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Go to verse"
+            onPress={() => setShowGoModal(true)}
+            style={{
+              width: 44,
+              height: 44,
+              marginLeft: 8,
+              borderRadius: 10,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: '#FFD700',
+            }}
+          >
+            <ArrowRight size={18} color="#000000" />
+          </Pressable>
+        </View>
         <Pressable
           style={{
             flex: 1,
@@ -299,25 +444,61 @@ export default function SurahScreen() {
       <FlatList
         data={verses}
         keyExtractor={(item) => item.id?.toString?.() ?? String(item.verseNumber ?? Math.random())}
-        renderItem={({ item }) => (
-          <VerseItem
-            verse={item}
-            onPlayAudio={(surahNum, verseNum, globalId, repeats, isInfinite) => handlePlayAudio(surahNum, verseNum, globalId, repeats, isInfinite)}
-            surahMemorizedGlobally={isSurahMemorizedGlobally}
-            surahRevisedGlobally={isSurahRevisedGlobally}
-            onSurahMemorizeToggle={handleMarkMemorized}
-            onSurahRevisionToggle={handleMarkRevised}
-          />
-        )}
+            renderItem={({ item }) => (
+              <VerseItem
+                verse={item}
+                onPlayAudio={(surahNum, verseNum, globalId, repeats, isInfinite) => handlePlayAudio(surahNum, verseNum, globalId, repeats, isInfinite)}
+                surahMemorizedGlobally={isSurahMemorizedGlobally}
+                surahRevisedGlobally={isSurahRevisedGlobally}
+                onSurahMemorizeToggle={handleMarkMemorized}
+                onSurahRevisionToggle={handleMarkRevised}
+                moveToVerse={(v: number) => jumpToVerse(v)}
+              />
+            )}
         contentContainerStyle={styles.verseList}
-        onEndReached={loadNextBatch}
+            onEndReached={loadNextBatch}
         onEndReachedThreshold={0.5}
-        ListFooterComponent={isLoadingMore ? <ActivityIndicator style={{ margin: 12 }} /> : null}
+            ListFooterComponent={isLoadingMore ? <ActivityIndicator style={{ margin: 12 }} /> : null}
         removeClippedSubviews={true}
         maxToRenderPerBatch={5}
         updateCellsBatchingPeriod={50}
         windowSize={5}
+        ref={flatListRef as any}
+        getItemLayout={getItemLayout}
+        onScrollToIndexFailed={handleScrollToIndexFailed}
       />
+
+      <Modal
+        visible={showGoModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowGoModal(false)}
+      >
+        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }} onPress={() => setShowGoModal(false)}>
+          <View style={{ width: '90%', maxWidth: 360, backgroundColor: '#2a2a2a', borderRadius: 12, padding: 18 }} onStartShouldSetResponder={() => true}>
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 12, textAlign: 'center' }}>Go to verse</Text>
+            <Text style={{ color: '#ccc', fontSize: 13, marginBottom: 8, textAlign: 'center' }}>Enter verse number (1 - {totalVerses || 0})</Text>
+            <TextInput
+              value={goInput}
+              onChangeText={setGoInput}
+              keyboardType="number-pad"
+              placeholder="Verse number"
+              placeholderTextColor="#666"
+              style={{ backgroundColor: '#151515', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: '#fff', fontSize: 16, borderWidth: 1, borderColor: goInputError ? '#ff6b6b' : '#374151', textAlign: 'center', marginBottom: 8 }}
+            />
+            {goInputError ? <Text style={{ color: '#ff6b6b', marginBottom: 8, textAlign: 'center' }}>{goInputError}</Text> : null}
+
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 }}>
+              <TouchableOpacity onPress={() => { setShowGoModal(false); setGoInput(''); setGoInputError(null); }} style={{ paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, backgroundColor: '#374151', marginRight: 8 }}>
+                <Text style={{ color: '#fff', fontWeight: '600' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleGoConfirm} disabled={goSubmitting} style={{ paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, backgroundColor: '#4a90e2' }}>
+                <Text style={{ color: '#fff', fontWeight: '700' }}>{goSubmitting ? 'Going...' : 'Go'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Pressable>
+      </Modal>
 
       {/* 🔹 Continue Reading Example */}
       {/* Footer/tab bar handled by global layout, remove ThemedButton */}

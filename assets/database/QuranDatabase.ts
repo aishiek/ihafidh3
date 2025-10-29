@@ -781,6 +781,11 @@ export const logVerseRevision = async (verseId: number, date?: string): Promise<
   await logVerseActivity(verseId, 'revised', date);
 };
 
+// Helper function for logging individual verse memorization
+export const logVerseMemorization = async (verseId: number, date?: string): Promise<void> => {
+  await logVerseActivity(verseId, 'memorized', date);
+};
+
 // Optimized bulk revision logging for multiple verses
 export const bulkLogRevisions = async (verseIds: number[], date?: string): Promise<void> => {
   if (!db || Platform.OS === 'web' || verseIds.length === 0) return;

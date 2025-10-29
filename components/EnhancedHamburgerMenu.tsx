@@ -26,6 +26,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import { useMushafBookmarks } from '../app/mushaf/hooks/useMushafBookmarks';
 
 interface MenuItem {
   id: string;
@@ -49,7 +50,11 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [selectedFeature, setSelectedFeature] = useState<'fasting' | 'quran' | 'general'>('general');
   // Use a stable selector to avoid re-renders from new array instances
-  const bookmarksCount = useBookmarkStore(state => state.bookmarks.length);
+  const appBookmarksCount = useBookmarkStore(state => state.bookmarks.length);
+  // Mushaf bookmarks (stored separately in AsyncStorage)
+  const { bookmarks: mushafBookmarks } = useMushafBookmarks();
+  const mushafBookmarksCount = mushafBookmarks ? (mushafBookmarks.size || 0) : 0;
+  const bookmarksCount = appBookmarksCount + mushafBookmarksCount;
 
   // Use unified theme with automatic detection
   const { theme, isDark, setTheme, setColorScheme, raw } = useUnifiedTheme('auto', fastingContext);
@@ -372,10 +377,12 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
                       <Text style={styles.menuItemTitle}>{item.title}</Text>
                       <Text style={styles.menuItemSubtitle}>{item.subtitle}</Text>
                     </View>
-                    {item.id === 'bookmarks' && bookmarksCount > 0 && (
+                    {item.id === 'bookmarks' && (appBookmarksCount > 0 || mushafBookmarksCount > 0) && (
                       <View style={styles.badge}>
                         <Text style={styles.badgeText}>
-                          {bookmarksCount > 99 ? '99+' : String(bookmarksCount)}
+                          {appBookmarksCount > 0 && (appBookmarksCount > 99 ? '99+' : String(appBookmarksCount))}
+                          {appBookmarksCount > 0 && mushafBookmarksCount > 0 && ' + '}
+                          {mushafBookmarksCount > 0 && (mushafBookmarksCount > 99 ? '99+' : String(mushafBookmarksCount))}
                         </Text>
                       </View>
                     )}

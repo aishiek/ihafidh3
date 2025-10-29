@@ -1,3 +1,8 @@
+export function isMalayLanguage(lang: string | undefined | null) {
+  if (!lang) return false;
+  const base = lang.split('.')[0].toLowerCase();
+  return base === 'ms' || base === 'malay' || base.startsWith('ms');
+}
 export function isArabicLanguage(lang: string | undefined | null) {
   if (!lang) return false;
   const base = lang.split('.')[0].toLowerCase();

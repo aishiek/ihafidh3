@@ -20,9 +20,36 @@ function log(tag: string, ...args: any[]) {
  * pattern used in Juz-mode. Returns null if DB not available or verse not found.
  */
 export async function getVerseFromLocalDB(surahNumber: number, verseNumber: number): Promise<LocalVerseRow | null> {
-  try {
-    const db = await getDatabase();
-    const sql = `
+  // Retry wrapper to make local DB access more resilient to transient
+  // failures (for example: stale native handles after an app update).
+  async function withRetry<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 500
+  ): Promise<T> {
+    let lastError: any = null;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        log(`Attempt ${attempt + 1}/${maxRetries}`);
+        return await operation();
+      } catch (err) {
+        lastError = err;
+        log(`Attempt ${attempt + 1} failed:`, err instanceof Error ? err.message : err);
+        if (attempt < maxRetries - 1) {
+          const delay = baseDelay * Math.pow(2, attempt); // exponential backoff
+          log(`Retrying in ${delay}ms...`);
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((res) => setTimeout(res, delay));
+        }
+      }
+    }
+    throw new Error(`Operation failed after ${maxRetries} attempts: ${lastError?.message ?? lastError}`);
+  }
+
+  return withRetry<LocalVerseRow | null>(async () => {
+    try {
+      const db = await getDatabase();
+      const sql = `
       SELECT
         v.id as verse_id,
         v.chapter_id,
@@ -38,12 +65,13 @@ export async function getVerseFromLocalDB(surahNumber: number, verseNumber: numb
       GROUP BY v.id
       LIMIT 1
     `;
-    log('Querying local DB for', surahNumber, verseNumber);
+    // Removed repetitive log - only log on errors
     const row = await db.getFirstAsync<LocalVerseRow>(sql, [surahNumber, verseNumber]);
-    if (!row) return null;
-    return row;
-  } catch (err) {
-    log('Local DB fetch failed', err instanceof Error ? err.message : err);
-    return null;
-  }
+    return row || null;
+    } catch (err) {
+      log('Local DB fetch failed inside withRetry', err instanceof Error ? err.message : err);
+      // Re-throw to allow withRetry to handle retries
+      throw err;
+    }
+  }, 3, 500);
 }

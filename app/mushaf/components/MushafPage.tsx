@@ -2,10 +2,7 @@ import { useRoute } from '@react-navigation/native';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import RNFS from 'react-native-fs';
-import Svg, { Rect, Image as SvgImage, Text as SvgText } from 'react-native-svg';
-import { TAJWEED_COLORS, TajweedRule } from '../../../types/tajweed';
-import { useTajweed } from '../../hooks/useTajweed';
-import { TajweedService } from '../services/tajweedService';
+import Svg, { Rect } from 'react-native-svg';
 import { ensureFileUri } from '../utils/fileUtils';
 import { MUSHAF_CACHE_DIR } from '../utils/mushafConstants';
 
@@ -50,7 +47,6 @@ export function MushafPage(props: MushafPageProps) {
   };
 
   const [pageNumber, setPageNumber] = useState(getPageNumber());
-  const { config: tajweedConfig, initialized: tajweedInitialized } = useTajweed();
   const [state, setState] = useState<{
     imageUri: string | null;
     wordBoxes: WordBox[];
@@ -86,38 +82,15 @@ export function MushafPage(props: MushafPageProps) {
 
       // Load word coordinates
       const wordBoxes = await loadWordCoordinates(pageNum);
-      // Try to augment with tajweed info (grouped by surah:ayah)
-      const tajweedMap = new Map<string, any>();
-      try {
-        await TajweedService.initialize();
-        // collect unique surah:ayah pairs
-        const ayahKeys = Array.from(new Set(wordBoxes.map(w => {
-          const parts = w.verseKey.split(':');
-          return `${parts[0]}:${parts[1]}`;
-        })));
-
-        for (const key of ayahKeys) {
-          const [sStr, aStr] = key.split(':');
-          const s = Number(sStr);
-          const a = Number(aStr);
-          if (Number.isFinite(s) && Number.isFinite(a)) {
-            const words = await TajweedService.getWordsForAyah(s, a);
-            // map position_in_ayah -> WordWithTajweed
-            const posMap = new Map<number, any>();
-            for (const w of words) posMap.set(w.position_in_ayah, w);
-            tajweedMap.set(key, posMap);
-          }
-        }
-      } catch (e) {
-        console.warn('[MushafPage] Tajweed initialization failed or no tajweed DB available', e);
-      }
+      // Tajweed features disabled for this release
+      // const tajweedMap = new Map<string, any>();
       console.log(`[MushafPage] Loaded ${wordBoxes.length} word boxes`);
 
       setState({
-        imageUri,
-        wordBoxes: wordBoxes.map((wb) => ({ ...wb, _tajweedKeyMap: tajweedMap })),
-        loading: false,
-        error: null,
+  imageUri,
+  wordBoxes: wordBoxes,
+  loading: false,
+  error: null,
       });
 
       console.log(
@@ -173,7 +146,7 @@ export function MushafPage(props: MushafPageProps) {
 
   return (
     <ScrollView 
-      style={styles.container}
+      style={[styles.container, { alignItems: undefined, justifyContent: undefined }]}
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
       contentInsetAdjustmentBehavior="automatic"
@@ -210,6 +183,11 @@ export function MushafPage(props: MushafPageProps) {
           }}
         />
 
+        {/* Page number badge (overlay) */}
+        <View style={[styles.pageNumberBadge, { right: 8, bottom: 8 }]}> 
+          <Text style={[styles.pageNumberText, { fontSize: Math.max(12 * scale, 10) }]}>{pageNumber}</Text>
+        </View>
+
         {/* Word Overlay - SVG with text strokes for visibility */}
         {state.wordBoxes.length > 0 && (
           <Svg
@@ -227,83 +205,10 @@ export function MushafPage(props: MushafPageProps) {
               fill="rgba(255, 255, 255, 0.02)"
             />
 
-            {/* Render tajweed overlays for words when available */}
+            {/* Render word overlays for words (no tajweed) */}
             {state.wordBoxes.map((box, i) => {
               try {
-                const parts = box.verseKey.split(':');
-                const s = Number(parts[0]);
-                const a = Number(parts[1]);
-                const p = Number(parts[2]);
-                const key = `${s}:${a}`;
-                // tajweedMap passed inside each box as _tajweedKeyMap (Map of key->Map)
-                const outer = (box as any)._tajweedKeyMap as Map<string, Map<number, any>> | undefined;
-                const posMap = outer?.get(key);
-                const wordInfo = posMap ? posMap.get(p) : null;
-                if (wordInfo && wordInfo.tajweed_codes && tajweedConfig.enabled) {
-                  // pick first rule from bitmap that is in default priority order
-                  const ruleOrder: TajweedRule[] = [
-                    TajweedRule.IKHFA,
-                    TajweedRule.GHUNNA,
-                    TajweedRule.IDHAR,
-                    TajweedRule.IQLAB,
-                    TajweedRule.IDGHAAM,
-                    TajweedRule.QALQALA,
-                    TajweedRule.SUKUN,
-                  ];
-                  let chosenRule: TajweedRule | null = null;
-                  for (let idx = 0; idx < ruleOrder.length; idx++) {
-                    const r = ruleOrder[idx];
-                    if ((wordInfo.tajweed_codes & (1 << idx)) !== 0 && tajweedConfig.highlightedRules.includes(r)) {
-                      chosenRule = r;
-                      break;
-                    }
-                  }
-                  if (chosenRule) {
-                    const color = TAJWEED_COLORS[chosenRule].hexColor || '#ff0';
-                      // If the user selected the 'rq-color' style (or the CDN style is available),
-                      // prefer rendering the remote tajweed overlay image provided by tarteel's CDN.
-                      if (tajweedConfig.style === 'rq-color') {
-                        const surah = s;
-                        const ayah = a;
-                        const pos = p;
-                        // Build URL: e.g. https://static-cdn.tarteel.ai/qul/images/w/rq-color/4/1/16.png
-                        const imgUrl = `https://static-cdn.tarteel.ai/qul/images/w/rq-color/${surah}/${ayah}/${pos}.png`;
-                        return (
-                          <React.Fragment key={`tajweed-img-${i}`}>
-                            <SvgImage
-                              x={box.x}
-                              y={box.y}
-                              width={box.width}
-                              height={box.height}
-                              preserveAspectRatio="none"
-                              // @ts-ignore - react-native-svg typings sometimes expect href as any
-                              href={{ uri: imgUrl }}
-                            />
-                            {tajweedConfig.showLabels && (
-                              <SvgText x={box.x + 2} y={box.y + 12} fontSize={10} fill="#fff">{TAJWEED_COLORS[chosenRule].color}</SvgText>
-                            )}
-                          </React.Fragment>
-                        );
-                      }
-
-                      // Fallback: simple colored rectangle
-                      return (
-                        <React.Fragment key={`tajweed-${i}`}>
-                          <Rect
-                            x={box.x}
-                            y={box.y}
-                            width={box.width}
-                            height={box.height}
-                            fill={color}
-                            opacity={Math.max(0.1, Math.min(0.9, tajweedConfig.opacity))}
-                          />
-                          {tajweedConfig.showLabels && (
-                            <SvgText x={box.x + 2} y={box.y + 12} fontSize={10} fill="#fff">{TAJWEED_COLORS[chosenRule].color}</SvgText>
-                          )}
-                        </React.Fragment>
-                      );
-                  }
-                }
+                // ...existing code for rendering word boxes...
                 return null;
               } catch (e) {
                 return null;
@@ -387,19 +292,20 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+    paddingVertical: 0,
   },
   scrollContent: {
     flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
+    paddingVertical: 0,
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#f5f5f5',
-    paddingHorizontal: 20,
+    paddingHorizontal: 0,
   },
   pageContainer: {
     backgroundColor: '#ffffff',
@@ -410,8 +316,27 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-    // Ensure the container is sized to fit the content
     alignSelf: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 0,
+    height: '100%',
+    maxHeight: '100%',
+  },
+  pageNumberBadge: {
+    position: 'absolute',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pageNumberText: {
+    color: '#fff',
+    fontWeight: '700',
+    includeFontPadding: false,
   },
   baseImage: {
     position: 'absolute',

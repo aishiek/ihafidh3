@@ -424,7 +424,7 @@ export default function LifetimeProgressCard(){
                       stroke={colors.border}
                       strokeWidth={isZero || isMax ? 2 : 1}
                       opacity={isZero || isMax ? 0.6 : 0.25}
-                      strokeDasharray={isZero || isMax ? '0' : '4 4'}
+                      strokeDasharray={isZero || isMax ? undefined : '4 4'}
                     />
                     <SvgText
                       x={pad.left - 8}

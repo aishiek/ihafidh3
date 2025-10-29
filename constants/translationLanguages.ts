@@ -16,12 +16,22 @@ export const TRANSLATION_LANGUAGES: TranslationLanguage[] = [
     direction: 'ltr'
   },
 
+
   // Tamil
   {
     identifier: 'ta.tamil',
     name: 'தமிழ்',
     englishName: 'Jan Turst Foundation',
     language: 'ta',
+    direction: 'ltr'
+  },
+
+  // Malay
+  {
+    identifier: 'ms.basmeih',
+    name: 'Melayu',
+    englishName: 'Abdullah Muhammad Basmeih',
+    language: 'ms',
     direction: 'ltr'
   },
 

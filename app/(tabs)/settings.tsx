@@ -6,7 +6,9 @@ import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useThemeStore } from '@/store/themeStore';
 import { FastingLocation } from '@/types/fasting';
-import { useThemeColor } from '@/utils/useThemeColor';
+// import { useThemeColor } from '@/utils/useThemeColor';
+import { Slider } from '@/components/ui/Slider';
+import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, Stack } from 'expo-router';
 import { Bell, Calendar, Globe, MessageSquare, Music, User } from 'lucide-react-native';
@@ -17,7 +19,6 @@ const USER_NAME_KEY = 'user_name';
 
 export default function SettingsScreen() {
   const { theme, colorScheme, setColorScheme } = useThemeStore();
-  const { primary } = useThemeColor();
   const { userName, translationLanguage, reciterIdentifier, showTranslation, showTransliteration, fontSizeArabic, fontSizeTransliteration, fontSizeTranslation, arabicFont, setUserName, setTranslationLanguage, setReciterIdentifier, setShowTranslation, setShowTransliteration, setFontSizeArabic, setFontSizeTransliteration, setFontSizeTranslation, setArabicFont } = useSettingsStore();
   
   // Mixed state management integration
@@ -30,6 +31,24 @@ export default function SettingsScreen() {
   const [localShowTransliteration, setLocalShowTransliteration] = useState(showTransliteration ?? false);
   const [localArabicFont, setLocalArabicFont] = useState(arabicFont || 'default');
   const [showLocationSelector, setShowLocationSelector] = useState(false);
+  // Live preview font sizes with commit-on-release
+  const [arabicSizePreview, setArabicSizePreview] = useState<number>(fontSizeArabic ?? 24);
+  const [translationSizePreview, setTranslationSizePreview] = useState<number>(fontSizeTranslation ?? 16);
+  const [translitSizePreview, setTranslitSizePreview] = useState<number>(fontSizeTransliteration ?? 14);
+
+  // Sync previews with store if changed elsewhere
+  React.useEffect(() => {
+    if (arabicSizePreview !== (fontSizeArabic ?? 24)) setArabicSizePreview(fontSizeArabic ?? 24);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontSizeArabic]);
+  React.useEffect(() => {
+    if (translationSizePreview !== (fontSizeTranslation ?? 16)) setTranslationSizePreview(fontSizeTranslation ?? 16);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontSizeTranslation]);
+  React.useEffect(() => {
+    if (translitSizePreview !== (fontSizeTransliteration ?? 14)) setTranslitSizePreview(fontSizeTransliteration ?? 14);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontSizeTransliteration]);
 
   // Track if any changes have been made
   const hasChanges = useMemo(() => {
@@ -677,51 +696,114 @@ export default function SettingsScreen() {
           <View style={{ height: 72 }} />
         )}
 
-        {/* Font Size Sliders - independent, immediate apply */}
+        {/* Reading Font Sizes - free-flow slider with live preview */}
         <View style={styles.section}>
           <View style={styles.sectionTitle}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Font Sizes</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Reading Font Sizes</Text>
           </View>
 
-          {/* Arabic Text Slider (20,24,28,30) */}
-          <View style={{ marginBottom: 12 }}>
-            <Text style={{ color: theme.text, marginBottom: 6 }}>Arabic Text</Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              {[20, 24, 28, 30].map((size) => (
-                <Pressable key={size} onPress={() => setFontSizeArabic(size)} style={{ alignItems: 'center', flex: 1 }}>
-                  <View style={{ height: 2, backgroundColor: theme.inactive, width: '100%' }} />
-                  <View style={{ width: 10, height: 10, borderRadius: 5, marginTop: 6, backgroundColor: fontSizeArabic === size ? theme.primary : theme.inactive, alignSelf: 'center' }} />
-                  <Text style={{ color: '#FFFFFF', fontSize: 10, marginTop: 2 }}>{size}</Text>
-                </Pressable>
-              ))}
+          {/* Arabic text slider + preview */}
+          <View style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <Text style={{ color: theme.text }}>Arabic</Text>
+              <Text style={{ color: theme.inactive, fontSize: 12 }}>{Math.round(arabicSizePreview)}</Text>
+            </View>
+            <Slider
+              value={arabicSizePreview}
+              min={16}
+              max={54}
+              step={1}
+              trackColor={theme.inactive}
+              filledColor={theme.primary}
+              thumbColor={theme.primary}
+              onChange={(v) => setArabicSizePreview(v)}
+              onChangeEnd={(v) => {
+                const rounded = Math.round(v);
+                // Only update store, preview is already set by onChange
+                setFontSizeArabic(rounded);
+              }}
+            />
+            {/* Live preview */}
+            <View style={{ marginTop: 8, padding: 12, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
+              <Text
+                style={{
+                  color: theme.text,
+                  fontFamily: getArabicFontFamily(localArabicFont) || undefined,
+                  ...getArabicTypographySizing(arabicSizePreview, localArabicFont as any),
+                }}
+              >
+                بِسْمِ اللّٰهِ الرَّحْمٰنِ الرَّحِيمِ
+              </Text>
             </View>
           </View>
 
-          {/* Transliteration Text Slider (12,14,16,18) */}
-          <View style={{ marginBottom: 12 }}>
-            <Text style={{ color: theme.text, marginBottom: 6 }}>Transliteration Text</Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              {[12, 14, 16, 18].map((size) => (
-                <Pressable key={size} onPress={() => setFontSizeTransliteration(size)} style={{ alignItems: 'center', flex: 1 }}>
-                  <View style={{ height: 2, backgroundColor: theme.inactive, width: '100%' }} />
-                  <View style={{ width: 10, height: 10, borderRadius: 5, marginTop: 6, backgroundColor: fontSizeTransliteration === size ? theme.primary : theme.inactive, alignSelf: 'center' }} />
-                  <Text style={{ color: '#FFFFFF', fontSize: 10, marginTop: 2 }}>{size}</Text>
-                </Pressable>
-              ))}
+          {/* Translation text slider + preview */}
+          <View style={{ marginBottom: 4 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <Text style={{ color: theme.text }}>Translation</Text>
+              <Text style={{ color: theme.inactive, fontSize: 12 }}>{Math.round(translationSizePreview)}</Text>
+            </View>
+            <Slider
+              value={translationSizePreview}
+              min={12}
+              max={28}
+              step={1}
+              trackColor={theme.inactive}
+              filledColor={theme.primary}
+              thumbColor={theme.primary}
+              onChange={(v) => setTranslationSizePreview(v)}
+              onChangeEnd={(v) => {
+                const rounded = Math.round(v);
+                // Only update store, preview is already set by onChange
+                setFontSizeTranslation(rounded);
+              }}
+            />
+            {/* Live preview */}
+            <View style={{ marginTop: 8, padding: 12, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
+              <Text
+                style={{
+                  color: theme.text,
+                  fontSize: translationSizePreview,
+                  lineHeight: Math.round(translationSizePreview * 1.5),
+                }}
+              >
+                In the name of Allah, the Most Gracious, the Most Merciful.
+              </Text>
             </View>
           </View>
 
-          {/* Translation Text Slider (14,16,18,20) */}
-          <View style={{ marginBottom: 12 }}>
-            <Text style={{ color: theme.text, marginBottom: 6 }}>Translation Text</Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              {[14, 16, 18, 20].map((size) => (
-                <Pressable key={size} onPress={() => setFontSizeTranslation(size)} style={{ alignItems: 'center', flex: 1 }}>
-                  <View style={{ height: 2, backgroundColor: theme.inactive, width: '100%' }} />
-                  <View style={{ width: 10, height: 10, borderRadius: 5, marginTop: 6, backgroundColor: fontSizeTranslation === size ? theme.primary : theme.inactive, alignSelf: 'center' }} />
-                  <Text style={{ color: '#FFFFFF', fontSize: 10, marginTop: 2 }}>{size}</Text>
-                </Pressable>
-              ))}
+          {/* Transliteration text slider + preview (last) */}
+          <View style={{ marginTop: 12 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <Text style={{ color: theme.text }}>Transliteration</Text>
+              <Text style={{ color: theme.inactive, fontSize: 12 }}>{Math.round(translitSizePreview)}</Text>
+            </View>
+            <Slider
+              value={translitSizePreview}
+              min={12}
+              max={26}
+              step={1}
+              trackColor={theme.inactive}
+              filledColor={theme.primary}
+              thumbColor={theme.primary}
+              onChange={(v) => setTranslitSizePreview(v)}
+              onChangeEnd={(v) => {
+                const rounded = Math.round(v);
+                // Only update store, preview is already set by onChange
+                setFontSizeTransliteration(rounded);
+              }}
+            />
+            {/* Live preview */}
+            <View style={{ marginTop: 8, padding: 12, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}>
+              <Text
+                style={{
+                  color: theme.text,
+                  fontSize: translitSizePreview,
+                  lineHeight: Math.round(translitSizePreview * 1.35),
+                }}
+              >
+                Bismillāhir Raḥmānir Raḥīm
+              </Text>
             </View>
           </View>
         </View>

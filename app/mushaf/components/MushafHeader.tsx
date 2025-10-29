@@ -1,181 +1,116 @@
+import { useThemeColor } from '@/utils/useThemeColor';
 import * as Haptics from 'expo-haptics';
-import { ArrowLeft, Bookmark, BookOpen, Home } from 'lucide-react-native';
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ArrowLeft, Bookmark, Settings } from 'lucide-react-native';
+import React, { useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-export default function MushafHeader({ pageNumber, totalPages, isBookmarked, onBookmarkToggle, onClose, onHome, onChangeLayout }:{
-  pageNumber?:number;
-  totalPages?:number;
-  isBookmarked:boolean;
-  onBookmarkToggle:()=>void;
-  onClose:()=>void;
-  onChangeLayout?: ()=>void;
-  onHome?: ()=>void;
-}){
-  // Minimal header: back (left), home (center), bookmark (right)
-  const pressWithHaptic = async (fn?: () => void) => {
-    try { await Haptics.selectionAsync(); } catch (_) {}
-    try { fn?.(); } catch (_) {}
+interface MushafHeaderProps {
+  isBookmarked: boolean;
+  onBookmarkToggle: () => void;
+  onClose: () => void;
+  onHome: () => void;
+  onChangeLayout: () => void;
+}
+
+export default function MushafHeader({
+  isBookmarked,
+  onBookmarkToggle,
+  onClose,
+  onHome,
+  onChangeLayout,
+}: MushafHeaderProps) {
+  const { primary } = useThemeColor();
+  const [bookmarkAnimating, setBookmarkAnimating] = useState(false);
+
+  const handleBookmarkPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setBookmarkAnimating(true);
+    onBookmarkToggle();
+    setTimeout(() => setBookmarkAnimating(false), 300);
   };
 
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <View style={styles.slimHeader}>
-        <View style={styles.leftContainer}>
-          <Pressable onPress={onClose} style={[styles.icon, styles.leftIcon]} accessibilityLabel="Back">
-            <ArrowLeft color="#fff" />
-          </Pressable>
+    <View style={[styles.header, { backgroundColor: '#1a1a1a', borderBottomColor: '#FFD60A20' }]}> 
+      <View style={styles.headerRow}> 
+        <TouchableOpacity onPress={onClose} style={styles.headerButton} hitSlop={8}> 
+          <ArrowLeft size={24} color="#FFD60A" /> 
+        </TouchableOpacity>
+
+        <View style={styles.headerCenter}> 
+          <Text style={[styles.headerTitle, { color: '#FFD60A' }]}>Mushaf Reader</Text> 
         </View>
 
-        <View style={styles.centerContainer}>
-          <Text style={styles.title}>Mushaf Mode</Text>
-        </View>
+        <View style={styles.headerButtonsRight}> 
+          <TouchableOpacity
+            onPress={handleBookmarkPress}
+            style={[ 
+              styles.headerButton,
+              bookmarkAnimating && styles.bookmarkAnimating,
+            ]}
+            hitSlop={8}
+          >
+            <Bookmark
+              size={24}
+              color={isBookmarked ? '#FFD60A' : '#666'}
+              fill={isBookmarked ? '#FFD60A' : 'none'}
+            />
+          </TouchableOpacity>
 
-        <View style={styles.rightContainer}>
-          <Pressable onPress={() => pressWithHaptic(onChangeLayout)} style={[styles.icon]} accessibilityLabel="Change layout">
-            <BookOpen color="#fff" />
-          </Pressable>
-          <Pressable onPress={() => pressWithHaptic(onBookmarkToggle)} style={[styles.icon]} accessibilityLabel="Bookmark" accessibilityState={{ selected: !!isBookmarked }}>
-            <Bookmark color={isBookmarked ? '#FFD166' : '#fff'} />
-          </Pressable>
-          <Pressable onPress={() => onHome && pressWithHaptic(onHome)} style={[styles.icon]} accessibilityLabel="Home">
-            <Home color="#fff" />
-          </Pressable>
+          <TouchableOpacity onPress={onChangeLayout} style={styles.headerButton} hitSlop={8}>
+            <Settings size={24} color="#FFD60A" />
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={onHome} style={styles.headerButton} hitSlop={8}>
+            <Text style={[styles.homeButtonText, { color: '#FFD60A' }]}>Home</Text>
+          </TouchableOpacity>
         </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { 
-    backgroundColor: '#0F172A' 
+  header: {
+    paddingTop: 8,
+    paddingBottom: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
   },
-  slimHeader: {
-    height: 48,
-    backgroundColor: '#0F172A',
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    justifyContent: 'space-between',
   },
-  leftContainer: {
-    flex: 1,
-    alignItems: 'flex-start',
-  },
-  centerContainer: {
-    flex: 2,
+  headerButton: {
+    padding: 8,
+    borderRadius: 8,
     alignItems: 'center',
-  },
-  rightContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-  icon: { 
-    width: 40, 
-    height: 40, 
-    alignItems: 'center', 
     justifyContent: 'center',
-    borderRadius: 20,
   },
-  leftIcon: { 
-    marginLeft: 4,
+  bookmarkAnimating: {
+    transform: [{ scale: 0.9 }],
   },
-  rightIcon: { 
-    marginLeft: 8,
-  },
-  title: { 
-    color: '#fff', 
-    fontWeight: '600', 
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  rightIconsRow: {
+  headerButtonsRight: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
-  navBtn: { 
-    paddingHorizontal: 12, 
-    paddingVertical: 6, 
-    borderRadius: 6, 
-    borderWidth: 1, 
-    borderColor: '#FFD166', 
-    marginHorizontal: 6 
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  navText: { 
-    color: '#FFD166', 
-    fontWeight: '700' 
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: '700',
   },
-  navBtnDisabled: { 
-    opacity: 0.45, 
-    borderColor: 'rgba(255,209,102,0.25)' 
+  homeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
-  modeBtn: { 
-    paddingHorizontal: 8, 
-    paddingVertical: 4, 
-    borderRadius: 6, 
-    borderWidth: 1, 
-    borderColor: '#FFD166' 
-  },
-  modeActive: { 
-    backgroundColor: '#FFD166' 
-  },
-  modeText: { 
-    color: '#FFD166' 
-  },
-  modeTextActive: { 
-    color: '#1a1a2e', 
-    fontWeight: '700' 
-  },
-  jumpWrap: { 
-    flexDirection: 'row-reverse', 
-    alignItems: 'center', 
-    marginLeft: 8 
-  },
-  jumpInput: { 
-    width: 80, 
-    height: 34, 
-    color: '#fff', 
-    borderWidth: 1, 
-    borderColor: 'rgba(255,209,102,0.12)', 
-    paddingHorizontal: 8, 
-    borderRadius: 6, 
-    textAlign: 'center' 
-  },
-  jumpBtn: { 
-    paddingHorizontal: 8, 
-    paddingVertical: 6, 
-    backgroundColor: '#FFD166', 
-    borderRadius: 6, 
-    marginLeft: 6 
-  },
-  jumpBtnText: { 
-    color: '#1a1a2e', 
-    fontWeight: '700' 
-  },
-  rightIcons: { 
-    width: 48, 
-    alignItems: 'center', 
-    justifyContent: 'center' 
-  },
-  rightIconsRow: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'flex-end', 
-    minWidth: 80 
-  },
-  surahBtn: { 
-    paddingHorizontal: 12, 
-    paddingVertical: 6, 
-    borderRadius: 6, 
-    borderWidth: 1, 
-    borderColor: '#FFD166', 
-    marginLeft: 8, 
-    backgroundColor: 'transparent' 
-  },
-  surahText: { 
-    color: '#FFD166', 
-    fontWeight: '700' 
-  }
 });
-

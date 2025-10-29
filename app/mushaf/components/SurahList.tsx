@@ -1,7 +1,7 @@
 import { surahsData } from '@/data/surahs';
 import { useRouter } from 'expo-router';
-import React, { useState, useMemo } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View, Dimensions } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Alert, Dimensions, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { getSurahStartPage } from '../services/mushafSurahService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -27,7 +27,7 @@ const getEnglishName = (surah: SimpleSurah): string => {
   return surah.englishName || `Surah ${surah.id}`;
 };
 
-export default function SurahList({ onClose, onSelect }: { onClose?: () => void; onSelect?: (page: number) => void }) {
+export default function SurahList({ onClose, onSelect, extraBottomPadding = 0 }: { onClose?: () => void; onSelect?: (page: number) => void; extraBottomPadding?: number }) {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -86,28 +86,45 @@ export default function SurahList({ onClose, onSelect }: { onClose?: () => void;
       <View style={styles.textContainer}>
         <Text style={styles.title} numberOfLines={1}>
           {item.name}
-          <Text style={styles.englishName}> • {getEnglishName(item)}</Text>
+          {/* English name is already wrapped in Text below, so move it out for clarity */}
         </Text>
-        <Text style={styles.subtitle} numberOfLines={1}>
-          {item.arabicName} • {item.versesCount || '?'} verses • {getRevelationType(item)}
-        </Text>
+        <Text style={styles.englishName} numberOfLines={1}>• {getEnglishName(item)}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text style={styles.subtitle} numberOfLines={1}>
+            {item.arabicName} • {item.versesCount || '?'} verses • 
+          </Text>
+          <Text
+            style={[styles.subtitle, { flexShrink: 0, marginLeft: 2 }]} 
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {getRevelationType(item)}
+          </Text>
+        </View>
       </View>
     </Pressable>
   );
 
   return (
     <View style={styles.container}>
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search surah..."
-          placeholderTextColor="#888"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoCorrect={false}
-          autoCapitalize="none"
-          clearButtonMode="while-editing"
-        />
+      <View style={[styles.searchContainer, { paddingTop: 12 }]}> {/* Add top padding for safe area */}
+        <View style={styles.searchBoxRow}>
+          {/* Search Icon (use emoji for simplicity, replace with Icon if available) */}
+          <Text style={styles.searchIcon}>🔍</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.searchLabel}>Search Surah</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Type to search..."
+              placeholderTextColor="#888"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCorrect={false}
+              autoCapitalize="none"
+              clearButtonMode="while-editing"
+            />
+          </View>
+        </View>
       </View>
       <FlatList
         data={filteredSurahs}
@@ -121,7 +138,7 @@ export default function SurahList({ onClose, onSelect }: { onClose?: () => void;
         initialNumToRender={20}
         maxToRenderPerBatch={20}
         windowSize={10}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: 20 + extraBottomPadding }]}
         keyboardShouldPersistTaps="handled"
       />
     </View>
@@ -139,15 +156,36 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#334155',
   },
-  searchInput: {
-    backgroundColor: '#1e293b',
-    color: '#fff',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 16,
+  searchBoxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#23293a',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: '#334155',
+    marginBottom: 2,
+  },
+  searchIcon: {
+    fontSize: 20,
+    color: '#888',
+    marginRight: 8,
+  },
+  searchLabel: {
+    color: '#888',
+    fontSize: 13,
+    marginBottom: 2,
+  },
+  searchInput: {
+    backgroundColor: '#23293a',
+    color: '#fff',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    fontSize: 16,
+    borderWidth: 0,
+    marginBottom: 0,
   },
   listContent: {
     paddingBottom: 20,

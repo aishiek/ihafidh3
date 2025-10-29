@@ -1,8 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { Modal, SafeAreaView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import React, { useEffect, useState } from 'react';
+import { BackHandler, Modal, Platform, SafeAreaView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LayoutSelector } from '../components/LayoutSelector';
 import MushafFooter from '../components/MushafFooter';
 import MushafHeader from '../components/MushafHeader';
@@ -12,25 +14,92 @@ import { useMushafBookmarks } from '../hooks/useMushafBookmarks';
 import LayoutService from '../services/layoutService';
 import { getAllSurahs, isMushafDatabaseReady } from '../services/mushafSurahService';
 
+// ...existing imports...
+
 const TOTAL_PAGES = 610;
 
 export default function MushafViewerScreen() {
+  const insets = useSafeAreaInsets();
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      const onBackPress = () => {
+        handleClose();
+        return true; // prevent default
+      };
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => subscription.remove();
+    }
+  }, []);
   const navigation = useNavigation();
   const router = useRouter();
-  const paramsAny = (router as any).query || {};
-  const initialPage = Number(paramsAny?.pageNumber) || 1;
-  const [currentPage, setCurrentPage] = useState(initialPage);
+  const params = useLocalSearchParams();
+  
+  // Safely parse page number
+  // Always use the latest pageNumber from params, fallback to last read only if param is missing
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  useEffect(() => {
+    const pageNum = Number(params?.pageNumber);
+    if (!isNaN(pageNum) && pageNum > 0 && pageNum <= TOTAL_PAGES) {
+      setCurrentPage(pageNum);
+    } else {
+      // Only restore last read if no valid page param
+      (async () => {
+        const last = await getLastRead();
+        if (last && last.page && last.page > 0 && last.page <= TOTAL_PAGES) {
+          setCurrentPage(last.page);
+        } else {
+          setCurrentPage(1);
+        }
+      })();
+    }
+  }, [params?.pageNumber]);
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [showSurahPicker, setShowSurahPicker] = useState(false);
   const [showLayoutSelector, setShowLayoutSelector] = useState(false);
-  const { bookmarks: mushafBookmarks, toggleBookmark: toggleMushafBookmark } = useMushafBookmarks();
   const [showAirplanePrompt, setShowAirplanePrompt] = useState(false);
   const [dontAskAgain, setDontAskAgain] = useState(false);
   const [showPageInput, setShowPageInput] = useState(false);
-  const [pageInputValue, setPageInputValue] = useState(String(initialPage));
+  const [pageInputValue, setPageInputValue] = useState(String(currentPage));
 
-  // Only show prompt when Mushaf is downloaded and user hasn't disabled prompt
-  React.useEffect(() => {
+  // Mushaf bookmarks hook
+  const { bookmarks: mushafBookmarks, toggleBookmark: toggleMushafBookmark, saveLastRead, getLastRead } = useMushafBookmarks();
+
+  // Surah list for navigation
+  const [surahList, setSurahList] = useState<{id:number; name:string; page:number}[] | null>(null);
+  const [dbReady, setDbReady] = useState<boolean>(isMushafDatabaseReady());
+
+  // Load surah list on mount
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const list = await getAllSurahs();
+        if (!mounted) return;
+        setSurahList(list.map(s => ({ id: s.id, name: s.name, page: s.page })));
+        setDbReady(true);
+      } catch (e) {
+        console.error('[MushafViewerScreen] Error loading surahs:', e);
+        setDbReady(isMushafDatabaseReady());
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  // Check bookmarked status when page changes
+  useEffect(() => {
+  setIsBookmarked(mushafBookmarks.has(currentPage));
+  }, [currentPage, mushafBookmarks]);
+
+  // (last read logic now handled in param effect above)
+
+  // Auto-save last read when page changes
+  useEffect(() => {
+    saveLastRead(currentPage);
+  }, [currentPage, saveLastRead]);
+
+  // Show airplane prompt when mushaf is downloaded
+  useEffect(() => {
     let mounted = true;
     (async () => {
       try {
@@ -42,7 +111,6 @@ export default function MushafViewerScreen() {
           return;
         }
 
-        // Lazy-check if mushaf is installed
         try {
           const { checkMushafStatus } = await import('../services/mushafDownloadService');
           const status = await checkMushafStatus();
@@ -51,20 +119,17 @@ export default function MushafViewerScreen() {
             setShowAirplanePrompt(true);
           }
         } catch (e) {
-          // ignore failures to check; do not block viewer
+          // Ignore
         }
       } catch (e) {
-        // ignore storage errors
+        console.error('[MushafViewerScreen] Error checking airplane prompt:', e);
       }
     })();
 
     return () => { mounted = false; };
   }, []);
 
-  React.useEffect(() => {
-    setIsBookmarked(mushafBookmarks.has(currentPage));
-  }, [currentPage, mushafBookmarks]);
-
+  // Navigation handlers
   const handleFirst = () => setCurrentPage(1);
   const handlePrev = () => setCurrentPage(p => Math.max(1, p - 1));
   const handleNext = () => setCurrentPage(p => Math.min(TOTAL_PAGES, p + 1));
@@ -76,40 +141,23 @@ export default function MushafViewerScreen() {
 
   const handleBookmarkToggle = () => {
     toggleMushafBookmark(currentPage);
-    setIsBookmarked(mushafBookmarks.has(currentPage));
   };
 
   const handleClose = () => {
-    try { navigation.goBack(); } catch (e) { /* ignore */ }
+    try { navigation.goBack(); } catch (e) {
+      console.error('[MushafViewerScreen] Error going back:', e);
+    }
   };
 
   const handleHome = () => {
-    try { router.replace('/'); } catch (e) { try { navigation.goBack(); } catch {} }
+    try { router.replace('/'); } catch (e) {
+      try { navigation.goBack(); } catch {} 
+    }
   };
 
   // Surah navigation helpers
-  const [surahList, setSurahList] = React.useState<{id:number; name:string; page:number}[] | null>(null);
-  const [dbReady, setDbReady] = React.useState<boolean>(isMushafDatabaseReady());
-
-  React.useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const list = await getAllSurahs();
-        if (!mounted) return;
-        setSurahList(list.map(s => ({ id: s.id, name: s.name, page: s.page })));
-        setDbReady(true);
-      } catch (e) {
-        // ignore - optional
-        setDbReady(isMushafDatabaseReady());
-      }
-    })();
-    return () => { mounted = false; };
-  }, []);
-
   const findCurrentSurahIndex = (page: number) => {
     if (!surahList || surahList.length === 0) return -1;
-    // Find the last surah whose start page <= page
     let idx = -1;
     for (let i = 0; i < surahList.length; i++) {
       if (surahList[i].page <= page) idx = i;
@@ -129,13 +177,14 @@ export default function MushafViewerScreen() {
   };
 
   const handleGoToSurah = () => {
-    // open surah picker modal
     setShowSurahPicker(true);
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Airplane prompt modal — shown when opening downloaded Mushaf */}
+    <>
+  <StatusBar style="dark" backgroundColor="#f5f5f5" />
+      <SafeAreaView style={[styles.container, { paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}> 
+      {/* Airplane mode prompt modal */}
       <Modal visible={showAirplanePrompt && !dontAskAgain} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
@@ -171,19 +220,31 @@ export default function MushafViewerScreen() {
           </View>
         </View>
       </Modal>
-      <MushafHeader
-        isBookmarked={isBookmarked}
-        onBookmarkToggle={handleBookmarkToggle}
-        onClose={handleClose}
-        onHome={handleHome}
-        onChangeLayout={() => setShowLayoutSelector(true)}
-      />
 
-      <View style={styles.content}>
-        {/* contentHeader removed per request: page indicator strip hidden */}
-
-        <MushafPage pageNumber={currentPage} />
-      </View>
+      {/* Surah picker modal */}
+      <Modal visible={showSurahPicker} animationType="slide">
+        <SafeAreaView style={[{ flex: 1, backgroundColor: '#111',
+            paddingTop: Platform.OS === 'android' ? insets.top : 0,
+            paddingLeft: insets.left,
+            paddingRight: insets.right,
+            paddingBottom: insets.bottom
+        }]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', padding: 12, paddingTop: 12 }}>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 18 }}>Pick a Surah</Text>
+            <TouchableOpacity onPress={() => setShowSurahPicker(false)}>
+              <Text style={{ color: '#FFD166', fontSize: 16 }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+          <SurahList
+            onClose={() => setShowSurahPicker(false)}
+            onSelect={(page) => {
+              setShowSurahPicker(false);
+              handleJumpToPage(page);
+            }}
+            extraBottomPadding={32}
+          />
+        </SafeAreaView>
+      </Modal>
 
       {/* Page input modal */}
       <Modal visible={showPageInput} transparent animationType="fade">
@@ -196,16 +257,23 @@ export default function MushafViewerScreen() {
               keyboardType="numeric"
               style={modalStyles.jumpInput}
               placeholder="Enter page number"
+              placeholderTextColor="#666"
             />
-            <View style={{ flexDirection: 'row', marginTop: 12 }}>
-              <TouchableOpacity style={[modalStyles.button, modalStyles.noButton]} onPress={() => setShowPageInput(false)}>
+            <View style={{ flexDirection: 'row', marginTop: 12, gap: 12 }}>
+              <TouchableOpacity
+                style={[modalStyles.button, modalStyles.noButton]}
+                onPress={() => setShowPageInput(false)}
+              >
                 <Text style={modalStyles.noText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[modalStyles.button, modalStyles.yesButton]} onPress={() => {
-                const n = Number(pageInputValue);
-                if (!isNaN(n) && n >= 1 && n <= TOTAL_PAGES) setCurrentPage(n);
-                setShowPageInput(false);
-              }}>
+              <TouchableOpacity
+                style={[modalStyles.button, modalStyles.yesButton]}
+                onPress={() => {
+                  const n = Number(pageInputValue);
+                  if (!isNaN(n) && n >= 1 && n <= TOTAL_PAGES) setCurrentPage(n);
+                  setShowPageInput(false);
+                }}
+              >
                 <Text style={modalStyles.yesText}>Go</Text>
               </TouchableOpacity>
             </View>
@@ -213,102 +281,75 @@ export default function MushafViewerScreen() {
         </SafeAreaView>
       </Modal>
 
-      <Modal visible={showSurahPicker} animationType="slide">
-        <SafeAreaView style={{ flex:1, backgroundColor:'#111' }}>
-          <View style={{ flexDirection:'row', justifyContent:'space-between', padding:12 }}>
-            <Text style={{ color:'#fff', fontWeight:'700' }}>Pick a Surah</Text>
-            <TouchableOpacity onPress={() => setShowSurahPicker(false)}><Text style={{ color:'#FFD166' }}>Close</Text></TouchableOpacity>
-          </View>
-          <SurahList onClose={() => setShowSurahPicker(false)} onSelect={(page) => { console.log(`[MushafViewer] Surah selected -> jump to page ${page}`); setShowSurahPicker(false); handleJumpToPage(page); }} />
-        </SafeAreaView>
-      </Modal>
+      {/* Layout selector modal */}
+      <LayoutSelector
+        visible={showLayoutSelector}
+        onClose={() => setShowLayoutSelector(false)}
+        onLayoutSelected={async (layoutId) => {
+          try {
+            const currentPageSnapshot = currentPage;
+            const surahInfo = await LayoutService.getSurahForPage(currentPageSnapshot);
+            const success = await LayoutService.setActiveLayout(layoutId);
+            setShowLayoutSelector(false);
 
-      <LayoutSelector visible={showLayoutSelector} onClose={() => setShowLayoutSelector(false)} onLayoutSelected={async (layoutId) => {
-        // Preserve reading position across layouts by mapping current surah.
-        try {
-          // Find the current surah in the old (currently active) layout
-          const currentPageSnapshot = currentPage;
-          const surahInfo = await LayoutService.getSurahForPage(currentPageSnapshot);
+            if (!success) {
+              alert('Failed to switch layout');
+              return;
+            }
 
-          // Switch active layout
-          const success = await LayoutService.setActiveLayout(layoutId);
-          setShowLayoutSelector(false);
-
-          if (!success) {
-            alert('Failed to switch layout');
-            return;
-          }
-
-          // If we could identify the surah in the previous layout, jump to the
-          // equivalent surah start page in the new layout. Otherwise fall back
-          // to page 1.
-          if (surahInfo && surahInfo.surah_number) {
-            const newStart = await LayoutService.getSurahStartPage(surahInfo.surah_number);
-            setCurrentPage(newStart || 1);
-          } else {
+            if (surahInfo && surahInfo.surah_number) {
+              const newStart = await LayoutService.getSurahStartPage(surahInfo.surah_number);
+              setCurrentPage(newStart || 1);
+            } else {
+              setCurrentPage(1);
+            }
+          } catch (e) {
+            console.error('[MushafViewerScreen] Error switching layout:', e);
+            setShowLayoutSelector(false);
             setCurrentPage(1);
           }
-        } catch (e) {
-          console.error('Error switching layout with position preservation', e);
-          setShowLayoutSelector(false);
-          setCurrentPage(1);
-        }
-      }} />
+        }}
+      />
 
-        {/* Footer with page and surah controls */}
-        <MushafFooter
-          pageNumber={currentPage}
-          totalPages={TOTAL_PAGES}
-          onPrevious={handlePrev}
-          onNext={handleNext}
-          onPrevSurah={handlePrevSurah}
-          onNextSurah={handleNextSurah}
-          onGoToSurah={handleGoToSurah}
-          isDbReady={dbReady}
-        />
+      {/* Header with bookmark button */}
+      <MushafHeader
+        isBookmarked={isBookmarked}
+        onBookmarkToggle={handleBookmarkToggle}
+        onClose={handleClose}
+        onHome={handleHome}
+        onChangeLayout={() => setShowLayoutSelector(true)}
+      />
 
+      {/* Main content - Mushaf page with key to force remount */}
+      <View style={styles.content}>
+        <MushafPage key={`page-${currentPage}`} pageNumber={currentPage} />
+      </View>
+
+      {/* Footer with navigation controls */}
+      <MushafFooter
+        pageNumber={currentPage}
+        totalPages={TOTAL_PAGES}
+        onPrevious={handlePrev}
+        onNext={handleNext}
+        onPrevSurah={handlePrevSurah}
+        onNextSurah={handleNextSurah}
+        onGoToSurah={handleGoToSurah}
+        isDbReady={dbReady}
+      />
     </SafeAreaView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  header: { marginBottom: 8 },
-  content: { 
+  container: { 
+    flex: 1, 
+    backgroundColor: '#f5f5f5',
+  },
+  content: {
     flex: 1,
-    paddingTop: 40,      // Add ~1.5cm (40px) spacing from header
-    paddingBottom: 20,   // Reduce gap between last line and footer
+    overflow: 'hidden',
   },
-  contentHeader: { paddingHorizontal: 14, paddingVertical: 10, backgroundColor: '#0b1220' },
-  surahTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  pageIndicator: { color: '#d1d5db', fontSize: 12, marginTop: 4 },
-  bottomBar: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e6e6e6', paddingBottom: 10 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8 },
-  rowSecondary: { backgroundColor: '#fff' },
-  navBtn: { minWidth: 96, height: 44, borderRadius: 8, backgroundColor: '#0ea5a4', alignItems: 'center', justifyContent: 'center' },
-  navBtnText: { color: '#fff', fontWeight: '700' },
-  pageSelector: { minWidth: 80, height: 44, borderRadius: 8, borderWidth: 1, borderColor: '#ccc', alignItems: 'center', justifyContent: 'center' },
-  disabled: { opacity: 0.45, backgroundColor: '#ddd' },
-  surahNavBtn: { minWidth: 96, height: 44, borderRadius: 8, backgroundColor: '#FFD166', alignItems: 'center', justifyContent: 'center' },
-  surahNavText: { color: '#1a1a2e', fontWeight: '700' },
-  currentSurahInfo: { alignItems: 'center', flex: 1 },
-  currentSurahText: { fontWeight: '700' },
-  currentSurahSub: { fontSize: 12, color: '#666' },
-  bottomNav: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
-    gap: 12,
-  },
-  navButton: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6, backgroundColor: '#FFA500' },
-  navButtonDisabled: { backgroundColor: '#ccc', opacity: 0.5 },
-  navButtonText: { color: '#fff', fontWeight: '600', fontSize: 12 },
-  pageText: { fontSize: 14, color: '#666', fontWeight: '500' },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
@@ -384,18 +425,55 @@ const styles = StyleSheet.create({
 });
 
 const modalStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
-  card: { width: '86%', backgroundColor: '#0b1220', borderRadius: 12, padding: 18, alignItems: 'center' },
-  iconWrap: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#034d4a', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  title: { color: '#fff', fontSize: 18, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
-  message: { color: '#d1d5db', fontSize: 14, textAlign: 'center', marginBottom: 12 },
-  smallText: { color: '#cbd5e1', marginLeft: 8 },
-  rowCenter: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  buttonsRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%' },
-  button: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center', marginHorizontal: 6 },
-  noButton: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#334155' },
-  yesButton: { backgroundColor: '#0ea5a4' },
-  noText: { color: '#e2e8f0', fontWeight: '600' },
-  yesText: { color: '#042f2e', fontWeight: '700' },
-  jumpInput: { width: '100%', height: 44, backgroundColor: '#071427', color: '#fff', paddingHorizontal: 12, borderRadius: 8, marginTop: 8 },
+  overlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0,0,0,0.6)', 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  card: { 
+    width: '86%', 
+    backgroundColor: '#0b1220', 
+    borderRadius: 12, 
+    padding: 18, 
+    alignItems: 'center' 
+  },
+  title: { 
+    color: '#fff', 
+    fontSize: 18, 
+    fontWeight: '700', 
+    marginBottom: 8, 
+    textAlign: 'center' 
+  },
+  button: { 
+    flex: 1, 
+    paddingVertical: 10, 
+    borderRadius: 8, 
+    alignItems: 'center' 
+  },
+  noButton: { 
+    backgroundColor: 'transparent', 
+    borderWidth: 1, 
+    borderColor: '#334155' 
+  },
+  yesButton: { 
+    backgroundColor: '#0ea5a4' 
+  },
+  noText: { 
+    color: '#e2e8f0', 
+    fontWeight: '600' 
+  },
+  yesText: { 
+    color: '#042f2e', 
+    fontWeight: '700' 
+  },
+  jumpInput: { 
+    width: '100%', 
+    height: 44, 
+    backgroundColor: '#071427', 
+    color: '#fff', 
+    paddingHorizontal: 12, 
+    borderRadius: 8, 
+    marginTop: 8 
+  },
 });

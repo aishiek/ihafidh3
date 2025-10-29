@@ -1,4 +1,5 @@
-import { isTamilLanguage } from '@/utils/language';
+import { isMalayLanguage, isTamilLanguage } from '@/utils/language';
+import { getMalayTafsir } from './localMalayTafsir';
 import { getTamilTafsir } from './localTamilTafsir';
 import { fetchTafsirByAyah } from './tafsirApi';
 
@@ -23,7 +24,13 @@ export async function getTafsirFromSource(surah: number, verse: number, userLang
       }
       // fallthrough to remote if local not found
     }
-
+    if (isMalayLanguage(userLanguage)) {
+      const local = await getMalayTafsir(surah, verse);
+      if (local && local.text) {
+        return { scholar: local.resourceName || 'Malay Tafsir', text: local.text, source: 'local' };
+      }
+      // fallthrough to remote if local not found
+    }
     const remote = await fetchTafsirByAyah(surah, verse, userLanguage);
     if (remote && remote.text) {
       return { scholar: remote.resourceName || 'Tafsir', text: remote.text, source: 'remote' };

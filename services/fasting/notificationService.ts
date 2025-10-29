@@ -80,10 +80,17 @@ export class FastingNotificationService {
     try {
       await this.cancelFastingNotifications();
       const scheduledNotifications: string[] = [];
+      const now = new Date();
       for (const day of calendarDays) {
         for (const fastingType of day.fastingTypes) {
           const typeSettings = notificationSettings.fastingTypes[fastingType];
           if (!typeSettings?.enabled) continue;
+          const fastingDate = new Date(day.date);
+          const notificationDate = new Date(fastingDate);
+          notificationDate.setDate(notificationDate.getDate() - (typeSettings.beforeDays || notificationSettings.defaultBeforeDays));
+          const [hours, minutes] = (typeSettings.time || notificationSettings.defaultTime).split(':').map(Number);
+          notificationDate.setHours(hours, minutes, 0, 0);
+          if (notificationDate <= now) continue; // Skip past notifications
           const notificationId = await this.scheduleNotificationForDay(
             day,
             fastingType,

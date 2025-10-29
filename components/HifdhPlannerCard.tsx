@@ -54,6 +54,7 @@ export default function HifdhPlannerCard() {
   const memorizedVerses = useProgressStore((s) => s.memorizedVerses);
   const revised = useProgressStore((s) => s.revisedVerses);
   const unmarkVerseAsRevised = useProgressStore((s) => s.unmarkVerseAsRevised);
+  const unmarkVerseAsMemorized = useProgressStore((s) => s.unmarkVerseAsMemorized);
 
   const [pickerVisible, setPickerVisible] = useState(false);
   const [selectedDate, setSelectedDate] = useState(formatDMY(new Date()));
@@ -121,7 +122,6 @@ export default function HifdhPlannerCard() {
   const handleSurahRangeConfirm = useCallback(
     (params: { surahId: number; startVerse: number; endVerse: number; note?: string }) => {
       const { surahId, startVerse, endVerse, note } = params;
-      // Determine if the entire surah is memorized and revised
       const surah = surahsData.find((s) => s.id === surahId);
       if (!surah) {
         addPlan(selectedDate, { surahId, startVerse, endVerse, note });
@@ -129,49 +129,68 @@ export default function HifdhPlannerCard() {
         return;
       }
 
-      const surahStart = getGlobalStartIdForSurah(surahId);
-      const surahEnd = surahStart + surah.versesCount - 1;
-      const memCount = memorizedVerses.filter((id) => id >= surahStart && id <= surahEnd).length;
-      const revCount = revised.filter((r) => r.verseId >= surahStart && r.verseId <= surahEnd).length;
-  const isMemorized = memCount === surah.versesCount;
-  const isRevised = revCount === surah.versesCount;
+      // Calculate all verse IDs in the selected range
+      const verseIds: number[] = [];
+      const sId = toVerseId(surahId, startVerse);
+      const eId = toVerseId(surahId, endVerse);
+      for (let id = sId; id <= eId; id++) {
+        verseIds.push(id);
+      }
 
-      if (isMemorized && isRevised) {
+      // Check if ALL verses in the range are BOTH memorized AND revised
+      const allVersesBothMarked = verseIds.every((id) => {
+        const isMem = memorizedVerses.includes(id);
+        const isRev = revised.some((rv) => rv.verseId === id);
+        return isMem && isRev; // Must be BOTH
+      });
+
+      // Build descriptive text for the alert
+      const rangeText =
+        startVerse === endVerse
+          ? `Verse ${startVerse}`
+          : startVerse === 1 && endVerse === surah.versesCount
+            ? 'Full Surah'
+            : `Verses ${startVerse}-${endVerse}`;
+      const surahText = `${surah.name} (${surah.englishName})`;
+
+      if (allVersesBothMarked && verseIds.length > 0) {
         Alert.alert(
-          'Surah already revised',
-          'This surah is already marked as revised. Do you want to unmark it before adding to plan?',
+          'Already Memorized & Revised',
+          `${surahText} ${rangeText} is already marked as both Memorized and Revised.\n\nDo you want to unmark these verses?`,
           [
             {
-              text: 'Yes, Unmark',
+              text: 'Cancel',
+              style: 'cancel',
               onPress: () => {
-                for (let id = surahStart; id <= surahEnd; id++) {
-                  try {
-                    unmarkVerseAsRevised(id);
-                  } catch (e) {
-                    // continue on error
-                  }
-                }
+                // Cancel unmark but continue normal flow - add plan with * marking
                 addPlan(selectedDate, { surahId, startVerse, endVerse, note });
                 setPickerVisible(false);
               },
             },
             {
-              text: 'Cancel',
-              style: 'cancel',
+              text: 'Yes, Unmark',
+              style: 'destructive',
               onPress: () => {
-                // Keep revised but still add to plan
+                // Unmark all verses in the range (both memorized AND revised)
+                verseIds.forEach((id) => {
+                  unmarkVerseAsMemorized(id);
+                  unmarkVerseAsRevised(id);
+                });
+                // Add the plan (no * marking since unmarked)
                 addPlan(selectedDate, { surahId, startVerse, endVerse, note });
                 setPickerVisible(false);
               },
             },
           ],
+          { cancelable: true }
         );
       } else {
+        // Normal flow: just add the plan
         addPlan(selectedDate, { surahId, startVerse, endVerse, note });
         setPickerVisible(false);
       }
     },
-    [addPlan, memorizedVerses, revised, selectedDate, unmarkVerseAsRevised],
+    [addPlan, memorizedVerses, revised, selectedDate, unmarkVerseAsMemorized, unmarkVerseAsRevised],
   );
 
   return (

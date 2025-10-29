@@ -105,6 +105,10 @@ export const useProgressStore = create<ProgressState>()(
 
       // actions
       markVerseAsMemorized: (verseId: number) => {
+        // Log memorization activity to the database
+        import('@/assets/database/QuranDatabase').then(({ logVerseMemorization }) => {
+          logVerseMemorization(verseId).catch(() => {});
+        });
         set((s) => {
           if (s.memorizedVerses.includes(verseId)) return {};
           const memorizedVerses = [...s.memorizedVerses, verseId];
@@ -127,6 +131,10 @@ export const useProgressStore = create<ProgressState>()(
       },
 
       bulkMarkVersesMemorized: (ids: number[], isMarking = true) => {
+        // Log bulk memorization activities to the database
+        import('@/assets/database/QuranDatabase').then(({ bulkMarkVersesMemorized }) => {
+          bulkMarkVersesMemorized(ids, isMarking).catch(() => {});
+        });
         set((s) => {
           const memorizedVerses = isMarking 
             ? Array.from(new Set([...s.memorizedVerses, ...ids])) 
@@ -152,9 +160,12 @@ export const useProgressStore = create<ProgressState>()(
       },
 
       markVerseAsRevised: (verseId: number) => {
+        // Log revision activity to the database
+        import('@/assets/database/QuranDatabase').then(({ logVerseRevision }) => {
+          logVerseRevision(verseId).catch(() => {});
+        });
         set((s) => {
           if (s.revisedVerses.some((r) => r.verseId === verseId)) return {};
-          
           const today = formatDate(new Date());
           const revisedVerses = [...s.revisedVerses, { verseId, revisionDate: today }];
           const dailyRevisedVerses = [...s.dailyRevisedVerses, { verseId, date: today }];
@@ -166,7 +177,6 @@ export const useProgressStore = create<ProgressState>()(
               last_updated: today 
             } 
           };
-          
           const agg = recomputeAggregatesFromStatus(verseStatus);
           return { 
             revisedVerses, 
@@ -204,12 +214,15 @@ export const useProgressStore = create<ProgressState>()(
       },
 
       bulkMarkVersesRevised: (ids: number[]) => {
+        // Log bulk revision activity to the database
+        import('@/assets/database/QuranDatabase').then(({ bulkLogRevisions }) => {
+          bulkLogRevisions(ids).catch(() => {});
+        });
         set((s) => {
           const today = formatDate(new Date());
           const revisedVerses = [...s.revisedVerses];
           const dailyRevisedVerses = [...s.dailyRevisedVerses];
           const weeklyRevisedVerses = [...s.weeklyRevisedVerses];
-          
           // Only add verses that aren't already marked as revised
           ids.forEach((id) => {
             if (!revisedVerses.some((r) => r.verseId === id)) {
@@ -218,7 +231,6 @@ export const useProgressStore = create<ProgressState>()(
               weeklyRevisedVerses.push({ verseId: id, date: today });
             }
           });
-          
           // Update verse status for all provided IDs
           const verseStatus = { ...s.verseStatus };
           ids.forEach((id) => {
@@ -227,7 +239,6 @@ export const useProgressStore = create<ProgressState>()(
               last_updated: today 
             };
           });
-          
           const agg = recomputeAggregatesFromStatus(verseStatus);
           return { 
             revisedVerses, 

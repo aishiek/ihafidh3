@@ -13,22 +13,24 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { calculateCurrentBadge } from '@/utils/badgeUtils';
 import { calculateJuzProgress, calculateOverallJuzStats } from '@/utils/juzCalculator';
 import { saveLastRead } from '@/utils/lastReadUtils';
+import { safeNavigation } from '@/utils/navigationUtils';
 import { findVerseById } from '@/utils/verseUtils';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import {
-    Award,
-    BookOpen,
-    Calendar,
-    CheckCircle,
-    Clock,
-    Info,
-    Play,
-    RotateCcw,
-    Target,
-    XCircle
+import { 
+  Award,
+  BookOpen,
+  Calendar,
+  CheckCircle,
+  Clock,
+  Info,
+  Play,
+  RotateCcw,
+  Target,
+  XCircle
 } from 'lucide-react-native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import React, { useEffect, useMemo, useState } from 'react';
 import { AppState, Dimensions, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
@@ -571,11 +573,19 @@ export default function HomeScreen() {
         subtitle: surah ? `${surah.name} (${surah.arabicName})` : 'Resume',
         icon: Play,
         color: '#4CAF50',
-            action: async () => {
+        action: async () => {
           if (surah) {
+            console.log('[home] Continue Reading clicked - navigating to:', { surahId: surah.id, verseNumber: verseDetails.verseNumber, source: 'continueReading' });
             await saveLastRead(surah.id, verseDetails.verseNumber);
-            // Use replace to avoid stacking duplicate Read entries when resuming
-            try { router.replace(`/(tabs)/read?surahId=${surah.id}&verseId=${verseDetails.verseNumber}`); } catch { router.push(`/(tabs)/read?surahId=${surah.id}&verseId=${verseDetails.verseNumber}`); }
+            // Use safeNavigation.replace to avoid stacking duplicate Read entries when resuming
+            safeNavigation.replace({
+              pathname: '/(tabs)/read',
+              params: { 
+                surahId: surah.id.toString(), 
+                verseId: verseDetails.verseNumber.toString(),
+                source: 'continueReading'
+              }
+            });
           }
         },
       });
@@ -585,12 +595,12 @@ export default function HomeScreen() {
         subtitle: 'Begin your journey',
         icon: Play,
         color: '#4CAF50',
-        action: () => router.push('/(tabs)/read'),
+        action: () => safeNavigation.push('/(tabs)/read'),
       });
     }
     const pending = revisionSchedule.versesPerDay - stats.dailyRevisionCompleted;
     actions.push(pending > 0
-      ? { title: 'Revision Due', subtitle: `${pending} verses pending`, icon: RotateCcw, color: '#FF9800', action: () => router.push('/(tabs)/revision') }
+      ? { title: 'Revision Due', subtitle: `${pending} verses pending`, icon: RotateCcw, color: '#FF9800', action: () => safeNavigation.push('/(tabs)/revision') }
       : null);
     return actions.filter(Boolean);
   }, [lastReadVerse, revisionSchedule, stats]);
@@ -612,20 +622,64 @@ export default function HomeScreen() {
   };
 
   const ProgressCard = ({ title, data, cardWidth, minHeight, showJuzCompletedLabel }:{title:string; data:ProgressData; cardWidth: number; minHeight?: number; showJuzCompletedLabel?: boolean}) => {
-    const circleSize = cardWidth < 120 ? 56 : cardWidth < 150 ? 64 : 80;
+    const circleSize = cardWidth < 120 ? 50 : cardWidth < 150 ? 60 : 70;
     const isSmall = cardWidth < 120;
+    const total = data.completed + data.inProgress + data.notStarted;
+    const completedPercentage = Math.round((data.completed / total) * 100);
+
     return (
-      <View style={[styles.progressCard, { width: cardWidth, marginRight: cardGap, minHeight: minHeight || undefined }]}>
-        <Text style={styles.progressCardTitle}>{title}</Text>
-        <View style={styles.progressCircleContainer}>
-          <CircularProgress progress={(data.completed/data.total)*100} size={circleSize} completed={data.completed} inProgress={data.inProgress} total={data.total} />
+      <View style={[styles.progressCard, { width: cardWidth, minHeight: minHeight || 160 }]}>
+        <Text 
+          style={[styles.progressCardTitle, { fontSize: isSmall ? 12 : 14 }]} 
+          numberOfLines={1} 
+          ellipsizeMode="tail"
+        >
+          {title}
+        </Text>
+        
+        <View style={[styles.progressCircleContainer, { marginVertical: 8 }]}>
+          <CircularProgress 
+            progress={completedPercentage} 
+            size={circleSize} 
+            completed={data.completed} 
+            inProgress={data.inProgress} 
+            total={total} 
+          />
         </View>
-          <View style={styles.progressLegend}>
-          <View style={styles.legendItem}><View style={[styles.legendDot,{backgroundColor:'#2196F3'}]} />
-            <Text style={[styles.legendText, isSmall && { fontSize:11 }]}> {showJuzCompletedLabel ? `${data.completed} of 30 completed` : `${data.completed} Completed`}</Text>
+
+        <View style={styles.progressLegend}>
+          <View style={styles.legendItem}>
+            <Icon name="check-circle" size={16} color="#3B82F6" />
+            <Text 
+              style={[styles.legendText, isSmall && { fontSize: 10 }]} 
+              numberOfLines={1} 
+              ellipsizeMode="tail"
+            >
+              {data.completed} {showJuzCompletedLabel ? 'of 30' : ''}
+            </Text>
           </View>
-          <View style={styles.legendItem}><View style={[styles.legendDot,{backgroundColor:'#FF9800'}]} /><Text style={[styles.legendText, isSmall && { fontSize:11 }]}>{data.inProgress} In Progress</Text></View>
-          <View style={styles.legendItem}><View style={[styles.legendDot,{backgroundColor:'#666'}]} /><Text style={[styles.legendText, isSmall && { fontSize:11 }]}>{data.notStarted} Idle</Text></View>
+          
+          <View style={styles.legendItem}>
+            <Icon name="refresh" size={16} color="#F59E0B" />
+            <Text 
+              style={[styles.legendText, isSmall && { fontSize: 10 }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {data.inProgress} in progress
+            </Text>
+          </View>
+          
+          <View style={styles.legendItem}>
+            <Icon name="circle" size={16} color="#6B7280" />
+            <Text 
+              style={[styles.legendText, isSmall && { fontSize: 10 }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {data.notStarted} left
+            </Text>
+          </View>
         </View>
       </View>
     );
@@ -725,90 +779,93 @@ export default function HomeScreen() {
     const textFormat = formatSurahName(item.label);
     const baseFontSize = textFormat.isMultiLine ? 13 : (item.label.length > 10 ? 12 : 14);
 
+    // Use Pressable instead of TouchableOpacity for better response
     return (
-      <TouchableOpacity 
+      <Pressable 
         style={[styles.cardWrapper, wrapperStyle]}
         onPress={() => onPress?.(item)}
-        activeOpacity={0.8}
       >
-        <LinearGradient
-          colors={backgroundColors as any}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[
-            styles.card,
-            item.status === 'not-started' && styles.notStartedBorder
-          ]}
-        >
-          <View style={styles.cardContent}>
-            {textFormat.isMultiLine ? (
-              <>
+        {({ pressed }) => (
+          <LinearGradient
+            colors={backgroundColors as any}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[
+              styles.card,
+              item.status === 'not-started' && styles.notStartedBorder,
+              pressed && { opacity: 0.8 }
+            ]}
+          >
+            <View style={styles.cardContent}>
+              {textFormat.isMultiLine ? (
+                <>
+                  <Text 
+                    style={[
+                      styles.cardTitle, 
+                      { 
+                        color: textColor,
+                        fontSize: baseFontSize,
+                        lineHeight: baseFontSize + 1,
+                        marginBottom: 1
+                      }
+                    ]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
+                  >
+                    {textFormat.firstLine}
+                  </Text>
+                  <Text 
+                    style={[
+                      styles.cardTitle, 
+                      { 
+                        color: textColor,
+                        fontSize: baseFontSize,
+                        lineHeight: baseFontSize + 1
+                      }
+                    ]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
+                  >
+                    {textFormat.secondLine}
+                  </Text>
+                </>
+              ) : (
                 <Text 
                   style={[
                     styles.cardTitle, 
                     { 
                       color: textColor,
                       fontSize: baseFontSize,
-                      lineHeight: baseFontSize + 1,
-                      marginBottom: 1
+                      lineHeight: baseFontSize + 2
                     }
                   ]}
-                  numberOfLines={1}
+                  numberOfLines={2}
+                  ellipsizeMode="tail"
                   adjustsFontSizeToFit
                   minimumFontScale={0.8}
                 >
-                  {textFormat.firstLine}
+                  {item.label}
                 </Text>
-                <Text 
-                  style={[
-                    styles.cardTitle, 
-                    { 
-                      color: textColor,
-                      fontSize: baseFontSize,
-                      lineHeight: baseFontSize + 1
-                    }
-                  ]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.8}
-                >
-                  {textFormat.secondLine}
-                </Text>
-              </>
-            ) : (
-              <Text 
-                style={[
-                  styles.cardTitle, 
-                  { 
-                    color: textColor,
-                    fontSize: baseFontSize,
-                    lineHeight: baseFontSize + 2
-                  }
-                ]}
-                numberOfLines={2}
-                ellipsizeMode="tail"
-                adjustsFontSizeToFit
-                minimumFontScale={0.8}
-              >
-                {item.label}
-              </Text>
-            )}
-          </View>
-          
-          <View style={[
-            styles.iconContainer,
-            {
-              backgroundColor: item.status === 'memorized' 
-                ? 'rgba(255, 255, 255, 0.25)'
-                : 'rgba(214, 69, 69, 0.25)',
-              borderColor: item.status === 'memorized' ? 'transparent' : '#d64545',
-              borderWidth: item.status === 'memorized' ? 0 : 1,
-            }
-          ]}>
-            <Text style={[styles.iconText, { color: icon.color }]}>{icon.symbol}</Text>
-          </View>
-        </LinearGradient>
-      </TouchableOpacity>
+              )}
+            </View>
+            
+            <View style={[
+              styles.iconContainer,
+              {
+                backgroundColor: item.status === 'memorized' 
+                  ? 'rgba(255, 255, 255, 0.25)'
+                  : 'rgba(214, 69, 69, 0.25)',
+                borderColor: item.status === 'memorized' ? 'transparent' : '#d64545',
+                borderWidth: item.status === 'memorized' ? 0 : 1,
+              }
+            ]}>
+              <Text style={[styles.iconText, { color: icon.color }]}>{icon.symbol}</Text>
+            </View>
+          </LinearGradient>
+        )}
+      </Pressable>
     );
   };
 
@@ -954,7 +1011,37 @@ export default function HomeScreen() {
         <LinearGradient colors={['#2a2a2a','#1f1f1f']} start={{x:0,y:0}} end={{x:1,y:1}} style={styles.mustahabbahCard}>
           <MustahabbahGrid
             items={mustahabbahItems.map(it => ({ key: it.key, label: it.label, status: getSurahStatus(it) }))}
-            onItemPress={(item) => { const surahId = parseInt(item.key,10); useQuranStore.getState().setLastViewedSurahId(surahId); router.replace(`/(tabs)/read?surahId=${surahId}`); }}
+            onItemPress={(item) => {
+              try {
+                const surahId = parseInt(item.key, 10);
+                if (isNaN(surahId) || surahId < 1 || surahId > 114) {
+                  console.warn('[Mustahabbah] Invalid surahId:', surahId);
+                  return;
+                }
+
+                // light haptic feedback
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+
+                useQuranStore.getState().setLastViewedSurahId(surahId);
+
+                // persist last read (best-effort)
+                saveLastRead(surahId, 1).catch(err => {
+                  console.warn('[Mustahabbah] Failed to save last read:', err);
+                });
+
+                // Use replace for clean navigation
+                safeNavigation.replace({
+                  pathname: '/(tabs)/read',
+                  params: {
+                    surahId: surahId.toString(),
+                    verseItem: '1',
+                    source: 'mustahabbah',
+                  },
+                });
+              } catch (error) {
+                console.error('[Mustahabbah] Navigation error:', error);
+              }
+            }}
           />
           <View style={styles.progressSummary}>
             <View style={styles.progressItem}><View style={styles.memorizedDot} /><Text style={styles.progressText}>{mustahabbahMemorized} Memorized</Text></View>
@@ -1084,7 +1171,7 @@ const styles = StyleSheet.create({
   progressCardTitle: { color:'#fff', fontSize:14, marginBottom:8 },
   progressCircleContainer: { alignItems:'center', justifyContent:'center', marginBottom:8 },
   progressLegend: { flexDirection:'column', alignItems:'flex-start', marginTop:8 },
-  legendItem: { flexDirection:'row', alignItems:'center', marginBottom:4 },
+  legendItem: { flexDirection:'row', alignItems:'center', marginBottom:4, gap: 6 },
   legendDot: { width:8, height:8, borderRadius:4, marginRight:8 },
   legendText: { color:'#888', fontSize:13 },
   revisionItem: { backgroundColor:'#222', borderRadius:12, padding:12, marginBottom:12 },

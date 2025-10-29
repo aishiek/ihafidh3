@@ -1,0 +1,6 @@
+# removed by automated cleanup: the expo-status-bar patch was intentionally reverted
+This file was part of a patch that modified node_modules/expo-status-bar. The project has reverted that patch and the original package should be used.
+
+If you still see issues after reinstalling dependencies, run a clean install:
+
+# npm install (or yarn install) and ensure no patch-package entries reference expo-status-bar

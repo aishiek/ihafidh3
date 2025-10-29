@@ -324,6 +324,13 @@ export default function StatsScreen() {
           </View>
         </View>
 
+        {/* Legend for grid colors: Idle (grey), In progress (amber), Completed (green) */}
+        <View style={styles.legendRow}>
+          <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#666666' }]} /><Text style={styles.legendText}>Idle</Text></View>
+          <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#FF9800' }]} /><Text style={styles.legendText}>In progress</Text></View>
+          <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#4CAF50' }]} /><Text style={styles.legendText}>Completed</Text></View>
+        </View>
+
         {viewMode === 'surah' ? (
           <View style={styles.gridContainer}>
             {surahsData.map((surah) => {
@@ -444,7 +451,23 @@ export default function StatsScreen() {
                     onPress={() => {
                       setSelectedItem(null);
                       useQuranStore.getState().setLastViewedSurahId(selectedItem.id);
-                      try { router.replace('/(tabs)/read'); } catch { router.push('/(tabs)/read'); }
+                      try { 
+                        router.replace({
+                          pathname: '/(tabs)/read',
+                          params: {
+                            surahId: selectedItem.id.toString(),
+                            source: 'stats'
+                          }
+                        }); 
+                      } catch { 
+                        router.push({
+                          pathname: '/(tabs)/read',
+                          params: {
+                            surahId: selectedItem.id.toString(),
+                            source: 'stats'
+                          }
+                        }); 
+                      }
                     }}
                   >
                     <Text style={[styles.modalButtonText, { color: '#ffffff' }]}>Open Surah</Text>
@@ -543,6 +566,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  legendRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginBottom: 12,
+    marginTop: 6,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', marginLeft: 8 },
+  legendDot: { width: 12, height: 12, borderRadius: 6, marginRight: 8 },
+  legendText: { color: '#cccccc', fontSize: 13 },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',

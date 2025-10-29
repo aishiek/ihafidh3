@@ -1,9 +1,9 @@
-import React from 'react';
-import { StyleSheet, Text, View, Pressable } from 'react-native';
+import { formatTime } from '@/utils/dateUtils';
+import { useCustomColors } from '@/utils/themeUtils';
 import { useRouter } from 'expo-router';
 import { BarChart2 } from 'lucide-react-native';
-import { useCustomColors } from '@/utils/themeUtils';
-import { formatTime } from '@/utils/dateUtils';
+import React from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 interface StatsCardProps {
   memorizedVerses: number;
@@ -69,7 +69,23 @@ export default function StatsCard({
         </View>
       </View>
       
-      <Text style={[styles.viewMore, { color: colors.primary }]}>
+      {/* Legend: Idle (grey), In progress (amber), Completed (green) */}
+      <View style={styles.legendRow}>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: colors.inactive }]} />
+          <Text style={[styles.legendText, { color: colors.inactive }]}>Idle</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: colors.warning || '#FFCC00' }]} />
+          <Text style={[styles.legendText, { color: colors.text }]}>In progress</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: colors.success || '#4CD964' }]} />
+          <Text style={[styles.legendText, { color: colors.text }]}>Completed</Text>
+        </View>
+      </View>
+
+      <Text style={[styles.viewMore, { color: colors.primary }]}> 
         View detailed statistics →
       </Text>
     </Pressable>
@@ -120,4 +136,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'right',
   },
+  legendRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingHorizontal: 8,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  legendDot: { width: 12, height: 12, borderRadius: 6, marginRight: 8 },
+  legendText: { fontSize: 13 },
 });

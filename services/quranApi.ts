@@ -123,30 +123,38 @@ async function fetchWithRetry<T>(
   throw lastError!;
 }
 
-async function fetchTransliterationText(surahNumber: number, verseNumber: number, langCode: string): Promise<string | undefined> {
+export async function fetchTransliterationText(
+  surahNumber: number,
+  verseNumber: number,
+  langCode: string
+): Promise<string | undefined> {
   try {
-    const preferEnglish = langCode !== 'en' && transliterationAvailability[langCode] !== true;
-    if (preferEnglish) {
-      const enResp = await fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/en.transliteration`);
+    // Try to fetch the requested language first
+    const resp = await fetchWithTimeout(
+      `${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${langCode}.transliteration`
+    );
+    
+    if (resp.ok) {
+      const data: AlQuranCloudAyahResponse = await resp.json();
+      return data?.data?.text;
+    }
+    
+    // If requested language fails AND it's not English, fall back to English
+    if (langCode !== 'en') {
+      console.warn(`[fetchTransliterationText] ${langCode} not available, falling back to English`);
+      const enResp = await fetchWithTimeout(
+        `${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/en.transliteration`
+      );
+      
       if (enResp.ok) {
         const enData: AlQuranCloudAyahResponse = await enResp.json();
         return enData?.data?.text;
       }
-      const fallbackResp = await fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${langCode}.transliteration`);
-      if (fallbackResp.ok) {
-        transliterationAvailability[langCode] = true;
-        const data: AlQuranCloudAyahResponse = await fallbackResp.json();
-        return data?.data?.text;
-      } else transliterationAvailability[langCode] = false;
-    } else {
-      const resp = await fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${langCode}.transliteration`);
-      if (resp.ok) {
-        transliterationAvailability[langCode] = true;
-        const data: AlQuranCloudAyahResponse = await resp.json();
-        return data?.data?.text;
-      }
     }
-  } catch {}
+  } catch (e) {
+    console.error('[fetchTransliterationText] fetch error:', e);
+  }
+  
   return undefined;
 }
 
@@ -218,7 +226,41 @@ export async function fetchSingleVerse(
       try {
         const wantTransliteration = !!useSettingsStore.getState().showTransliteration;
         const preferredLang = (translationLanguage.split('.')[0] || 'en').toLowerCase();
-
+        
+        // Check if we can use local database for English translations
+        const isEnglish = preferredLang === 'en';
+        
+        if (isEnglish) {
+          // Try local database first for English
+          try {
+            const { getVerseFromLocalDB } = await import('./verseDbService');
+            const localVerse = await getVerseFromLocalDB(surahNumber, verseNumber);
+            
+            if (localVerse && localVerse.ayah) {
+              const audioUrl = getAudioUrl(reciterIdentifier, surahNumber, verseNumber);
+              
+              const verse: Verse = {
+                id: localVerse.verse_id || calculateVerseId(surahNumber, verseNumber),
+                surahId: localVerse.chapter_id || surahNumber,
+                verseNumber: localVerse.verse_number || verseNumber,
+                arabicText: localVerse.ayah,
+                translation: localVerse.translation || '',
+                transliteration: wantTransliteration ? (localVerse.transliteration || undefined) : undefined,
+                audioUrl,
+                juzNumber: localVerse.part_id || undefined,
+                pageNumber: localVerse.page_id || undefined
+              };
+              
+              circuitBreaker.onSuccess();
+              return verse;
+            }
+          } catch (localDbErr) {
+            console.warn(`Local DB fetch failed for ${key}, falling back to API:`, localDbErr);
+            // Fall through to API call
+          }
+        }
+        
+        // For non-English or if local DB failed, use API
         const [arabicResp, translationResp] = await Promise.all([
           fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/ar.alafasy`),
           fetchWithTimeout(`${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${translationLanguage}`)
@@ -226,8 +268,9 @@ export async function fetchSingleVerse(
         const arabicData: AlQuranCloudAyahResponse = await arabicResp.json();
         const translationData: AlQuranCloudAyahResponse = await translationResp.json();
 
+        // Simplify transliteration: always request English transliteration regardless of selected translation language.
         const transliterationText = wantTransliteration
-          ? await fetchTransliterationText(surahNumber, verseNumber, preferredLang)
+          ? await fetchTransliterationText(surahNumber, verseNumber, 'en')
           : undefined;
 
         const audioUrl = getAudioUrl(reciterIdentifier, surahNumber, verseNumber);

@@ -71,7 +71,7 @@ export class TajweedService {
           []
         );
         if (!tbl) {
-          console.warn('⚠️ tajweed table not found in DB; disabling tajweed features');
+          // Suppressed: console.warn('⚠️ tajweed table not found in DB; disabling tajweed features');
           try {
             // @ts-ignore
             await this.db.closeAsync();

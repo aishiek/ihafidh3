@@ -14,30 +14,61 @@ import {
     User,
     Volume2
 } from 'lucide-react-native';
-import React, { useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useActivityStore } from '../store/activityStore';
 import { ColorScheme, useThemeStore } from '../store/themeStore';
 import { runFullDiagnostic } from './mushaf/utils/mushafDiagnostics';
+import Slider from '@/components/ui/Slider';
+import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 
 export default function SettingsScreen() {
   const colors = useCustomColors();
-  const { 
-    userName, 
-    setUserName, 
-    showTranslation, 
+  
+  const {
+    userName,
+    setUserName,
+    fontSizeArabic,
+    fontSizeTranslation,
+    fontSizeTransliteration,
+    setFontSizeArabic,
+    setFontSizeTranslation,
+    setFontSizeTransliteration,
+    showTranslation,
     setShowTranslation,
-    autoPlayAudio, 
+    autoPlayAudio,
     setAutoPlayAudio,
-    notificationsEnabled, 
+    notificationsEnabled,
     setNotificationsEnabled,
     ayahDailyNotificationsEnabled,
     setAyahDailyNotificationsEnabled,
     repeatMode,
     setRepeatMode,
     reminderTime,
-    setReminderTime
+    setReminderTime,
+    translationLanguage,
+    setTranslationLanguage
   } = useSettingsStore();
+  const arabicFamily = useMemo(() => getArabicFontFamily(useSettingsStore.getState().arabicFont as any) || undefined, []);
+  const [arabicPreview, setArabicPreview] = useState<number>(fontSizeArabic);
+  const [transPreview, setTransPreview] = useState<number>(fontSizeTranslation);
+  const [translitPreview, setTranslitPreview] = useState<number>(fontSizeTransliteration || 14);
+
+  // Keep local previews in sync if store updates from elsewhere
+  React.useEffect(() => {
+    if (arabicPreview !== fontSizeArabic) setArabicPreview(fontSizeArabic);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontSizeArabic]);
+  React.useEffect(() => {
+    if (transPreview !== fontSizeTranslation) setTransPreview(fontSizeTranslation);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontSizeTranslation]);
+  React.useEffect(() => {
+    const v = fontSizeTransliteration || 14;
+    if (translitPreview !== v) setTranslitPreview(v);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontSizeTransliteration]);
+  const arabicTypo = useMemo(() => getArabicTypographySizing(arabicPreview, useSettingsStore.getState().arabicFont as any), [arabicPreview]);
   
   const { themeMode, colorScheme, setThemeMode, setColorScheme } = useThemeStore();
   const { 
@@ -115,6 +146,23 @@ export default function SettingsScreen() {
         </View>
         
         {/* Theme Settings */}
+
+        {/* Translation Language Selector */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Translation Language</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 8 }}>
+            {require('../constants/translationLanguages').TRANSLATION_LANGUAGES.map((lang: { identifier: string; name: string; language: string }) => (
+              <TouchableOpacity
+                key={lang.identifier === 'my.ghazi' ? 'ms.basmeih' : lang.identifier}
+                style={[styles.toggleChip, translationLanguage === (lang.identifier === 'my.ghazi' ? 'ms.basmeih' : lang.identifier) && styles.toggleChipActive]}
+                onPress={() => setTranslationLanguage(lang.identifier === 'my.ghazi' ? 'ms.basmeih' : lang.identifier)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.toggleChipText, translationLanguage === (lang.identifier === 'my.ghazi' ? 'ms.basmeih' : lang.identifier) && styles.toggleChipTextActive]}>{lang.language === 'ms' || lang.identifier === 'my.ghazi' ? 'Malay' : lang.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Appearance</Text>
           
@@ -310,7 +358,7 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notifications</Text>
           
-          {/* Ayah of the Day */}
+          {/* Ayah of the Day Notification Toggle (single, fixed) */}
           <View style={styles.settingItem}>
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
@@ -318,7 +366,7 @@ export default function SettingsScreen() {
                   <Bell size={20} color="#03A9F4" />
                 </View>
                 <View>
-                  <Text style={styles.settingLabel}>Ayah of the Day</Text>
+                  <Text style={styles.settingLabel}>Ayah of the Day Notification</Text>
                   <Text style={styles.settingDescription}>
                     Receive a daily notification with the Ayah of the Day
                   </Text>
@@ -326,7 +374,7 @@ export default function SettingsScreen() {
               </View>
               <Switch
                 value={!!ayahDailyNotificationsEnabled}
-                onValueChange={(v) => setAyahDailyNotificationsEnabled?.(v)}
+                onValueChange={setAyahDailyNotificationsEnabled}
                 trackColor={{ false: '#444444', true: '#03A9F480' }}
                 thumbColor={ayahDailyNotificationsEnabled ? '#03A9F4' : '#888888'}
                 ios_backgroundColor="#444444"
@@ -382,6 +430,127 @@ export default function SettingsScreen() {
           )}
         </View>
 
+        {/* Reading Font Sizes */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Reading Font Sizes</Text>
+          {/* Arabic Size */}
+          <View style={styles.settingItem}>
+            <View style={styles.settingHeader}>
+              <View style={styles.iconContainer}>
+                <Palette size={20} color="#FFD700" />
+              </View>
+              <View>
+                <Text style={styles.settingLabel}>Arabic size</Text>
+                <Text style={styles.settingDescription}>Adjust the Quranic Arabic font size</Text>
+              </View>
+            </View>
+            <View style={{ gap: 12 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                <Text style={{ color: '#aaa' }}>Size: {Math.round(arabicPreview)}</Text>
+                <Text style={{ color: '#aaa' }}>Line: {arabicTypo.lineHeight}</Text>
+              </View>
+              <Slider
+                value={arabicPreview}
+                min={16}
+                max={54}
+                step={1}
+                trackColor="#333333"
+                filledColor={colors.primary}
+                thumbColor={colors.primary}
+                onChangeEnd={(v) => {
+                  // ✅ ZERO parent callbacks during drag - only update on release
+                  const rounded = Math.round(v);
+                  setArabicPreview(rounded);
+                  setFontSizeArabic(rounded);
+                }}
+              />
+              <View style={{ padding: 12, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#222' }}>
+                <Text style={{ color: '#fff', fontFamily: arabicFamily, fontSize: arabicTypo.fontSize, lineHeight: arabicTypo.lineHeight, textAlign: 'right' }}>
+                  بِسْمِ اللّٰهِ الرَّحْمٰنِ الرَّحِيْمِ
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Translation Size */}
+          <View style={styles.settingItem}>
+            <View style={styles.settingHeader}>
+              <View style={styles.iconContainer}>
+                <Palette size={20} color="#4CAF50" />
+              </View>
+              <View>
+                <Text style={styles.settingLabel}>Translation size</Text>
+                <Text style={styles.settingDescription}>Adjust the translation font size</Text>
+              </View>
+            </View>
+            <View style={{ gap: 12 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                <Text style={{ color: '#aaa' }}>Size: {Math.round(transPreview)}</Text>
+                <Text style={{ color: '#aaa' }}>Line: {Math.round(transPreview * 1.4)}</Text>
+              </View>
+              <Slider
+                value={transPreview}
+                min={12}
+                max={28}
+                step={1}
+                trackColor="#333333"
+                filledColor={colors.primary}
+                thumbColor={colors.primary}
+                onChangeEnd={(v) => {
+                  // ✅ ZERO parent callbacks during drag - only update on release
+                  const rounded = Math.round(v);
+                  setTransPreview(rounded);
+                  setFontSizeTranslation(rounded);
+                }}
+              />
+              <View style={{ padding: 12, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#222' }}>
+                <Text style={{ color: '#ddd', fontSize: transPreview, lineHeight: Math.round(transPreview * 1.4) }}>
+                  In the name of Allah, the Most Gracious, the Most Merciful.
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Transliteration Size */}
+          <View style={styles.settingItem}>
+            <View style={styles.settingHeader}>
+              <View style={styles.iconContainer}>
+                <Palette size={20} color="#9C27B0" />
+              </View>
+              <View>
+                <Text style={styles.settingLabel}>Transliteration size</Text>
+                <Text style={styles.settingDescription}>Adjust the transliteration font size</Text>
+              </View>
+            </View>
+            <View style={{ gap: 12 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                <Text style={{ color: '#aaa' }}>Size: {Math.round(translitPreview)}</Text>
+                <Text style={{ color: '#aaa' }}>Line: {Math.round(translitPreview * 1.35)}</Text>
+              </View>
+              <Slider
+                value={translitPreview}
+                min={12}
+                max={26}
+                step={1}
+                trackColor="#333333"
+                filledColor={colors.primary}
+                thumbColor={colors.primary}
+                onChangeEnd={(v) => {
+                  // ✅ ZERO parent callbacks during drag - only update on release
+                  const rounded = Math.round(v);
+                  setTranslitPreview(rounded);
+                  setFontSizeTransliteration(rounded);
+                }}
+              />
+              <View style={{ padding: 12, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#222' }}>
+                <Text style={{ color: '#FFD700', fontSize: translitPreview, lineHeight: Math.round(translitPreview * 1.35) }}>
+                  Bismillāhir Raḥmānir Raḥīm
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
         {/* Data Management */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Data Management</Text>
@@ -426,7 +595,7 @@ export default function SettingsScreen() {
 
         {/* App version label */}
         <View style={styles.versionRow}>
-          <Text style={styles.versionText}>Ver-1.2.1</Text>
+          <Text style={styles.versionText}>Ver-2.0.0</Text>
         </View>
       </ScrollView>
     </View>

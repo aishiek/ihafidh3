@@ -166,11 +166,11 @@ export default function VerseProgressGraph({
   const screenWidth = Dimensions.get('window').width;
   const cardPadding = 32;
   const availableScreenWidth = screenWidth - cardPadding;
-  const graphHeight = 220;
-  const chartPadding = { top: 20, bottom: 40, left: 8, right: 8 };
+  const graphHeight = 240;
+  const chartPadding = { top: 24, bottom: 48, left: 12, right: 12 };
   
   const denominator = totalVerses || TOTAL_VERSES;
-  const minBarHeight = 3;
+  const minBarHeight = 4;
 
   // Process stacked bar data
   const stackedData = useMemo(() => {
@@ -219,14 +219,15 @@ export default function VerseProgressGraph({
   // Determine if scrolling is needed
   const needsScrolling = timeRange === 'month' || timeRange === 'year';
   
-  // Calculate bar dimensions
+  // Calculate bar dimensions - Modern thinner bars
   let barSpacing: number;
   let barWidth: number;
   let graphWidth: number;
   
   if (needsScrolling) {
-    barWidth = timeRange === 'month' ? 16 : 24;
-    barSpacing = timeRange === 'month' ? 4 : 8;
+    // Thinner bars for scrollable views
+    barWidth = timeRange === 'month' ? 10 : 14;
+    barSpacing = timeRange === 'month' ? 8 : 12;
     const totalBarWidth = stackedData.length * barWidth + (stackedData.length - 1) * barSpacing;
     graphWidth = Math.max(availableScreenWidth, totalBarWidth + chartPadding.left + chartPadding.right);
   } else {
@@ -234,12 +235,13 @@ export default function VerseProgressGraph({
     const availableWidth = graphWidth - chartPadding.left - chartPadding.right;
     
     if (timeRange === 'day') {
-      barWidth = 32;
+      barWidth = 24;
       barSpacing = 0;
     } else {
-      barSpacing = stackedData.length <= 7 ? 12 : 8;
+      // More generous spacing for better visual breathing room
+      barSpacing = stackedData.length <= 7 ? 16 : 12;
       const totalSpacing = barSpacing * (stackedData.length - 1);
-      barWidth = Math.max(8, Math.min(32, (availableWidth - totalSpacing) / stackedData.length));
+      barWidth = Math.max(6, Math.min(20, (availableWidth - totalSpacing) / stackedData.length));
     }
   }
   
@@ -260,7 +262,7 @@ export default function VerseProgressGraph({
           opacity={0.3}
         />
         
-        {/* Gridlines */}
+        {/* Gridlines - Modern minimal styling */}
         {gridlines.map((val) => {
           const ratio = val / denominator;
           const y = graphHeight - chartPadding.bottom - ratio * availableHeight;
@@ -274,16 +276,15 @@ export default function VerseProgressGraph({
                 x2={graphWidth - chartPadding.right}
                 y2={y}
                 stroke={colors.border}
-                strokeWidth={1}
-                opacity={isTop ? 0.6 : 0.25}
-                strokeDasharray={isTop ? '0' : '4 4'}
+                strokeWidth={isTop ? 1.5 : 0.8}
+                opacity={isTop ? 0.4 : 0.15}
+                strokeDasharray={isTop ? undefined : '2 4'}
               />
-              {/* Y-axis labels removed for cleaner appearance */}
             </React.Fragment>
           );
         })}
 
-        {/* Stacked Bars */}
+        {/* Stacked Bars - Modern sleek design */}
         {stackedData.map((item, index) => {
           const totalHeight = item._total > 0 
             ? Math.max(minBarHeight, (item._total / denominator) * availableHeight) 
@@ -313,13 +314,33 @@ export default function VerseProgressGraph({
           const memY = baseY - adjustedMemHeight;
           const revY = memY - adjustedRevHeight;
 
+          // Modern color scheme with enhanced contrast
           const memColor = colors.primaryLight;
           const revColor = colors.primary;
-          const opacityMem = item._mem === 0 ? 0.12 : (item.isCurrentPeriod ? 0.9 : 0.75);
-          const opacityRev = item._rev === 0 ? 0.12 : (item.isCurrentPeriod ? 1 : 0.85);
+          
+          // Enhanced opacity for better visual hierarchy
+          const opacityMem = item._mem === 0 ? 0.08 : (item.isCurrentPeriod ? 0.95 : 0.65);
+          const opacityRev = item._rev === 0 ? 0.08 : (item.isCurrentPeriod ? 1 : 0.75);
+          
+          // Increased border radius for sleeker look
+          const borderRadius = Math.min(barWidth / 2, 6);
 
           return (
             <React.Fragment key={`bar-${index}-${item.date.getTime()}`}>
+              {/* Background shadow for depth (only for current period) */}
+              {item.isCurrentPeriod && (adjustedMemHeight > 0 || adjustedRevHeight > 0) && (
+                <Rect
+                  x={x - 1}
+                  y={adjustedRevHeight > 0 ? revY - 1 : memY - 1}
+                  width={barWidth + 2}
+                  height={(adjustedRevHeight > 0 ? adjustedRevHeight : 0) + adjustedMemHeight + 2}
+                  rx={borderRadius + 1}
+                  ry={borderRadius + 1}
+                  fill={colors.primary}
+                  opacity={0.2}
+                />
+              )}
+              
               {/* Memorized segment */}
               {adjustedMemHeight > 0 && (
                 <SafeAnimatedRect
@@ -328,13 +349,14 @@ export default function VerseProgressGraph({
                   y={memY}
                   width={barWidth}
                   height={adjustedMemHeight}
-                  rx={4}
-                  ry={4}
+                  rx={borderRadius}
+                  ry={borderRadius}
                   fill={memColor}
                   opacity={opacityMem}
                   index={index}
                 />
               )}
+              
               {/* Revised segment */}
               {adjustedRevHeight > 0 && (
                 <SafeAnimatedRect
@@ -343,11 +365,25 @@ export default function VerseProgressGraph({
                   y={revY}
                   width={barWidth}
                   height={adjustedRevHeight}
-                  rx={4}
-                  ry={4}
+                  rx={borderRadius}
+                  ry={borderRadius}
                   fill={revColor}
                   opacity={opacityRev}
                   index={index}
+                />
+              )}
+              
+              {/* Subtle highlight on top for active bars */}
+              {item.isCurrentPeriod && adjustedRevHeight > 0 && (
+                <Rect
+                  x={x}
+                  y={revY}
+                  width={barWidth}
+                  height={Math.min(adjustedRevHeight / 3, 3)}
+                  rx={borderRadius}
+                  ry={borderRadius}
+                  fill="#FFFFFF"
+                  opacity={0.3}
                 />
               )}
             </React.Fragment>
@@ -426,32 +462,37 @@ export default function VerseProgressGraph({
 
 const styles = StyleSheet.create({
   container: {
-    marginTop: 12,
+    marginTop: 16,
   },
   emptyContainer: {
-    height: 160,
+    height: 180,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 12,
-    marginTop: 12,
+    borderRadius: 16,
+    marginTop: 16,
+    borderWidth: 1,
+    borderStyle: 'dashed',
   },
   emptyText: {
     fontSize: 14,
     fontStyle: 'italic',
+    opacity: 0.7,
   },
   labelsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 12,
     paddingHorizontal: 4,
   },
   labelWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 4,
   },
   label: {
-    fontSize: 12,
+    fontSize: 11,
     textAlign: 'center',
-    lineHeight: 14,
+    lineHeight: 13,
+    letterSpacing: 0.2,
   },
 });

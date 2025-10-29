@@ -1,14 +1,18 @@
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MushafCard from '../components/MushafCard';
 import { useMushafBookmarks } from '../hooks/useMushafBookmarks';
 import { useMushafPagination } from '../hooks/useMushafPagination';
 
-export default function MushafScreen(){
+export default function MushafScreen() {
+  const insets = useSafeAreaInsets();
   const { currentPage, nextPage, prevPage, goToPage } = useMushafPagination(1);
   const { bookmarks, toggleBookmark, saveLastRead, getLastRead } = useMushafBookmarks();
-  const [mode, setMode] = useState<'image'|'text'>('image');
+  const [mode, setMode] = useState<'image' | 'text'>('image');
+  const router = useRouter();
 
   useEffect(() => {
     // Restore last read
@@ -29,25 +33,28 @@ export default function MushafScreen(){
     saveLastRead(currentPage);
   }, [currentPage]);
 
-
-  const router = useRouter();
-
   const handleClose = () => {
-    // last read is saved on page change; ensure final save and go back
-    try { saveLastRead(currentPage); } catch (_) {}
-    // Ensure we return to the app home (replace so we don't leave a broken history entry)
+    try {
+      saveLastRead(currentPage);
+    } catch (_) {}
     try {
       router.replace('/');
     } catch (e) {
-      // Fallback to back if replace is not available for some reason
-      try { router.back(); } catch (_) { /* ignore */ }
+      try { router.back(); } catch (_) {}
     }
   };
 
   return (
-    <View style={styles.container}>
+    <>
+      <StatusBar style="light" backgroundColor="#1a1a2e" />
+      <View style={[styles.container, { 
+        paddingTop: Platform.OS === 'android' ? insets.top : 0,
+        paddingLeft: insets.left,
+        paddingRight: insets.right,
+      }]}>
         <MushafCard />
-    </View>
+      </View>
+    </>
   );
 }
 

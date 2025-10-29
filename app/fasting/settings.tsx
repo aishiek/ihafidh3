@@ -1,5 +1,5 @@
 import { FastingType } from '@/types/fasting';
-import { useRouter } from 'expo-router';
+import { safeGoBack } from '@/utils/navigationUtils';
 import { ArrowLeft } from 'lucide-react-native';
 import React, { useContext } from 'react';
 import {
@@ -17,7 +17,7 @@ import { useUnifiedTheme } from '../../hooks/useUnifiedTheme';
 const FastingSettings: React.FC = () => {
   const { theme } = useUnifiedTheme();
   const fastingContext = useContext(FastingCalendarContext);
-  const router = useRouter();
+  
 
   if (!fastingContext) {
     return (
@@ -80,7 +80,7 @@ const FastingSettings: React.FC = () => {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       {/* App-style header with yellow back arrow */}
       <View style={[styles.headerBar, { backgroundColor: theme.background, borderBottomColor: theme.border }]}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" hitSlop={{ top:10, bottom:10, left:10, right:10 }} onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" hitSlop={{ top:10, bottom:10, left:10, right:10 }} onPress={() => safeGoBack()} style={styles.backButton}>
           <ArrowLeft size={24} color="#FFC107" />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]}>Manage Fasting Settings</Text>

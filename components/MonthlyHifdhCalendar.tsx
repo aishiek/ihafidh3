@@ -164,9 +164,7 @@ export default function MonthlyHifdhCalendar() {
             <Text key={d} style={styles.weekHeaderText}>{d}</Text>
           ))}
         </View>
-            <HifdhPlannerStats />
-
-        {/* Grid */}
+    {/* Grid */}
         <View style={styles.grid}>
             {monthDays.map((d, idx) => {
               if (!d) return <View key={`pad-${idx}`} style={styles.cell} />;
@@ -206,6 +204,8 @@ export default function MonthlyHifdhCalendar() {
           </View>
 
         {/* Legend */}
+  {/* Hifdh Planner Stats (show stats for the calendar month being viewed) */}
+  <HifdhPlannerStats monthDate={monthCursor} />
         <View style={styles.legendRow}>
           <View style={styles.legendItem}>
             <Text style={styles.star}>★</Text>

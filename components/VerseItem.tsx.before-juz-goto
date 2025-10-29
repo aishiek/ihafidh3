@@ -17,6 +17,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from '
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import TajweedVerse from 'rn-tajweed-verse';
 import TafsirModal from './TafsirModal';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 
 interface VerseItemProps {
   verse: Verse;
@@ -61,6 +62,30 @@ const VerseItem = ({
   ...rest
 }: VerseItemInternalProps & { source?: 'surahList' | 'juzList' | 'mustahabbah' }) => {
   const { primary } = useThemeColor();
+  const router = useRouter();
+  const params = useLocalSearchParams();
+
+  // Handle back navigation based on source
+  const handleBack = React.useCallback((): void => {
+    try {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        // Fallback navigation if we can't go back
+        if (source === 'juzList') {
+          router.replace('/(tabs)/read?tab=juz');
+        } else if (source === 'mustahabbah') {
+          router.replace('/');
+        } else {
+          router.replace('/(tabs)/read?tab=surah');
+        }
+      }
+    } catch (error) {
+      console.error('Error in handleBack:', error);
+      // Fallback to home if navigation fails
+      router.replace('/(tabs)/read');
+    }
+  }, [router, source]);
 
   // ============ SETTINGS STORE ============
   const { 
