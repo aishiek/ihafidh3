@@ -4,6 +4,7 @@ import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as SQLite from 'expo-sqlite';
 import { MUSHAF_CACHE_DIR } from '../utils/mushafConstants';
+import { checkLayoutStatus } from './mushafDownloadService';
 // Statically require packaged DB assets so Metro can resolve them at bundle time.
 // These literal requires must match files under `assets/database/`.
 const ASSET_DB_MODULES: Record<string, any> = {
@@ -82,8 +83,20 @@ export class LayoutService {
   static async setActiveLayout(layoutId: string): Promise<boolean> {
     try {
       const layout = AVAILABLE_LAYOUTS.find((l) => l.layout_id === layoutId);
-      if (!layout || !layout.downloaded) {
-        logErr('Layout not found or not downloaded', layoutId);
+      if (!layout) {
+        logErr('Layout not found', layoutId);
+        return false;
+      }
+
+      // Dynamically verify the layout's assets are installed (images + DB)
+      try {
+        const status = await checkLayoutStatus(layoutId);
+        if (status !== 'ready') {
+          logErr('Layout not installed, cannot activate', layoutId);
+          return false;
+        }
+      } catch (e) {
+        logErr('Failed checking layout status for activation', e);
         return false;
       }
 
@@ -99,7 +112,7 @@ export class LayoutService {
 
       // Open DB by name
       this.activeDb = await (SQLite as any).openDatabaseAsync(layout.dbFileName);
-      this.activeLayoutId = layoutId;
+  this.activeLayoutId = layoutId;
 
       await AsyncStorage.setItem(STORAGE_KEY_ACTIVE_LAYOUT, layoutId);
       log('Set active layout', layoutId);
@@ -113,10 +126,10 @@ export class LayoutService {
   static async getActiveLayoutId(): Promise<string> {
     try {
       const layoutId = await AsyncStorage.getItem(STORAGE_KEY_ACTIVE_LAYOUT);
-      return layoutId || 'madina_15';
+      return layoutId || 'indopak_15';
     } catch (error) {
       logErr('Error getting active layout id', error);
-      return 'madina_15';
+      return 'indopak_15';
     }
   }
 

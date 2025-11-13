@@ -37,6 +37,12 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# video files
+*.mp4
+*.mov
+*.avi
+*.mkv
+
 app-example
 
 # generated native folders

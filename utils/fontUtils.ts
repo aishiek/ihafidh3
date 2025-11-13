@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-export type ArabicFontOption = 'default' | 'uthman-taha' | 'scheherazade' | 'scheherazade-bold' | 'tajweed' | 'indo-pak' | 'amiri-quran';
+export type ArabicFontOption = 'default' | 'uthman-taha' | 'scheherazade' | 'scheherazade-bold' | 'tajweed' | 'indo-pak' | 'amiri-quran' | 'noto-naskh';
 
 /**
  * Centralized mapping for Arabic font families used across the app.
@@ -9,7 +9,7 @@ export type ArabicFontOption = 'default' | 'uthman-taha' | 'scheherazade' | 'sch
 export function getArabicFontFamily(option: ArabicFontOption): string | undefined {
   switch (option) {
     case 'uthman-taha':
-      return 'UthmanTaha-Ver10';
+      return 'NotoNaskhArabic-Regular';
     case 'amiri-quran':
       return 'AmiriQuran-Regular';
     case 'scheherazade':
@@ -21,9 +21,12 @@ export function getArabicFontFamily(option: ArabicFontOption): string | undefine
       return 'ScheherazadeNew-Regular';
     case 'indo-pak':
       return 'NooreHuda-Regular';
+    case 'noto-naskh':
+      return 'NotoNaskhArabic-Regular';
     case 'default':
     default:
-      return 'UthmanTaha-Ver10';
+      // System Default uses ScheherazadeNew-Regular
+      return 'ScheherazadeNew-Regular';
   }
 }
 

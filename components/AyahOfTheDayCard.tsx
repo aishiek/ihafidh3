@@ -137,7 +137,7 @@ interface AyahOfTheDayCardProps {
   style?: any; 
 }
 
-// Branded Footer Component for Share Image
+// Branded Footer Component for Share Image - Modern & Compact Design
 const BrandedFooter = ({ colors }: { colors: any }) => {
   const openPlayStore = async () => {
     const intent = 'market://details?id=com.ihafidh';
@@ -149,42 +149,58 @@ const BrandedFooter = ({ colors }: { colors: any }) => {
     try { await Linking.openURL(url); } catch {}
   };
   return (
-    <View style={[styles.brandedFooter, { backgroundColor: colors.primary + 'f0' }]}>
+    <View style={[styles.brandedFooter, { backgroundColor: colors.primary + 'f5' }]}>
+      {/* Subtle top border accent */}
+      <LinearGradient
+        colors={[colors.accent + '40', 'transparent', colors.accent + '40']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.footerTopAccent}
+      />
+      
       <View style={styles.footerContent}>
-        {/* App Icon */}
-        <View style={styles.appIconContainer}>
-          <Image 
-            source={require('@/assets/images/icon.png')} 
-            style={styles.appIcon}
-            resizeMode="contain"
-          />
+        {/* Prominent App Icon with glow effect */}
+        <View style={styles.appIconWrapper}>
+          <View style={[styles.appIconGlow, { backgroundColor: colors.accent }]} />
+          <View style={[styles.appIconContainer, { borderColor: colors.accent + '30' }]}>
+            <Image 
+              source={require('@/assets/images/icon.png')} 
+              style={styles.appIcon}
+              resizeMode="contain"
+            />
+          </View>
         </View>
 
-        {/* Available On Section */}
-        <View style={styles.badgesContainer}>
-          <Text style={[styles.availableText, { color: colors.subtext }]}>Available on</Text>
-          <View style={styles.storeButtonsRow}>
-            {/* App Store Badge (image) */}
-            <Pressable onPress={openAppStore} style={styles.storeBadgeImageWrap} hitSlop={6}>
+        {/* Brand Info & Badges */}
+        <View style={styles.brandInfoContainer}>
+          {/* App Name & Tagline */}
+          <View style={styles.brandTextContainer}>
+            <Text style={[styles.appName, { color: colors.text }]}>iHafidh</Text>
+            <Text style={[styles.appTagline, { color: colors.subtext }]}>
+              Your Quran Companion
+            </Text>
+          </View>
+
+          {/* Compact Store Badges */}
+          <View style={styles.compactBadgesRow}>
+            <Text style={[styles.downloadText, { color: colors.subtext }]}>Download:</Text>
+            <Pressable onPress={openAppStore} style={styles.compactStoreBadge} hitSlop={4}>
               <Image
                 source={require('@/assets/images/appstore.png')}
-                style={styles.storeBadgeImage}
+                style={styles.compactBadgeImage}
                 resizeMode="contain"
               />
             </Pressable>
-            {/* Play Store Badge (image) */}
-            <Pressable onPress={openPlayStore} style={styles.storeBadgeImageWrap} hitSlop={6}>
+            <Pressable onPress={openPlayStore} style={styles.compactStoreBadge} hitSlop={4}>
               <Image
                 source={require('@/assets/images/playstore.png')}
-                style={styles.storeBadgeImage}
+                style={styles.compactBadgeImage}
                 resizeMode="contain"
               />
             </Pressable>
           </View>
         </View>
       </View>
-      {/* App Name */}
-      <Text style={[styles.appName, { color: colors.accent }]}>iHafidh</Text>
     </View>
   );
 };
@@ -237,6 +253,13 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style }) => 
         arabicName: surah.arabicName || '',
         arabicText: verse.arabicText || '',
         translation: verse.translation || 'No translation available',
+      });
+      console.log('[AyahOfTheDay] Loaded verse:', {
+        verseId: verse.id,
+        surahId: cardVerse.surahId,
+        surahName: surah.name,
+        verseNumber: cardVerse.verseNumber,
+        arabicPreview: verse.arabicText?.substring(0, 50)
       });
     } catch (e: any) {
       setError(e?.message || 'Unable to load today\'s ayah');
@@ -299,7 +322,8 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style }) => 
       );
     } catch {}
     // Replace navigation when opening a specific verse to avoid duplicate Read entries
-    try { router.replace(`/(tabs)/read?surahId=${ayah.surahId}&verseId=${ayah.verseNumber}`); } catch { router.push(`/(tabs)/read?surahId=${ayah.surahId}&verseId=${ayah.verseNumber}`); }
+    // After fixing FlashList keys and recycling issues, scroll to specific verse should work reliably
+    try { router.replace(`/(tabs)/read?surahId=${ayah.surahId}&verseId=${ayah.verseId}`); } catch { router.push(`/(tabs)/read?surahId=${ayah.surahId}&verseId=${ayah.verseId}`); }
   };
 
   const handleShare = async () => {
@@ -587,6 +611,96 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '400',
   },
+  // Branded Footer Styles - Modern & Compact Design
+  brandedFooter: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    position: 'relative',
+  },
+  footerTopAccent: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+  },
+  footerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  appIconWrapper: {
+    position: 'relative',
+  },
+  appIconGlow: {
+    position: 'absolute',
+    top: -4,
+    left: -4,
+    right: -4,
+    bottom: -4,
+    borderRadius: 18,
+    opacity: 0.15,
+  },
+  appIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1.5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  appIcon: {
+    width: '100%',
+    height: '100%',
+  },
+  brandInfoContainer: {
+    flex: 1,
+    gap: 6,
+  },
+  brandTextContainer: {
+    gap: 1,
+  },
+  appName: {
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  appTagline: {
+    fontSize: 10,
+    fontWeight: '500',
+    opacity: 0.8,
+  },
+  compactBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  downloadText: {
+    fontSize: 9,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    opacity: 0.7,
+  },
+  compactStoreBadge: {
+    height: 18,
+    width: 54,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  compactBadgeImage: {
+    height: 18,
+    width: 54,
+    opacity: 0.85,
+  },
   storeBadgeImageWrap: {
     height: 36,
     width: 126,
@@ -635,52 +749,6 @@ const styles = StyleSheet.create({
     right: 0,
     paddingVertical: 8,
     alignItems: 'center',
-  },
-  // Branded Footer Styles
-  brandedFooter: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  footerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  appIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  appIcon: {
-    width: '100%',
-    height: '100%',
-  },
-  badgesContainer: {
-    flex: 1,
-    gap: 6,
-  },
-  availableText: {
-    fontSize: 10,
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  storeButtonsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  appName: {
-    fontSize: 13,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginTop: 8,
-    letterSpacing: 1,
   },
 });
 

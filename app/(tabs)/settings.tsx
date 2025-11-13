@@ -606,16 +606,17 @@ export default function SettingsScreen() {
           
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
             {[
-              { value: 'default', label: 'System Default (Uthman Taha)' },
+              { value: 'default', label: 'System Default (Scheherazade)' },
+              { value: 'noto-naskh', label: 'Naskh Arabic' },
               { value: 'amiri-quran', label: 'Amiri Quran' },
-              { value: 'scheherazade', label: 'Scheherazade New' },
-              { value: 'scheherazade-bold', label: 'Scheherazade Bold' },
-              { value: 'tajweed', label: 'Tajweed Colors' },
               { value: 'indo-pak', label: 'Indo-Pak (Noore Huda)' }
             ].map((font) => (
               <Pressable 
                 key={font.value} 
-                onPress={() => { setLocalArabicFont(font.value as any); setArabicFont(font.value as any); }} 
+                onPress={() => { 
+                  setLocalArabicFont(font.value as any); 
+                  setArabicFont(font.value as any); 
+                }} 
                 style={{ 
                   alignItems: 'center', 
                   width: '48%',
@@ -624,7 +625,7 @@ export default function SettingsScreen() {
                   borderRadius: 8,
                   backgroundColor: localArabicFont === font.value ? theme.primary : 'transparent',
                   borderWidth: 1,
-                  borderColor: localArabicFont === font.value ? theme.primary : theme.inactive
+                  borderColor: localArabicFont === font.value ? theme.primary : theme.inactive,
                 }}
               >
                 <Text style={{ 
@@ -701,6 +702,10 @@ export default function SettingsScreen() {
           <View style={styles.sectionTitle}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Reading Font Sizes</Text>
           </View>
+          
+          <Text style={{ color: theme.inactive, fontSize: 11, marginBottom: 12, fontStyle: 'italic' }}>
+            Tap anywhere on the slider to adjust size
+          </Text>
 
           {/* Arabic text slider + preview */}
           <View style={{ marginBottom: 16 }}>
@@ -716,10 +721,14 @@ export default function SettingsScreen() {
               trackColor={theme.inactive}
               filledColor={theme.primary}
               thumbColor={theme.primary}
-              onChange={(v) => setArabicSizePreview(v)}
+              onChange={(v) => {
+                // Update preview immediately for smooth UI
+                setArabicSizePreview(v);
+              }}
               onChangeEnd={(v) => {
+                // Commit to store ONLY on release
                 const rounded = Math.round(v);
-                // Only update store, preview is already set by onChange
+                setArabicSizePreview(rounded); // Ensure preview matches store
                 setFontSizeArabic(rounded);
               }}
             />
@@ -751,10 +760,12 @@ export default function SettingsScreen() {
               trackColor={theme.inactive}
               filledColor={theme.primary}
               thumbColor={theme.primary}
-              onChange={(v) => setTranslationSizePreview(v)}
+              onChange={(v) => {
+                setTranslationSizePreview(v);
+              }}
               onChangeEnd={(v) => {
                 const rounded = Math.round(v);
-                // Only update store, preview is already set by onChange
+                setTranslationSizePreview(rounded);
                 setFontSizeTranslation(rounded);
               }}
             />
@@ -786,10 +797,12 @@ export default function SettingsScreen() {
               trackColor={theme.inactive}
               filledColor={theme.primary}
               thumbColor={theme.primary}
-              onChange={(v) => setTranslitSizePreview(v)}
+              onChange={(v) => {
+                setTranslitSizePreview(v);
+              }}
               onChangeEnd={(v) => {
                 const rounded = Math.round(v);
-                // Only update store, preview is already set by onChange
+                setTranslitSizePreview(rounded);
                 setFontSizeTransliteration(rounded);
               }}
             />

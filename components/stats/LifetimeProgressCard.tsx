@@ -1,4 +1,3 @@
-import { getVerseActivitiesBetween } from '@/assets/database/QuranDatabase';
 import { useDayKey } from '@/hooks/useDayKey';
 import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
 import { useProgressStore } from '@/store/progressStore';
@@ -40,7 +39,7 @@ function addDays(d: Date, n: number): Date {
 
 export default function LifetimeProgressCard(){
   const { theme } = useUnifiedTheme();
-  const { memorizedVerses, revisedVerses } = useProgressStore(); // Add progress store dependency
+  const { memorizedVerses, revisedVerses, verseStatus, memorizedVerseDates } = useProgressStore();
   const dayKey = useDayKey();
   const colors = useMemo(() => ({
     card: theme.card,
@@ -63,32 +62,37 @@ export default function LifetimeProgressCard(){
       setInstallStr(installDateStr);
       const start = installDateStr;
       const end = formatDate(new Date());
-      const rows = await getVerseActivitiesBetween(start, end);
       
-      console.log('[LifetimeProgress] Raw data rows:', rows);
-      
-      // Build daily totals by type
+      // Build daily totals by date from memorizedVerseDates
       const memMap: Record<string, number> = {};
       const revMap: Record<string, number> = {};
-      rows.forEach(r => {
-        if (r.activityType === 'memorized') {
-          memMap[r.activityDate] = (memMap[r.activityDate] || 0) + r.count;
-        } else if (r.activityType === 'revised') {
-          revMap[r.activityDate] = (revMap[r.activityDate] || 0) + r.count;
-        }
+      
+      // Count memorization activities by date
+      // BACKFILL: If a verse is memorized but has no date, use install date
+      const today = formatDate(new Date());
+      memorizedVerses.forEach(verseId => {
+        const date = memorizedVerseDates[verseId] || installDateStr; // Backfill with install date
+        memMap[date] = (memMap[date] || 0) + 1;
+      });
+      
+      // Count revision activities by date
+      revisedVerses.forEach(rv => {
+        const dateKey = rv.revisionDate || installDateStr; // Also backfill revisions with install date
+        revMap[dateKey] = (revMap[dateKey] || 0) + 1;
       });
 
       // Create ECG-style daily timeline from install date to today
-      const startDate = new Date(start);
-      const today = new Date();
+      const startDate = new Date(start + 'T00:00:00'); // Ensure proper date parsing
+      const todayDate = new Date(formatDate(new Date()) + 'T00:00:00');
       
       // Build complete daily timeline for ECG visualization
       const dailyTimeline: SeriesPoint[] = [];
       let runningMem = 0;
       let runningRev = 0;
       
-      for (let d = new Date(startDate); d <= today; d = addDays(d, 1)) {
-        const dateStr = formatDate(d);
+      let currentDate = new Date(startDate);
+      while (currentDate <= todayDate) {
+        const dateStr = formatDate(currentDate);
         const dayMemActivity = memMap[dateStr] || 0;
         const dayRevActivity = revMap[dateStr] || 0;
         
@@ -107,10 +111,9 @@ export default function LifetimeProgressCard(){
           memActivity: dayMemActivity,
           revActivity: dayRevActivity
         });
+        
+        currentDate = addDays(currentDate, 1);
       }
-      
-      console.log('[LifetimeProgress] ECG Timeline created:', dailyTimeline.length, 'days');
-      console.log('[LifetimeProgress] Sample points:', dailyTimeline.slice(0, 3));
       
       // Create separate memorization and revision timelines
       const mPts: SeriesPoint[] = dailyTimeline.map(point => ({
@@ -132,39 +135,50 @@ export default function LifetimeProgressCard(){
       setTotalMem(runningMem);
       setTotalRev(runningRev);
     };
-    load();
-  }, []);
+    
+    load().catch(err => {
+      console.error('[LifetimeProgress] Error in load():', err);
+    });
+  }, [memorizedVerses.length, revisedVerses.length]); // Use .length to avoid object reference issues
 
   // Refresh data when progress changes
   useEffect(() => {
     const load = async () => {
       if (!installStr) return; // Wait for install date to be set
+      
       const start = installStr;
       const end = formatDate(new Date());
-      const rows = await getVerseActivitiesBetween(start, end);
       
-      // Build daily totals by type
+      // Build daily totals by date from memorizedVerseDates
       const memMap: Record<string, number> = {};
       const revMap: Record<string, number> = {};
-      rows.forEach(r => {
-        if (r.activityType === 'memorized') {
-          memMap[r.activityDate] = (memMap[r.activityDate] || 0) + r.count;
-        } else if (r.activityType === 'revised') {
-          revMap[r.activityDate] = (revMap[r.activityDate] || 0) + r.count;
-        }
+      
+      // Count memorization activities by date
+      // BACKFILL: If a verse is memorized but has no date, use install date
+      const today = formatDate(new Date());
+      memorizedVerses.forEach(verseId => {
+        const date = memorizedVerseDates[verseId] || installStr; // Backfill with install date
+        memMap[date] = (memMap[date] || 0) + 1;
+      });
+      
+      // Count revision activities by date
+      revisedVerses.forEach(rv => {
+        const dateKey = rv.revisionDate || installStr; // Also backfill revisions with install date
+        revMap[dateKey] = (revMap[dateKey] || 0) + 1;
       });
 
       // Create ECG-style daily timeline from install date to today
-      const startDate = new Date(start);
-      const today = new Date();
+      const startDate = new Date(start + 'T00:00:00');
+      const todayDate = new Date(formatDate(new Date()) + 'T00:00:00');
       
       // Build complete daily timeline for ECG visualization
       const dailyTimeline: SeriesPoint[] = [];
       let runningMem = 0;
       let runningRev = 0;
       
-      for (let d = new Date(startDate); d <= today; d = addDays(d, 1)) {
-        const dateStr = formatDate(d);
+      let currentDate = new Date(startDate);
+      while (currentDate <= todayDate) {
+        const dateStr = formatDate(currentDate);
         const dayMemActivity = memMap[dateStr] || 0;
         const dayRevActivity = revMap[dateStr] || 0;
         
@@ -183,6 +197,8 @@ export default function LifetimeProgressCard(){
           memActivity: dayMemActivity,
           revActivity: dayRevActivity
         });
+        
+        currentDate = addDays(currentDate, 1);
       }
       
       // Create separate memorization and revision timelines
@@ -199,8 +215,6 @@ export default function LifetimeProgressCard(){
         hasActivity: (point.revActivity || 0) > 0,
         activityCount: point.revActivity || 0
       }));
-      
-      console.log('[LifetimeProgress] Refresh - ECG Timeline created:', dailyTimeline.length, 'days');
       
       setMemPoints(mPts);
       setRevPoints(rPts);
@@ -315,17 +329,11 @@ export default function LifetimeProgressCard(){
 
   const lineSpacing = 2;
   
-  // Debug logging
-  console.log('[LifetimeProgress] maxTotal:', maxYAxis);
-  console.log('[LifetimeProgress] memPoints final:', memPoints[memPoints.length - 1]?.total);
-  console.log('[LifetimeProgress] revPoints final:', revPoints[revPoints.length - 1]?.total);
-  console.log('[LifetimeProgress] totalMem state:', totalMem, 'totalRev state:', totalRev);
-  console.log('[LifetimeProgress] totalCombined:', totalCombined, 'pointCount:', pointCount, 'empty:', empty);
-  console.log('[LifetimeProgress] effectiveMemPoints length:', effectiveMemPoints.length, 'effectiveRevPoints length:', effectiveRevPoints.length);
-  
   // ECG-style pathD function
   const createECGPath = (series: SeriesPoint[], xOffset: number = 0) => {
-    if (series.length === 0) return '';
+    if (series.length === 0) {
+      return '';
+    }
 
     const xAt = (idx: number) => pad.left + idx * dayWidth + xOffset;
 

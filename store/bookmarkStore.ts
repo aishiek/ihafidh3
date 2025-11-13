@@ -11,6 +11,8 @@ export interface BookmarkItem {
   arabicText: string; // truncated to 50 chars before insert
   translation: string; // truncated to 100 chars before insert
   createdAt: string; // ISO string
+  source?: 'surah' | 'juz'; // where the bookmark was created
+  juzNumber?: number; // juz number if source is 'juz'
 }
 
 interface BookmarkState {
@@ -26,7 +28,9 @@ interface BookmarkState {
     surahName: string,
     verseNumber: number,
     arabicText: string,
-    translation: string
+    translation: string,
+    source?: 'surah' | 'juz',
+    juzNumber?: number
   ) => Promise<void>;
   removeBookmark: (verseId: number) => Promise<void>;
   isBookmarked: (verseId: number) => boolean;
@@ -43,6 +47,8 @@ type PendingAdd = {
   verseNumber: number;
   arabicText: string;
   translation: string;
+  source?: 'surah' | 'juz';
+  juzNumber?: number;
   resolve: () => void;
   reject: (e: any) => void;
 };
@@ -67,8 +73,10 @@ const scheduleFlushAdds = async () => {
       // Build single transaction string
       let sql = 'BEGIN;';
       for (const b of batch) {
-        sql += `INSERT OR IGNORE INTO bookmarks (verseId, surahId, surahName, verseNumber, arabicText, translation, createdAt) ` +
-               `VALUES (${b.verseId}, ${b.surahId}, '${esc(b.surahName)}', ${b.verseNumber}, '${esc(b.arabicText)}', '${esc(b.translation)}', datetime('now'));`;
+        const sourceValue = b.source ? `'${b.source}'` : 'NULL';
+        const juzValue = b.juzNumber ? `${b.juzNumber}` : 'NULL';
+        sql += `INSERT OR IGNORE INTO bookmarks (verseId, surahId, surahName, verseNumber, arabicText, translation, createdAt, source, juzNumber) ` +
+               `VALUES (${b.verseId}, ${b.surahId}, '${esc(b.surahName)}', ${b.verseNumber}, '${esc(b.arabicText)}', '${esc(b.translation)}', datetime('now'), ${sourceValue}, ${juzValue});`;
       }
       sql += 'COMMIT;';
       if ('execAsync' in db && typeof db.execAsync === 'function') {
@@ -77,8 +85,8 @@ const scheduleFlushAdds = async () => {
         // Fallback: run without transaction (less optimal)
         for (const b of batch) {
           await (db as any).runAsync(
-            `INSERT OR IGNORE INTO bookmarks (verseId, surahId, surahName, verseNumber, arabicText, translation, createdAt) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
-            [b.verseId, b.surahId, b.surahName, b.verseNumber, b.arabicText, b.translation]
+            `INSERT OR IGNORE INTO bookmarks (verseId, surahId, surahName, verseNumber, arabicText, translation, createdAt, source, juzNumber) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)`,
+            [b.verseId, b.surahId, b.surahName, b.verseNumber, b.arabicText, b.translation, b.source || null, b.juzNumber || null]
           );
         }
       }
@@ -133,13 +141,39 @@ const ensureSchema = async () => {
             verseNumber INTEGER NOT NULL,
             arabicText TEXT,
             translation TEXT,
-            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+            source TEXT,
+            juzNumber INTEGER
           );
           CREATE INDEX IF NOT EXISTS idx_bookmarks_verseId ON bookmarks(verseId);
         `);
         console.log('[bookmarkStore] Created bookmarks table and index');
       }
     } else {
+      // Table exists - check if we need to add new columns for migration
+      if ('getAllAsync' in _db && typeof _db.getAllAsync === 'function') {
+        const columns = await _db.getAllAsync<{ name: string }>(
+          "PRAGMA table_info(bookmarks)"
+        );
+        const columnNames = columns.map(c => c.name);
+        
+        // Add source column if it doesn't exist
+        if (!columnNames.includes('source')) {
+          if ('execAsync' in _db && typeof _db.execAsync === 'function') {
+            await _db.execAsync(`ALTER TABLE bookmarks ADD COLUMN source TEXT;`);
+            console.log('[bookmarkStore] Added source column');
+          }
+        }
+        
+        // Add juzNumber column if it doesn't exist
+        if (!columnNames.includes('juzNumber')) {
+          if ('execAsync' in _db && typeof _db.execAsync === 'function') {
+            await _db.execAsync(`ALTER TABLE bookmarks ADD COLUMN juzNumber INTEGER;`);
+            console.log('[bookmarkStore] Added juzNumber column');
+          }
+        }
+      }
+      
       // Ensure index exists even on upgrades
       if ('execAsync' in _db && typeof _db.execAsync === 'function') {
         await _db.execAsync(`CREATE INDEX IF NOT EXISTS idx_bookmarks_verseId ON bookmarks(verseId);`);
@@ -221,7 +255,9 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     surahName,
     verseNumber,
     arabicText,
-    translation
+    translation,
+    source,
+    juzNumber
   ) => {
     await get().initializeDatabase();
     if (!db || Platform.OS === 'web') return;
@@ -236,7 +272,17 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
       // Optimistically update in-memory for instant UI feedback
       set((state) => {
         const createdAt = new Date().toISOString();
-        const next: BookmarkItem = { verseId, surahId, surahName, verseNumber, arabicText: trimmedArabic, translation: trimmedTranslation, createdAt };
+        const next: BookmarkItem = { 
+          verseId, 
+          surahId, 
+          surahName, 
+          verseNumber, 
+          arabicText: trimmedArabic, 
+          translation: trimmedTranslation, 
+          createdAt,
+          source,
+          juzNumber 
+        };
         const already = state.bookmarksSet.has(verseId);
         if (already) return state;
         const updatedSet = new Set(state.bookmarksSet);
@@ -246,7 +292,18 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
 
       // Queue DB write to batch operations
       await new Promise<void>((resolve, reject) => {
-        pendingAdds.push({ verseId, surahId, surahName, verseNumber, arabicText: trimmedArabic, translation: trimmedTranslation, resolve, reject });
+        pendingAdds.push({ 
+          verseId, 
+          surahId, 
+          surahName, 
+          verseNumber, 
+          arabicText: trimmedArabic, 
+          translation: trimmedTranslation, 
+          source,
+          juzNumber,
+          resolve, 
+          reject 
+        });
         scheduleFlushAdds();
       });
       console.log('[bookmarkStore] addBookmark queued');

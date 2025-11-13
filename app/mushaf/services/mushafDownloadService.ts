@@ -1,6 +1,7 @@
 import RNFS from 'react-native-fs';
 import { unzip } from 'react-native-zip-archive';
 import { MUSHAF_CACHE_DIR } from '../utils/mushafConstants';
+// NOTE: Layout installation status should be determined dynamically; ignore static `downloaded` field in AVAILABLE_LAYOUTS.
 
 /**
  * FIXED: Mushaf Download Service - iOS File Handling Issue
@@ -14,7 +15,10 @@ const GITHUB_RELEASE_BASE = 'https://github.com/aishiek/ihafidh3/releases/downlo
 export const MUSHAF_DOWNLOAD_URLS = {
   db: `${GITHUB_RELEASE_BASE}/mushaf-db.zip`,
   layouts: `${GITHUB_RELEASE_BASE}/mushaf-layouts.zip`,
-  images: `${GITHUB_RELEASE_BASE}/mushaf-images.zip`
+  images_indopak: `${GITHUB_RELEASE_BASE}/mushaf-images.zip`,
+  images_madina: `${GITHUB_RELEASE_BASE}/mushaf-images-madina.zip`,
+  images_warsh: `${GITHUB_RELEASE_BASE}/mushaf-images-warsh.zip`,
+  images_tajweed: `${GITHUB_RELEASE_BASE}/mushaf-images-tajweed.zip`,
 };
 
 export interface DownloadProgress {
@@ -75,39 +79,63 @@ class MushafDownloadService {
         this.log('CHECK', `⚠️  JSON directory does not exist at ${jsonDir}`);
       }
 
-      // Check images count
+      // Check images count across known locations
       let imageCount = 0;
       const imagesDir = `${MUSHAF_CACHE_DIR}/images`;
-      if (await RNFS.exists(imagesDir)) {
-        try {
+      try {
+        if (await RNFS.exists(imagesDir)) {
           const files = await RNFS.readDir(imagesDir);
-          const imageFiles = files.filter((f: any) => f.isFile && (f.name.endsWith('.png') || f.name.endsWith('.jpg') || f.name.endsWith('.jpeg')));
-          imageCount = imageFiles.length;
+          const rootImages = files.filter((f: any) => f.isFile && (f.name.endsWith('.png') || f.name.endsWith('.jpg') || f.name.endsWith('.jpeg')));
+          imageCount += rootImages.length;
 
-          if (typeof __DEV__ !== 'undefined' && __DEV__ === true) {
-            if (imageCount < 50) {
-              this.log('CHECK', `⚠️  DEBUG: Found ${imageCount} images. Expected 610.`);
-              const imageList = imageFiles.slice(0, 10).map((f: any) => f.name).join(', ');
-              this.log('CHECK', `Sample images: ${imageList}...`);
-            } else {
-              this.log('CHECK', `Found ${imageCount}/610 page images`);
+          // Inspect known subdirectories under images/
+          const subdirs = ['indopak', 'madina', 'warsh', 'tajweed'];
+          for (const s of subdirs) {
+            const subdir = `${imagesDir}/${s}`;
+            if (await RNFS.exists(subdir)) {
+              const subFiles = await RNFS.readDir(subdir);
+              const subImages = subFiles.filter((f: any) => f.isFile && (f.name.endsWith('.png') || f.name.endsWith('.jpg') || f.name.endsWith('.jpeg')));
+              imageCount += subImages.length;
             }
           }
-        } catch (e) {
-          this.logError('CHECK', 'Failed to read images directory', e);
+        } else {
+          this.log('CHECK', `⚠️  Images directory does not exist at ${imagesDir}`);
         }
-      } else {
-        this.log('CHECK', `⚠️  Images directory does not exist at ${imagesDir}`);
+      } catch (e) {
+        this.logError('CHECK', 'Failed to aggregate images count', e);
       }
 
-      // Strict check: require full 610-page install
-      const isComplete = dbExists && pageJsonCount >= 610 && imageCount >= 610;
+      // Also consider top-level layout directories (e.g., `${MUSHAF_CACHE_DIR}/madina`)
+      const topLevelDirs = ['indopak', 'madina', 'warsh', 'tajweed'];
+      for (const t of topLevelDirs) {
+        try {
+          const topDir = `${MUSHAF_CACHE_DIR}/${t}`;
+          if (await RNFS.exists(topDir)) {
+            const files = await RNFS.readDir(topDir);
+            const imgs = files.filter((f: any) => f.isFile && (f.name.endsWith('.png') || f.name.endsWith('.jpg') || f.name.endsWith('.jpeg')));
+            imageCount += imgs.length;
+          }
+        } catch (e) {
+          // best effort; continue
+        }
+      }
+
+      if (typeof __DEV__ !== 'undefined' && __DEV__ === true) {
+        if (imageCount < 50) {
+          this.log('CHECK', `⚠️  DEBUG: Aggregated ${imageCount} images across all locations.`);
+        } else {
+          this.log('CHECK', `Aggregated image count: ${imageCount}`);
+        }
+      }
+
+      // Relaxed check: require DB + JSON + at least 500 images from any location
+      const isComplete = dbExists && pageJsonCount >= 500 && imageCount >= 500;
       
       if (isComplete) {
-        this.log('CHECK', `✅ Mushaf fully installed: DB ✓, ${pageJsonCount} pages ✓, ${imageCount} images ✓`);
+  this.log('CHECK', `✅ Mushaf installed: DB ✓, ${pageJsonCount} pages ✓, ${imageCount} images (aggregated) ✓`);
         return true;
       } else {
-        this.log('CHECK', `❌ Installation incomplete. DB: ${dbExists}, Pages: ${pageJsonCount}/610, Images: ${imageCount}/610`);
+  this.log('CHECK', `❌ Installation incomplete. DB: ${dbExists}, Pages: ${pageJsonCount}, Images (aggregated): ${imageCount}`);
         return false;
       }
     } catch (e) {
@@ -321,25 +349,28 @@ class MushafDownloadService {
         this.log('EXTRACT', `Attempt ${attempt}/${maxAttempts}: Extracting ${archiveName}`);
 
         // Critical: Wait for file to exist and be readable
-        const fileReady = await this.waitForFile(archivePath, 5000);
+        const fileReady = await this.waitForFile(archivePath, 10000);
         if (!fileReady) {
           throw new Error('Archive file never appeared on disk');
         }
 
-        // Add small delay before extraction
-        await new Promise(resolve => setTimeout(resolve, 500));
-
+        // Verify file size
         const stat = await RNFS.stat(archivePath);
         const size = Number(stat.size || 0);
-        this.log('EXTRACT', `File ready for extraction: ${Math.round(size / 1024)}KB`);
-
-        if (size < 512) {
+        
+        if (size < 1024) {
           throw new Error(`File too small to extract: ${size} bytes`);
         }
 
-        // Attempt unzip
-        const result = await unzip(archivePath, extractionTarget);
-        this.log('EXTRACT', `✅ Extraction successful`);
+        this.log('EXTRACT', `Extracting ${Math.round(size / (1024 * 1024))}MB...`);
+
+        // Extract with timeout
+        const extractPromise = unzip(archivePath, extractionTarget);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Extraction timeout')), 120000)
+        );
+        
+        await Promise.race([extractPromise, timeoutPromise]);
 
         // Verify extraction
         try {
@@ -349,6 +380,12 @@ class MushafDownloadService {
           this.log('EXTRACT', 'Could not list files (non-critical)', e);
         }
 
+        // Verify extraction with timeout
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        const extractedFiles = await RNFS.readDir(extractionTarget);
+        this.log('EXTRACT', `✅ Extracted ${extractedFiles.length} items`);
+
         // Safe cleanup - try to remove archive
         try {
           await RNFS.unlink(archivePath);
@@ -357,98 +394,9 @@ class MushafDownloadService {
           this.log('EXTRACT', `⚠️  Could not remove archive (will retry next time)`, e);
         }
 
-        // Post-extraction normalization: if we just extracted layouts, ensure canonical folder
-        try {
-          // Normalize numeric page JSON files (1.json..610.json) and images into canonical dirs
-          const canonicalJsonDir = `${MUSHAF_CACHE_DIR}/json`;
-          const canonicalImagesDir = `${MUSHAF_CACHE_DIR}/images`;
-
-          // Ensure canonical dirs exist
-          if (!(await RNFS.exists(canonicalJsonDir))) await RNFS.mkdir(canonicalJsonDir, { mkdirs: true });
-          if (!(await RNFS.exists(canonicalImagesDir))) await RNFS.mkdir(canonicalImagesDir, { mkdirs: true });
-
-          // Find numeric JSONs anywhere under extractionTarget
-          const jsonPaths = await this.findAllFiles(extractionTarget, (name) => /^\d+\.json$/.test(name), 6);
-          let movedJson = 0;
-          for (const p of jsonPaths) {
-            try {
-              const base = p.split('/').pop() as string;
-              const dest = `${canonicalJsonDir}/${base}`;
-              if (p.startsWith(canonicalJsonDir)) continue; // already in place
-              if (!(await RNFS.exists(dest))) {
-                await RNFS.moveFile(p, dest);
-                movedJson++;
-              }
-            } catch (moveErr) {
-              // non-critical
-            }
-          }
-
-          // Find image files anywhere and move them into canonical images dir
-          const imagePaths = await this.findAllFiles(extractionTarget, (name) => /\.(png|jpe?g)$/i.test(name), 6);
-          let movedImages = 0;
-          for (const p of imagePaths) {
-            try {
-              const base = p.split('/').pop() as string;
-              const dest = `${canonicalImagesDir}/${base}`;
-              if (p.startsWith(canonicalImagesDir)) continue;
-              if (!(await RNFS.exists(dest))) {
-                await RNFS.moveFile(p, dest);
-                movedImages++;
-              }
-            } catch (moveErr) {
-              // non-critical
-            }
-          }
-
-          // Additional normalization: some archives contain images named "9.png" instead of "page_9.png".
-          // Rename numeric-only files to canonical page_N.png. Use move, fallback to copy+unlink if move fails.
-          try {
-            const images = await RNFS.readDir(canonicalImagesDir);
-            let renamedImages = 0;
-            for (const img of images) {
-              try {
-                if (!img.isFile) continue;
-                const name = img.name;
-                const m = name.match(/^(\d+)\.(png|jpg|jpeg)$/i);
-                if (m) {
-                  const num = m[1];
-                  const canonicalName = `page_${num}.${m[2].toLowerCase()}`;
-                  const src = img.path;
-                  const dst = `${canonicalImagesDir}/${canonicalName}`;
-                  if (await RNFS.exists(dst)) {
-                    // target exists; skip
-                    continue;
-                  }
-                  try {
-                    await RNFS.moveFile(src, dst);
-                    renamedImages++;
-                  } catch (mvErr) {
-                    // fallback: copy then unlink
-                    try {
-                      await RNFS.copyFile(src, dst);
-                      await RNFS.unlink(src);
-                      renamedImages++;
-                    } catch (copyErr) {
-                      // ignore non-critical
-                    }
-                  }
-                }
-              } catch (inner) {
-                // ignore per-file errors
-              }
-            }
-            if (renamedImages > 0) this.log('EXTRACT', `Renamed ${renamedImages} numeric images to page_N pattern`);
-          } catch (e) {
-            // ignore
-          }
-
-          if (movedJson > 0 || movedImages > 0) {
-            this.log('EXTRACT', `Normalized extracted files: moved ${movedJson} JSON(s), ${movedImages} image(s)`);
-          }
-        } catch (e) {
-          this.log('EXTRACT', 'Post-extraction normalization failed (non-critical)', e);
-        }
+        // FIX: Removed aggressive post-extraction normalization
+        // The old code moved ALL files to shared canonical directories causing layout collisions.
+        // Layout-specific normalization now happens in normalizeImagesDirectory() after download completes.
 
         return; // Success
       } catch (err) {
@@ -479,7 +427,11 @@ class MushafDownloadService {
     );
   }
 
-  async download(onProgress?: (p: DownloadProgress) => void): Promise<void> {
+  /**
+   * Download a specific layout (images + database)
+   * @param layoutId - 'indopak_15', 'madina_15', 'warsh_15', or 'tajweed'
+   */
+  async downloadLayout(layoutId: string, onProgress?: (p: DownloadProgress) => void): Promise<void> {
     if (this.isDownloading) {
       throw new Error('Download already in progress');
     }
@@ -487,36 +439,67 @@ class MushafDownloadService {
     this.isDownloading = true;
     this.cancelled = false;
     this.log('DOWNLOAD', '═══════════════════════════════════════');
-    this.log('DOWNLOAD', 'Starting Mushaf download');
+    this.log('DOWNLOAD', `Starting ${layoutId} layout download`);
 
     try {
       await this.ensureCacheDir();
 
-      const parts: {
-        name: string;
-        url: string;
-        stage: DownloadProgress['stage'];
-      }[] = [
-        {
-          name: 'mushaf-db.zip',
-          url: MUSHAF_DOWNLOAD_URLS.db,
-          stage: 'database'
-        },
-        {
-          name: 'mushaf-layouts.zip',
-          url: MUSHAF_DOWNLOAD_URLS.layouts,
-          stage: 'layouts'
-        },
-        {
-          name: 'mushaf-images.zip',
-          url: MUSHAF_DOWNLOAD_URLS.images,
-          stage: 'images'
-        }
-      ];
+      // Map layout ID to download URL and slug
+      const layoutImageUrls: Record<string, string> = {
+        'indopak_15': MUSHAF_DOWNLOAD_URLS.images_indopak,
+        'madina_15': MUSHAF_DOWNLOAD_URLS.images_madina,
+        'warsh_15': MUSHAF_DOWNLOAD_URLS.images_warsh,
+        'tajweed': MUSHAF_DOWNLOAD_URLS.images_tajweed,
+      };
+      const layoutSlugMap: Record<string, string> = {
+        'indopak_15': 'indopak',
+        'madina_15': 'madina',
+        'warsh_15': 'warsh',
+        'tajweed': 'tajweed',
+      };
+      const imageUrl = layoutImageUrls[layoutId];
+      const slug = layoutSlugMap[layoutId];
+      if (!imageUrl) {
+        throw new Error(`Unknown layout: ${layoutId}`);
+      }
 
-      let downloadedBytes = 0;
-      const estimatedTotalMB = 3500;
-      const estimatedTotalBytes = estimatedTotalMB * 1024 * 1024;
+      // Build download parts with light heuristics to avoid redundant downloads
+      const parts: { name: string; url: string; stage: DownloadProgress['stage']; skip?: boolean }[] = [];
+
+      // DB stage: only needed for legacy IndoPak cache; other layouts use packaged DB
+      const legacyDbPath = `${MUSHAF_CACHE_DIR}/qudratullah-indopak-15-lines.db`;
+      parts.push({
+        name: 'mushaf-db.zip',
+        url: MUSHAF_DOWNLOAD_URLS.db,
+        stage: 'database',
+        skip: layoutId !== 'indopak_15' && (await RNFS.exists(legacyDbPath)),
+      });
+
+      // Layouts JSON stage: skip if directory already exists
+      const mushafLayoutsDir = `${MUSHAF_CACHE_DIR}/mushaf-layouts`;
+      parts.push({
+        name: 'mushaf-layouts.zip',
+        url: MUSHAF_DOWNLOAD_URLS.layouts,
+        stage: 'layouts',
+        skip: await RNFS.exists(mushafLayoutsDir),
+      });
+
+      // Images stage: always download for the requested layout
+      parts.push({
+        name: `mushaf-images-${slug}.zip`,
+        url: imageUrl,
+        stage: 'images',
+      });
+
+      // Stage-weighted progress to avoid 0% UI and reflect real progress
+      const weightByStage: Record<DownloadProgress['stage'], number> = {
+        database: 0.1,
+        layouts: 0.1,
+        images: 0.8,
+        extracting: 0.0,
+        complete: 0.0,
+      };
+      let offset = 0; // accumulated completed fraction [0..1]
 
       for (const part of parts) {
         if (this.cancelled) {
@@ -524,6 +507,18 @@ class MushafDownloadService {
         }
 
         this.log('DOWNLOAD', `───────────────────────────────────────`);
+        if (part.skip) {
+          this.log('DOWNLOAD', `Skipping ${part.name} (already present)`);
+          // Advance offset by this stage's weight so overall progress reflects the skip
+          const w = weightByStage[part.stage] ?? 0;
+          offset = Math.min(0.99, offset + w);
+          try {
+            const percent = Math.max(1, Math.min(99, Math.round(offset * 100)));
+            onProgress?.({ total: 0, current: 0, percentage: percent, stage: part.stage, statusMessage: `Skipping ${part.stage}... ${percent}%` });
+          } catch (_) {}
+          continue;
+        }
+
         this.log('DOWNLOAD', `Starting: ${part.name}`);
         this.log('DOWNLOAD', `URL: ${part.url}`);
 
@@ -536,16 +531,17 @@ class MushafDownloadService {
             toFile: dest,
             progressInterval: 500,
             progress: (p: any) => {
-              const current = Number(p.bytesWritten || 0) + downloadedBytes;
-              const percent = Math.min(
-                100,
-                Math.round((current / Math.max(1, estimatedTotalBytes)) * 100)
-              );
+              const totalBytes = Number(p.contentLength || p.totalBytesExpectedToWrite || 0);
+              const writtenBytes = Number(p.bytesWritten || p.totalBytesWritten || 0);
+              const frac = totalBytes > 0 ? Math.max(0, Math.min(1, writtenBytes / totalBytes)) : 0.02; // small nudge if size unknown
+              const w = weightByStage[part.stage] ?? 0.33;
+              const overall = offset + frac * w;
+              const percent = Math.max(1, Math.min(99, Math.round(overall * 100)));
 
               try {
                 onProgress?.({
-                  total: estimatedTotalBytes,
-                  current,
+                  total: totalBytes,
+                  current: writtenBytes,
                   percentage: percent,
                   stage: part.stage,
                   statusMessage: `Downloading ${part.stage}... ${percent}%`
@@ -579,14 +575,34 @@ class MushafDownloadService {
           this.log('DOWNLOAD', `Extracting ${part.name}...`);
           await this.extractArchive(dest, MUSHAF_CACHE_DIR, part.name);
 
-          downloadedBytes += Math.round(estimatedTotalBytes / parts.length);
+          // After extracting images, normalize folder structure to expected location
+          if (part.stage === 'images') {
+            await this.normalizeImagesDirectory(layoutId);
+            // Count images immediately after normalization (extension-based)
+            try {
+              const verifyNow = await this.verifyLayoutImages(layoutId);
+              if (!verifyNow.ok) {
+                this.log('DOWNLOAD', `Image count after extract incomplete: ${verifyNow.count}/${verifyNow.expected}`);
+              }
+            } catch (e) {
+              this.logError('DOWNLOAD', 'Immediate image count failed', e);
+            }
+          }
+
+          // Advance offset to end of this stage
+          const w = weightByStage[part.stage] ?? 0.33;
+          offset = Math.min(0.99, offset + w);
+          try {
+            const percent = Math.max(1, Math.min(99, Math.round(offset * 100)));
+            onProgress?.({ total: 0, current: 0, percentage: percent, stage: 'extracting', statusMessage: `Finalizing ${part.stage}... ${percent}%` });
+          } catch (_) {}
         } catch (e) {
           this.logError('DOWNLOAD', `Failed to download/extract ${part.name}`, e);
 
           const errorMsg = e instanceof Error ? e.message : String(e);
           onProgress?.({
-            total: estimatedTotalBytes,
-            current: downloadedBytes,
+            total: 0,
+            current: 0,
             percentage: 0,
             stage: part.stage,
             statusMessage: `Error: ${errorMsg}`,
@@ -597,24 +613,22 @@ class MushafDownloadService {
         }
       }
 
-      // Verify installation
+      // Verify installation for the specific layout just downloaded
       this.log('DOWNLOAD', '───────────────────────────────────────');
-      this.log('DOWNLOAD', 'Verifying installation...');
-      const installed = await this.isInstalled();
+      this.log('DOWNLOAD', `Verifying installation for ${layoutId}...`);
+      const installed = await this.isLayoutInstalled(layoutId);
+      const counts = await this.verifyLayoutImages(layoutId);
       if (!installed) {
         throw new Error('Downloaded files not found in expected locations');
       }
-
-      this.log('DOWNLOAD', '✅ Installation verified');
+      if (!counts.ok) {
+        this.log('DOWNLOAD', `⚠️  Layout present but images incomplete (${counts.count}/${counts.expected}). Leaving at 99%.`);
+        onProgress?.({ total: 1, current: 0, percentage: 99, stage: 'complete', statusMessage: `Images incomplete (${counts.count}/${counts.expected}).` });
+      } else {
+        this.log('DOWNLOAD', `✅ Installation verified with complete images (${counts.count}/${counts.expected}).`);
+        onProgress?.({ total: 1, current: 1, percentage: 100, stage: 'complete', statusMessage: 'Download complete! ✅' });
+      }
       this.log('DOWNLOAD', '═══════════════════════════════════════');
-
-      onProgress?.({
-        total: estimatedTotalBytes,
-        current: estimatedTotalBytes,
-        percentage: 100,
-        stage: 'complete',
-        statusMessage: 'Download complete! ✅'
-      });
     } catch (e) {
       this.logError('DOWNLOAD', 'Download process failed', e);
       this.log('DOWNLOAD', '═══════════════════════════════════════');
@@ -623,6 +637,345 @@ class MushafDownloadService {
       this.isDownloading = false;
       this.currentJobId = null;
       this.cancelled = false;
+    }
+  }
+
+  /**
+   * Ensure images for a given layout are placed under `${MUSHAF_CACHE_DIR}/images/<dirName>`.
+   * Also standardizes all filenames to `page_N.<ext>` format with correct extension per layout.
+   * ONLY processes layout-specific directories - never touches the legacy shared images directory.
+   */
+  private async normalizeImagesDirectory(layoutId: string): Promise<void> {
+    const layoutDirs: Record<string, string> = {
+      'indopak_15': 'indopak',
+      'madina_15': 'madina',
+      'warsh_15': 'warsh',
+      'tajweed': 'tajweed',
+    };
+    const dirName = layoutDirs[layoutId];
+    if (!dirName) return;
+
+    const targetDir = `${MUSHAF_CACHE_DIR}/images/${dirName}`;
+    const topLevelDir = `${MUSHAF_CACHE_DIR}/${dirName}`;
+
+    try {
+      // Ensure target directory exists
+      if (!(await RNFS.exists(targetDir))) {
+        await RNFS.mkdir(targetDir, { mkdirs: true });
+      }
+
+      // ONLY move from layout-specific top-level dir, NOT from legacy images dir
+      if (await RNFS.exists(topLevelDir)) {
+        const files = await RNFS.readDir(topLevelDir);
+        let movedCount = 0;
+        
+        for (const f of files) {
+          if (f.isFile && /\.(png|jpe?g)$/i.test(f.name)) {
+            const standardized = this.standardizeFilename(f.name, layoutId);
+            const dest = `${targetDir}/${standardized}`;
+            
+            try {
+              if (!(await RNFS.exists(dest))) {
+                await RNFS.moveFile(f.path, dest);
+                movedCount++;
+              }
+            } catch (moveErr) {
+              // Log but continue
+              this.log('NORMALIZE', `Failed to move ${f.name}:`, moveErr);
+            }
+          }
+        }
+        
+        this.log('NORMALIZE', `Moved ${movedCount} images for ${layoutId}`);
+        
+        // Only remove source dir if it's now empty
+        try {
+          const remaining = await RNFS.readDir(topLevelDir);
+          if (remaining.length === 0) {
+            await RNFS.unlink(topLevelDir);
+          }
+        } catch (e) {
+          // Non-critical
+        }
+      }
+
+      // Standardize filenames in target directory
+      const targetFiles = await RNFS.readDir(targetDir);
+      let renamedCount = 0;
+      for (const f of targetFiles) {
+        if (f.isFile && /\.(png|jpe?g)$/i.test(f.name)) {
+          const standardized = this.standardizeFilename(f.name, layoutId);
+          if (standardized !== f.name) {
+            const newPath = `${targetDir}/${standardized}`;
+            try {
+              if (!(await RNFS.exists(newPath))) {
+                await RNFS.moveFile(f.path, newPath);
+                renamedCount++;
+              }
+            } catch (e) {
+              // Non-critical
+            }
+          }
+        }
+      }
+      
+      if (renamedCount > 0) {
+        this.log('NORMALIZE', `Standardized ${renamedCount} filenames for ${layoutId}`);
+      }
+    } catch (e) {
+      this.logError('NORMALIZE', `Failed to normalize images for ${layoutId}`, e);
+    }
+  }
+
+  /**
+   * Standardize filename to page_N.<ext> format with correct extension for layout
+   */
+  private standardizeFilename(filename: string, layoutId: string): string {
+    // Determine correct extension for layout
+    const correctExt = layoutId === 'indopak_15' ? '.png' : '.jpg';
+    
+    // Extract page number from various formats
+    const patterns = [
+      /^page[-_]?(\d+)\.(png|jpe?g)$/i,
+      /^(\d+)\.(png|jpe?g)$/i,
+    ];
+    
+    for (const pattern of patterns) {
+      const match = filename.match(pattern);
+      if (match) {
+        const pageNum = parseInt(match[1], 10);
+        if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= 610) {
+          return `page_${pageNum}${correctExt}`;
+        }
+      }
+    }
+    
+    // If no match, return original
+    return filename;
+  }
+
+  /**
+   * Verify image counts for a layout. All layouts should have 610 pages.
+   * ONLY checks the layout-specific directory - no legacy fallback.
+   */
+  private async verifyLayoutImages(layoutId: string): Promise<{ 
+    layoutId: string; 
+    count: number; 
+    expected: number; 
+    ok: boolean; 
+    dir: string 
+  }> {
+    const layoutDirs: Record<string, string> = {
+      'indopak_15': 'indopak',
+      'madina_15': 'madina',
+      'warsh_15': 'warsh',
+      'tajweed': 'tajweed',
+    };
+    
+    const dirName = layoutDirs[layoutId];
+    if (!dirName) return { layoutId, count: 0, expected: 0, ok: false, dir: '' };
+    
+    const expected = 610; // All layouts should have 610 pages
+    const correctExt = layoutId === 'indopak_15' ? '.png' : '.jpg';
+    
+    // Check ONLY the layout-specific directory
+    const targetDir = `${MUSHAF_CACHE_DIR}/images/${dirName}`;
+    
+    try {
+      if (!(await RNFS.exists(targetDir))) {
+        this.log('VERIFY', `Directory not found: ${targetDir}`);
+        return { layoutId, count: 0, expected, ok: false, dir: targetDir };
+      }
+      
+      const files = await RNFS.readDir(targetDir);
+      const imageFiles = files.filter((f: any) => 
+        f.isFile && 
+        f.name.endsWith(correctExt) && 
+        /^page_\d+\.(png|jpe?g)$/i.test(f.name)
+      );
+      
+      const count = imageFiles.length;
+      const ok = count >= expected;
+      
+      this.log('VERIFY', `${ok ? '✅' : '❌'} ${layoutId}: ${count}/${expected} images in ${targetDir}`);
+      
+      return { layoutId, count, expected, ok, dir: targetDir };
+    } catch (e) {
+      this.logError('VERIFY', `Failed to verify ${layoutId}`, e);
+      return { layoutId, count: 0, expected, ok: false, dir: targetDir };
+    }
+  }
+
+  /**
+   * Check if a specific layout is installed
+   */
+  async isLayoutInstalled(layoutId: string): Promise<boolean> {
+    try {
+      const layoutDirs: Record<string, string> = {
+        'indopak_15': 'indopak',
+        'madina_15': 'madina',
+        'warsh_15': 'warsh',
+        'tajweed': 'tajweed',
+      };
+
+      const dirName = layoutDirs[layoutId];
+      if (!dirName) return false;
+
+      // Check layout-specific directory first
+      const imagesDir = `${MUSHAF_CACHE_DIR}/images/${dirName}`;
+      const dirExists = await RNFS.exists(imagesDir);
+      
+      if (dirExists) {
+        // Check if images directory has files
+        const files = await RNFS.readDir(imagesDir);
+        const imageFiles = files.filter((f: any) => 
+          f.isFile && (f.name.endsWith('.png') || f.name.endsWith('.jpg') || f.name.endsWith('.jpeg'))
+        );
+
+        // Require at least 500 images (most layouts have 604-610 pages)
+        const hasImages = imageFiles.length >= 500;
+        
+        if (hasImages) {
+          this.log('CHECK', `✅ Layout ${layoutId} installed: ${imageFiles.length} images`);
+          return true;
+        }
+      }
+
+      // Fallback: Some archives place images under top-level `${MUSHAF_CACHE_DIR}/<dirName>`
+      const topLevelDir = `${MUSHAF_CACHE_DIR}/${dirName}`;
+      if (await RNFS.exists(topLevelDir)) {
+        const files = await RNFS.readDir(topLevelDir);
+        const imageFiles = files.filter((f: any) => 
+          f.isFile && (f.name.endsWith('.png') || f.name.endsWith('.jpg') || f.name.endsWith('.jpeg'))
+        );
+        if (imageFiles.length >= 500) {
+          this.log('CHECK', `✅ Layout ${layoutId} installed (top-level dir): ${imageFiles.length} images`);
+          return true;
+        }
+      }
+
+      // Fallback: Check legacy location for IndoPak (backwards compatibility)
+      if (layoutId === 'indopak_15') {
+        const legacyDir = `${MUSHAF_CACHE_DIR}/images`;
+        const legacyExists = await RNFS.exists(legacyDir);
+        
+        if (legacyExists) {
+          const files = await RNFS.readDir(legacyDir);
+          const imageFiles = files.filter((f: any) => 
+            f.isFile && f.name.endsWith('.png')
+          );
+          
+          if (imageFiles.length >= 500) {
+            this.log('CHECK', `✅ IndoPak installed (legacy location): ${imageFiles.length} images`);
+            return true;
+          }
+        }
+      }
+
+      this.log('CHECK', `❌ Layout ${layoutId} not installed`);
+      return false;
+    } catch (e) {
+      this.logError('CHECK', `isLayoutInstalled(${layoutId}) failed`, e);
+      return false;
+    }
+  }
+
+  /**
+   * Get installed size for a specific layout
+   */
+  async getLayoutSize(layoutId: string): Promise<number> {
+    try {
+      const layoutDirs: Record<string, string> = {
+        'indopak_15': 'indopak',
+        'madina_15': 'madina',
+        'warsh_15': 'warsh',
+        'tajweed': 'tajweed',
+      };
+
+      const dirName = layoutDirs[layoutId];
+      if (!dirName) return 0;
+
+      // Check layout-specific directory first
+      const imagesDir = `${MUSHAF_CACHE_DIR}/images/${dirName}`;
+      if (await RNFS.exists(imagesDir)) {
+        let total = 0;
+        const files = await RNFS.readDir(imagesDir);
+        for (const f of files) {
+          if (f.isFile) {
+            const s = await RNFS.stat(f.path);
+            total += Number(s.size || 0);
+          }
+        }
+        return Math.round(total / (1024 * 1024)); // Return in MB
+      }
+
+      // Fallback: Top-level `${MUSHAF_CACHE_DIR}/<dirName>`
+      const topLevelDir = `${MUSHAF_CACHE_DIR}/${dirName}`;
+      if (await RNFS.exists(topLevelDir)) {
+        let total = 0;
+        const files = await RNFS.readDir(topLevelDir);
+        for (const f of files) {
+          if (f.isFile && (f.name.endsWith('.png') || f.name.endsWith('.jpg') || f.name.endsWith('.jpeg'))) {
+            const s = await RNFS.stat(f.path);
+            total += Number(s.size || 0);
+          }
+        }
+        return Math.round(total / (1024 * 1024));
+      }
+
+      // Fallback: Check legacy location for IndoPak
+      if (layoutId === 'indopak_15') {
+        const legacyDir = `${MUSHAF_CACHE_DIR}/images`;
+        if (await RNFS.exists(legacyDir)) {
+          let total = 0;
+          const files = await RNFS.readDir(legacyDir);
+          for (const f of files) {
+            if (f.isFile && f.name.endsWith('.png')) {
+              const s = await RNFS.stat(f.path);
+              total += Number(s.size || 0);
+            }
+          }
+          return Math.round(total / (1024 * 1024)); // Return in MB
+        }
+      }
+
+      return 0;
+    } catch (e) {
+      this.logError('SIZE', `getLayoutSize(${layoutId}) failed`, e);
+      return 0;
+    }
+  }
+
+  /**
+   * Delete a specific layout
+   */
+  async deleteLayout(layoutId: string): Promise<void> {
+    try {
+      const layoutDirs: Record<string, string> = {
+        'indopak_15': 'indopak',
+        'madina_15': 'madina',
+        'warsh_15': 'warsh',
+        'tajweed': 'tajweed',
+      };
+
+      const dirName = layoutDirs[layoutId];
+      if (!dirName) return;
+
+      const imagesDir = `${MUSHAF_CACHE_DIR}/images/${dirName}`;
+      const jsonDir = `${MUSHAF_CACHE_DIR}/json/${dirName}`;
+
+      if (await RNFS.exists(imagesDir)) {
+        await RNFS.unlink(imagesDir);
+        this.log('DELETE', `✅ Deleted ${layoutId} images`);
+      }
+
+      if (await RNFS.exists(jsonDir)) {
+        await RNFS.unlink(jsonDir);
+        this.log('DELETE', `✅ Deleted ${layoutId} JSON data`);
+      }
+    } catch (e) {
+      this.logError('DELETE', `Failed to delete layout ${layoutId}`, e);
+      throw e;
     }
   }
 }
@@ -638,10 +991,10 @@ export async function checkMushafStatus(): Promise<'not-installed' | 'downloadin
   }
 }
 
-export async function downloadMushaf(onProgress?: (progress: number) => void): Promise<boolean> {
+export async function downloadMushaf(layoutId: string = 'indopak_15', onProgress?: (progress: number) => void): Promise<boolean> {
   return new Promise(async (resolve, reject) => {
     try {
-      await mushafDownloadService.download((p) => {
+      await mushafDownloadService.downloadLayout(layoutId, (p: DownloadProgress) => {
         try {
           if (onProgress) onProgress(p.percentage);
         } catch (e) {
@@ -653,6 +1006,23 @@ export async function downloadMushaf(onProgress?: (progress: number) => void): P
       reject(e);
     }
   });
+}
+
+export async function checkLayoutStatus(layoutId: string): Promise<'not-installed' | 'ready' | 'error'> {
+  try {
+    const installed = await mushafDownloadService.isLayoutInstalled(layoutId);
+    return installed ? 'ready' : 'not-installed';
+  } catch (e) {
+    return 'error';
+  }
+}
+
+export async function deleteLayout(layoutId: string): Promise<void> {
+  return mushafDownloadService.deleteLayout(layoutId);
+}
+
+export async function getLayoutSize(layoutId: string): Promise<number> {
+  return mushafDownloadService.getLayoutSize(layoutId);
 }
 
 export async function deleteMushaf(): Promise<void> {

@@ -183,6 +183,14 @@ export default function SurahRangePicker({ visible, onClose, onConfirm }: Props)
                 <Text style={styles.confirmText}>Add to Plan</Text>
               </Pressable>
             </View>
+
+            <View style={styles.tipBox}>
+              <Text style={styles.tipTitle}>💡 How to Add Multiple Surahs</Text>
+              <Text style={styles.tipText}>
+                Select a surah, tap "Add to Plan", then tap "Back" to choose another. 
+                Repeat for each surah you want to add. Close the picker using the X button at the top when done.
+              </Text>
+            </View>
           </View>
         )}
       </View>
@@ -244,4 +252,7 @@ const styles = StyleSheet.create({
   backBtnText: { color: '#ffffff', fontWeight: '600' },
   confirmBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#000000', borderWidth: 1, borderColor: '#8b5cf6' },
   confirmText: { color: '#ffffff', fontWeight: '600' },
+  tipBox: { marginTop: 16, padding: 12, borderRadius: 10, backgroundColor: 'rgba(148,163,184,0.12)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.25)' },
+  tipTitle: { color: '#e2e8f0', fontWeight: '700', marginBottom: 6, fontSize: 12 },
+  tipText: { color: '#cbd5e1', fontSize: 12, lineHeight: 18 },
 });

@@ -1,13 +1,13 @@
 import { useFocusEffect } from '@react-navigation/native';
+import type { FlashListRef } from '@shopify/flash-list';
+import { FlashList } from '@shopify/flash-list';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ArrowLeft, ArrowRight, CheckCircle, Pause, Play, RefreshCw, Search, X } from 'lucide-react-native';
+import { ArrowLeft, ArrowRight, Check, Pause, Play, RefreshCw, Search, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -19,8 +19,7 @@ import {
 import JuzMemorization from '@/components/JuzMemorization';
 import VerseItem from '@/components/VerseItem';
 import { surahsData } from '@/data/surahs';
-import { fetchVersesForJuz, fetchVersesForSurah, JuzVerse, logDatabaseTables } from '@/services/juzDbService';
-import { fetchTranslationsForVerses, fetchVersesBySurah } from '@/services/quranApi';
+import { fetchVersesForJuz, fetchVersesForSurah, getDatabase, JuzVerse, logDatabaseTables } from '@/services/juzDbService';
 import { useProgressStore } from '@/store/progressStore';
 import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -58,10 +57,11 @@ export default function ReadScreen() {
   const arabicTypography = getArabicTypographySizing(fontSizeArabic, arabicFont);
   const arabicFontFamily = getArabicFontFamily(arabicFont);
 
-  const { surahId: paramSurahId, verseId: paramVerseId, source: paramSource } = useLocalSearchParams<{
+  const { surahId: paramSurahId, verseId: paramVerseId, source: paramSource, juzNumber: paramJuzNumber } = useLocalSearchParams<{
     surahId?: string;
     verseId?: string;
     source?: string;
+    juzNumber?: string;
   }>();
 
   const {
@@ -91,6 +91,11 @@ export default function ReadScreen() {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isPlayingSurah, setIsPlayingSurah] = useState(false);
   const [isSurahPaused, setIsSurahPaused] = useState(false);
+  const [currentlyPlayingVerse, setCurrentlyPlayingVerse] = useState<{surahId: number, verseNumber: number} | null>(null);
+  
+  // CRITICAL FIX: Force FlashList to rebuild when verse data changes (Fix for recycling issues)
+  const [verseListKey, setVerseListKey] = useState(0);
+  const [juzListKey, setJuzListKey] = useState(0);
 
   // Loading
   // Loading
@@ -111,12 +116,12 @@ export default function ReadScreen() {
   const [progressCount, setProgressCount] = useState(0);
 
   // Refs
-  const flatListRef = useRef<FlatList>(null);
+  const flatListRef = useRef<FlashListRef<any>>(null);
   const versesRef = useRef<Verse[]>([]);
   const scrollOffsetRef = useRef(0);
   const isNavigatingBack = useRef(false);
   const suppressNextAutoOpen = useRef(false);
-  const surahListRef = useRef<FlatList>(null);
+  const surahListRef = useRef<FlashListRef<any>>(null);
   const loadingLocks = useRef<Map<string, Promise<any>>>(new Map());
 
   // Memoized
@@ -139,6 +144,13 @@ export default function ReadScreen() {
       translationFontSize: fontSizeTranslation,
     });
   }, [verses, fontSizeArabic, showTranslation, fontSizeTranslation]);
+
+  const ESTIMATED_ITEM_HEIGHT = useMemo(() => {
+    if (fontSizeArabic <= 24) return 140;
+    if (fontSizeArabic <= 36) return 220;
+    if (fontSizeArabic <= 52) return 320;
+    return 450; // Very large fonts
+  }, [fontSizeArabic]);
 
   // Helper functions
   const getSurahVerseRange = useCallback((surahObj: { id: number; versesCount: number }) => {
@@ -254,8 +266,6 @@ export default function ReadScreen() {
             throw new Error(`No verses returned from database for ${surah.name}`);
           }
           
-          console.log(`[read] Successfully loaded ${allVersesFromDB.length} verses for ${surah.name}`);
-          
           const reciterIdentifier = useSettingsStore.getState().reciterIdentifier;
           
           let mappedVerses: Verse[] = allVersesFromDB.map((v: any) => ({
@@ -278,8 +288,8 @@ export default function ReadScreen() {
 
           // Set ALL verses at once - FlatList handles virtualization automatically
           setVerses(mappedVerses);
+          setVerseListKey(prev => prev + 1); // Force FlashList rebuild on data change
           setLastReadVerse(mappedVerses[0]);
-          console.log(`[read] Verses loaded and set successfully for ${surah.name}`);
           
         } catch (err: any) {
           console.error(`[read] Failed to load verses for ${surah.name}, attempt ${retryCount + 1}:`, err);
@@ -397,23 +407,36 @@ export default function ReadScreen() {
         const repeatCountToUse = typeof repeats === 'number' ? repeats : 1;
         const infinite = !!isInfinite;
 
-        if (isPlayingAudio) {
+        if (isPlayingAudio && currentlyPlayingVerse?.surahId === surahNum && currentlyPlayingVerse?.verseNumber === verseNum) {
           await pauseAudio();
           setIsPlayingAudio(false);
+          setCurrentlyPlayingVerse(null);
         } else {
+          // Stop any currently playing audio first
+          if (isPlayingAudio) {
+            await pauseAudio();
+          }
+          
           await playAudio(url, repeatCountToUse, (status) => {
-            if (status?.isPlaying) setIsPlayingAudio(true);
+            if (status?.isPlaying) {
+              setIsPlayingAudio(true);
+              setCurrentlyPlayingVerse({surahId: surahNum, verseNumber: verseNum});
+            }
             if (status?.didJustFinish && !infinite && (status.repeatCount ?? 0) >= (status.maxRepeats ?? 1)) {
               setIsPlayingAudio(false);
+              setCurrentlyPlayingVerse(null);
             }
           });
           setIsPlayingAudio(true);
+          setCurrentlyPlayingVerse({surahId: surahNum, verseNumber: verseNum});
         }
       } catch (e) {
         console.error('Audio playback failed:', e);
+        setIsPlayingAudio(false);
+        setCurrentlyPlayingVerse(null);
       }
     },
-    [isPlayingAudio]
+    [isPlayingAudio, currentlyPlayingVerse]
   );
 
   const handleToggleSurahAudio = useCallback(async () => {
@@ -514,6 +537,7 @@ export default function ReadScreen() {
       
       console.log(`[read] Successfully loaded ${versesData.length} verses for Juz ${juz}`);
       setJuzVerses(versesData);
+      setJuzListKey(prev => prev + 1); // Force FlashList rebuild on data change
       setIsJuzLoading(false);
       
     } catch (err: any) {
@@ -620,19 +644,25 @@ export default function ReadScreen() {
 
   // Render helpers
   const renderVerseOptimized = useCallback(
-    ({ item: verse }: { item: Verse }) => (
-      <VerseItem
-        verse={verse}
-        onPlayAudio={handleVersePlayAudio}
-        surahMemorizedGlobally={isSurahMemorizedGlobally}
-        surahRevisedGlobally={isSurahRevisedGlobally}
-        onSurahMemorizeToggle={handleSurahMemorizeToggle}
-        onSurahRevisionToggle={handleSurahRevisionToggle}
-        moveToVerse={handleMoveToVerse}
-        source={tab === 'juz' ? 'juzList' : 'surahList'}
-      />
-    ),
-    [handleVersePlayAudio, isSurahMemorizedGlobally, isSurahRevisedGlobally, handleSurahMemorizeToggle, handleSurahRevisionToggle, handleMoveToVerse, tab]
+    ({ item: verse }: { item: Verse }) => {
+      const isPlaying = currentlyPlayingVerse !== null && 
+                        currentlyPlayingVerse.surahId === verse.surahId && 
+                        currentlyPlayingVerse.verseNumber === verse.verseNumber;
+      return (
+        <VerseItem
+          verse={verse}
+          onPlayAudio={handleVersePlayAudio}
+          surahMemorizedGlobally={isSurahMemorizedGlobally}
+          surahRevisedGlobally={isSurahRevisedGlobally}
+          onSurahMemorizeToggle={handleSurahMemorizeToggle}
+          onSurahRevisionToggle={handleSurahRevisionToggle}
+          moveToVerse={handleMoveToVerse}
+          source={tab === 'juz' ? 'juzList' : 'surahList'}
+          isCurrentlyPlaying={isPlaying}
+        />
+      );
+    },
+    [handleVersePlayAudio, isSurahMemorizedGlobally, isSurahRevisedGlobally, handleSurahMemorizeToggle, handleSurahRevisionToggle, handleMoveToVerse, tab, currentlyPlayingVerse]
   );
 
   const renderSurahItem = ({ item }: { item: Surah }) => {
@@ -764,6 +794,76 @@ export default function ReadScreen() {
     }
   }, [paramSurahId, paramVerseId, paramSource, setLastViewedSurahId, loadInitialVerses]);
 
+  // Navigation: Handle Juz navigation from bookmarks
+  useEffect(() => {
+    const juzNum = paramJuzNumber ? Number(paramJuzNumber) : undefined;
+    const vid = paramVerseId ? Number(paramVerseId) : undefined;
+    
+    if (juzNum && !Number.isNaN(juzNum) && !suppressNextAutoOpen.current) {
+      console.log('[read] Processing Juz navigation params - juzNumber:', juzNum, 'verseId:', vid);
+      
+      // CRITICAL: Switch to Juz tab FIRST, then load verses
+      setTab('juz');
+      handleSelectJuz(juzNum);
+    }
+  }, [paramJuzNumber]);
+
+  // Scroll to specific verse in Juz mode after verses are loaded
+  useEffect(() => {
+    const vid = paramVerseId ? Number(paramVerseId) : undefined;
+    console.log('[read] Juz scroll effect - vid:', vid, 'juzVerses.length:', juzVerses.length, 'tab:', tab);
+    
+    if (!vid || Number.isNaN(vid) || !juzVerses.length || tab !== 'juz') {
+      console.log('[read] Juz scroll effect - conditions not met, skipping');
+      return;
+    }
+
+    const verseIndex = juzVerses.findIndex((v) => v.verse_id === vid);
+    console.log('[read] Juz scroll effect - searching for verse_id:', vid, 'found at index:', verseIndex);
+    
+    if (verseIndex >= 0) {
+      // Add delay to ensure FlashList is fully mounted and measured
+      setTimeout(() => {
+        try {
+          console.log('[read] Attempting to scroll to Juz verse index:', verseIndex);
+          flatListRef.current?.scrollToIndex({
+            index: verseIndex,
+            animated: false,
+            viewPosition: 0.1,
+          });
+          console.log('[read] Successfully scrolled to Juz verse index:', verseIndex);
+        } catch (e) {
+          console.error('[read] Juz auto-scroll to verse failed:', e);
+        }
+      }, 800); // Slightly longer delay for Juz verses
+    } else {
+      console.log('[read] Juz scroll effect - verse not found in juzVerses array');
+    }
+  }, [juzVerses, paramVerseId, tab]);
+
+  // Scroll to specific verse after loading (for bookmarks, AyahOfTheDay, etc.)
+  useEffect(() => {
+    const vid = paramVerseId ? Number(paramVerseId) : undefined;
+    if (!vid || Number.isNaN(vid) || !verses.length) return;
+
+    const verseIndex = verses.findIndex((v) => v.id === vid);
+    
+    if (verseIndex >= 0) {
+      // Add delay to ensure FlashList is fully mounted and measured
+      setTimeout(() => {
+        try {
+          flatListRef.current?.scrollToIndex({
+            index: verseIndex,
+            animated: false, // Use instant scroll for accuracy
+            viewPosition: 0.1,
+          });
+        } catch (e) {
+          console.error('[read] Auto-scroll to verse failed:', e);
+        }
+      }, 500); // Increased delay for FlashList to measure items
+    }
+  }, [verses, paramVerseId]);
+
   // Cleanup audio when surah changes
   useEffect(() => {
     if (!selectedSurah) return;
@@ -780,8 +880,6 @@ export default function ReadScreen() {
   useEffect(() => {
     (async () => {
       try {
-        console.log('[read] Pre-initializing database...');
-        const { getDatabase } = await import('@/services/juzDbService');
         await getDatabase();
         console.log('[read] Database pre-initialized successfully');
       } catch (err) {
@@ -794,9 +892,10 @@ export default function ReadScreen() {
   useFocusEffect(
     React.useCallback(() => {
       // CRITICAL: Check params FIRST to determine if this is direct navigation
-      const hasNavigationParams = paramSurahId && !suppressNextAutoOpen.current;
+      // Check for BOTH paramSurahId (Surah bookmarks) AND paramJuzNumber (Juz bookmarks)
+      const hasNavigationParams = (paramSurahId || paramJuzNumber) && !suppressNextAutoOpen.current;
       
-      console.log('[read] Tab gained focus - hasParams:', hasNavigationParams, 'params:', { paramSurahId, paramVerseId, paramSource }, 'current state:', { selectedSurah: selectedSurah?.id, selectedJuz, tab });
+      console.log('[read] Tab gained focus - hasParams:', hasNavigationParams, 'params:', { paramSurahId, paramJuzNumber, paramVerseId, paramSource }, 'current state:', { selectedSurah: selectedSurah?.id, selectedJuz, tab });
       
       // CRITICAL: Only reset if this is a TAB CLICK (no params), not direct navigation
       if (!hasNavigationParams) {
@@ -830,7 +929,7 @@ export default function ReadScreen() {
       return () => {
         console.log('[read] Tab lost focus');
       };
-    }, [paramSurahId, paramVerseId, paramSource])
+    }, [paramSurahId, paramJuzNumber, paramVerseId, paramSource])
   );
 
   useEffect(() => {
@@ -853,7 +952,7 @@ export default function ReadScreen() {
             )}
             <TextInput
               style={{ width: '100%', color: '#fff', fontSize: 16, backgroundColor: '#333', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8, borderWidth: 1, borderColor: '#555' }}
-              placeholder={selectedJuz != null ? "e.g., 2:255" : "Enter verse number"}
+              placeholder={selectedJuz != null ? "e.g., 2:255 or 110" : "Enter verse number"}
               placeholderTextColor="#888"
               value={goToInput}
               onChangeText={setGoToInput}
@@ -863,7 +962,7 @@ export default function ReadScreen() {
             />
             {selectedJuz != null && (
               <Text style={{ color: '#888', fontSize: 12, marginBottom: 8, textAlign: 'center' }}>
-                Enter surah number, then colon, then verse number
+                Enter surah:verse (e.g., 2:251) or verse position (e.g., 110)
               </Text>
             )}
             {goToError && <Text style={{ color: '#ff5252', fontSize: 14, marginBottom: 8 }}>{goToError}</Text>}
@@ -904,71 +1003,80 @@ export default function ReadScreen() {
                     }
                   }
                   
-                  // JUZ MODE: Requires surah:verse format (e.g., 2:255)
+                  // JUZ MODE: Supports both formats:
+                  // 1. Surah:verse format (e.g., 2:255)
+                  // 2. Simple verse position within juz (e.g., 110 for 110th verse in the juz)
                   else if (selectedJuz != null) {
-                    // Check for surah:verse format
-                    if (!goToInput.includes(':')) {
-                      setGoToError('Use format: surah:verse (e.g., 2:255)');
-                      setGoToSubmitting(false);
-                      return;
-                    }
+                    const input = goToInput.trim();
                     
-                    const parts = goToInput.split(':');
-                    if (parts.length !== 2) {
-                      setGoToError('Use format: surah:verse (e.g., 2:255)');
-                      setGoToSubmitting(false);
-                      return;
-                    }
-                    
-                    const surahNum = parseInt(parts[0].trim(), 10);
-                    const verseNum = parseInt(parts[1].trim(), 10);
-                    
-                    if (isNaN(surahNum) || isNaN(verseNum) || surahNum < 1 || surahNum > 114 || verseNum < 1) {
-                      setGoToError('Invalid surah or verse number');
-                      setGoToSubmitting(false);
-                      return;
-                    }
-                    
-                    console.log('[read] Go to verse in Juz mode:', { surahNum, verseNum, selectedJuz, juzVersesCount: juzVerses.length });
-                    
-                    // Debug: Log some sample verses from the juz
-                    console.log('[read] Sample juzVerses:', juzVerses.slice(0, 5).map(v => ({ 
-                      chapter_id: v.chapter_id, 
-                      verse_number: v.verse_number,
-                      verse_id: v.verse_id 
-                    })));
-                    
-                    // Check if we have verses from the requested surah
-                    const surahVerses = juzVerses.filter(v => v.chapter_id === surahNum);
-                    console.log('[read] Verses from surah', surahNum, 'in this juz:', surahVerses.length, 
-                      surahVerses.length > 0 ? `(range: ${Math.min(...surahVerses.map(v => v.verse_number))}-${Math.max(...surahVerses.map(v => v.verse_number))})` : '');
-                    
-                    // Find verse by BOTH chapter_id AND verse_number
-                    idx = juzVerses.findIndex((v) => v.chapter_id === surahNum && v.verse_number === verseNum);
-                    
-                    console.log('[read] Search result: idx =', idx, 'for', surahNum + ':' + verseNum);
-                    
-                    if (idx === -1) {
-                      // Check if the surah exists in this juz at all
-                      const surahExistsInJuz = juzVerses.some((v) => v.chapter_id === surahNum);
-                      if (!surahExistsInJuz) {
-                        console.log('[read] Surah not in juz - setting error');
-                        setGoToError(`Surah ${surahNum} not in Juz ${selectedJuz}`);
-                      } else {
-                        // Surah exists but verse doesn't
-                        const versesInSurah = juzVerses.filter((v) => v.chapter_id === surahNum);
-                        if (versesInSurah.length > 0) {
-                          const minVerse = Math.min(...versesInSurah.map(v => v.verse_number));
-                          const maxVerse = Math.max(...versesInSurah.map(v => v.verse_number));
-                          console.log('[read] Verse not in range - setting error. Range:', minVerse, '-', maxVerse);
-                          setGoToError(`Surah ${surahNum} in this Juz has verses ${minVerse}-${maxVerse}`);
-                        } else {
-                          console.log('[read] No verses found for surah - setting generic error');
-                          setGoToError(`Verse ${surahNum}:${verseNum} not found in Juz ${selectedJuz}`);
-                        }
+                    // Check if input contains ':' for surah:verse format
+                    if (input.includes(':')) {
+                      // FORMAT 1: surah:verse (e.g., 2:255)
+                      const parts = input.split(':');
+                      if (parts.length !== 2) {
+                        setGoToError('Use format: surah:verse (e.g., 2:255) or verse number (e.g., 110)');
+                        setGoToSubmitting(false);
+                        return;
                       }
-                      setGoToSubmitting(false);
-                      return; // CRITICAL: Must return here to prevent scroll attempt
+                      
+                      const surahNum = parseInt(parts[0].trim(), 10);
+                      const verseNum = parseInt(parts[1].trim(), 10);
+                      
+                      if (isNaN(surahNum) || isNaN(verseNum) || surahNum < 1 || surahNum > 114 || verseNum < 1) {
+                        setGoToError('Invalid surah or verse number');
+                        setGoToSubmitting(false);
+                        return;
+                      }
+                      
+                      console.log('[read] Go to verse in Juz mode (surah:verse):', { surahNum, verseNum, selectedJuz });
+                      
+                      // Find verse by BOTH chapter_id AND verse_number
+                      idx = juzVerses.findIndex((v) => v.chapter_id === surahNum && v.verse_number === verseNum);
+                      
+                      console.log('[read] Search result: idx =', idx, 'for', surahNum + ':' + verseNum);
+                      
+                      if (idx === -1) {
+                        // Check if the surah exists in this juz at all
+                        const surahExistsInJuz = juzVerses.some((v) => v.chapter_id === surahNum);
+                        if (!surahExistsInJuz) {
+                          setGoToError(`Surah ${surahNum} is not in Juz ${selectedJuz}`);
+                        } else {
+                          // Surah exists but verse doesn't
+                          const versesInSurah = juzVerses.filter((v) => v.chapter_id === surahNum);
+                          if (versesInSurah.length > 0) {
+                            const minVerse = Math.min(...versesInSurah.map(v => v.verse_number));
+                            const maxVerse = Math.max(...versesInSurah.map(v => v.verse_number));
+                            setGoToError(`Surah ${surahNum} in Juz ${selectedJuz} has verses ${minVerse}-${maxVerse}`);
+                          } else {
+                            setGoToError(`Verse ${surahNum}:${verseNum} not found in Juz ${selectedJuz}`);
+                          }
+                        }
+                        setGoToSubmitting(false);
+                        return;
+                      }
+                    } else {
+                      // FORMAT 2: Simple verse position within juz (e.g., 110)
+                      const versePosition = parseInt(input, 10);
+                      
+                      if (isNaN(versePosition) || versePosition < 1) {
+                        setGoToError('Enter a valid verse number or surah:verse format');
+                        setGoToSubmitting(false);
+                        return;
+                      }
+                      
+                      // Convert 1-based position to 0-based index
+                      idx = versePosition - 1;
+                      
+                      if (idx < 0 || idx >= juzVerses.length) {
+                        setGoToError(`Enter verse 1-${juzVerses.length} or use surah:verse format`);
+                        setGoToSubmitting(false);
+                        return;
+                      }
+                      
+                      // Get the actual verse info for user feedback
+                      const targetVerse = juzVerses[idx];
+                      console.log('[read] Go to verse position', versePosition, 'in Juz', selectedJuz, 
+                        '-> Surah', targetVerse.chapter_id, 'Verse', targetVerse.verse_number);
                     }
                   }
                   
@@ -976,27 +1084,29 @@ export default function ReadScreen() {
                   
                   // Scroll to verse (only if idx is valid)
                   if (idx !== -1 && idx >= 0) {
-                    // Close modal first
-                    setGoToModalVisible(false);
-                    setGoToInput('');
-                    setGoToError(null);
-                    
-                    // Delay scroll to ensure FlatList has completed layout
-                    setTimeout(() => {
-                      try {
-                        console.log('[read] Executing scrollToIndex for index:', idx);
-                        flatListRef.current?.scrollToIndex({ 
-                          index: idx, 
-                          animated: true,
-                          viewPosition: 0.2 
-                        });
-                      } catch (e) {
-                        console.error('[read] Scroll failed:', e);
-                        // Fallback to scrollToOffset if scrollToIndex fails
-                        const offset = idx * (averageVerseHeight || 200);
-                        flatListRef.current?.scrollToOffset({ offset, animated: true });
-                      }
-                    }, 150);
+                    try {
+                      console.log('[read] Executing scrollToIndex for index:', idx);
+                      flatListRef.current?.scrollToIndex({ 
+                        index: idx, 
+                        animated: true,
+                        viewPosition: 0.2 
+                      });
+                      
+                      // Close modal after successful scroll initiation
+                      setGoToModalVisible(false);
+                      setGoToInput('');
+                      setGoToError(null);
+                    } catch (e) {
+                      console.error('[read] Scroll failed:', e);
+                      // Fallback to scrollToOffset if scrollToIndex fails
+                      const offset = idx * (averageVerseHeight || 200);
+                      flatListRef.current?.scrollToOffset({ offset, animated: true });
+                      
+                      // Close modal after fallback scroll
+                      setGoToModalVisible(false);
+                      setGoToInput('');
+                      setGoToError(null);
+                    }
                   } else {
                     console.error('[read] Invalid index for scroll:', idx);
                     setGoToError('Invalid verse index');
@@ -1100,17 +1210,74 @@ export default function ReadScreen() {
 
         {selectedSurah && (
           <View style={styles.headerActions}>
-            <Pressable style={[styles.actionButton, surahStatus.isMemorized && styles.actionButtonActive]} onPress={handleMarkAllMemorized}>
-              <CheckCircle size={20} color="#ffffff" />
-              <Text style={styles.actionButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-                {surahStatus.isMemorized ? 'Unmark ❌' : 'Mark Memorized'}
+            <Pressable 
+              style={({ pressed }) => [
+                styles.actionButton, 
+                {
+                  backgroundColor: surahStatus.isMemorized ? '#4CAF50' : '#1a1a1a',
+                  borderColor: surahStatus.isMemorized ? '#4CAF50' : '#444444',
+                  borderWidth: surahStatus.isMemorized ? 2 : 1,
+                  opacity: pressed ? 0.7 : 1,
+                  shadowColor: surahStatus.isMemorized ? '#4CAF50' : 'transparent',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 4,
+                  elevation: surahStatus.isMemorized ? 3 : 0,
+                }
+              ]} 
+              onPress={handleMarkAllMemorized}
+            >
+              <Check size={16} color="#ffffff" />
+              <Text style={[styles.actionButtonText, { marginLeft: 6 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                {surahStatus.isMemorized ? 'All Memorized' : 'Mark All Verses'}
               </Text>
+              <View style={{ 
+                marginLeft: 4, 
+                padding: 4, 
+                borderRadius: 12,
+                backgroundColor: surahStatus.isMemorized ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
+                width: 22,
+                height: 22,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                {surahStatus.isMemorized && <ArrowLeft size={14} color="#ffffff" />}
+              </View>
             </Pressable>
-            <Pressable style={[styles.actionButton, surahStatus.isRevised && styles.actionButtonRevised]} onPress={handleMarkAllRevised}>
-              <RefreshCw size={20} color="#ffffff" />
-              <Text style={styles.actionButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-                {surahStatus.isRevised ? 'Unmark ❌' : 'Mark Revision'}
+            
+            <Pressable 
+              style={({ pressed }) => [
+                styles.actionButton, 
+                {
+                  backgroundColor: surahStatus.isRevised ? '#FF9800' : '#1a1a1a',
+                  borderColor: surahStatus.isRevised ? '#FF9800' : '#444444',
+                  borderWidth: surahStatus.isRevised ? 2 : 1,
+                  opacity: pressed ? 0.7 : 1,
+                  shadowColor: surahStatus.isRevised ? '#FF9800' : 'transparent',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 4,
+                  elevation: surahStatus.isRevised ? 3 : 0,
+                }
+              ]} 
+              onPress={handleMarkAllRevised}
+            >
+              <RefreshCw size={16} color="#ffffff" />
+              <Text style={[styles.actionButtonText, { marginLeft: 6 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                {surahStatus.isRevised ? 'All Revised' : 'Mark All Revised'}
               </Text>
+              <View style={{ 
+                marginLeft: 4, 
+                padding: 4, 
+                borderRadius: 12,
+                backgroundColor: surahStatus.isRevised ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
+                width: 22,
+                height: 22,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                {surahStatus.isRevised && <ArrowLeft size={14} color="#ffffff" />}
+              </View>
             </Pressable>
           </View>
         )}
@@ -1159,39 +1326,15 @@ export default function ReadScreen() {
                 </Pressable>
               </View>
             ) : (
-              <FlatList
+              <FlashList
+                key={`verse-list-${verseListKey}`}
                 ref={flatListRef}
                 data={verses}
                 renderItem={renderVerseOptimized}
-                keyExtractor={(item) => item.id?.toString?.() ?? String(item.verseNumber ?? Math.random())}
-                getItemLayout={(data, index) => ({
-                  length: averageVerseHeight || 200,
-                  offset: (averageVerseHeight || 200) * index,
-                  index,
-                })}
-                initialNumToRender={15}
-                maxToRenderPerBatch={10}
-                windowSize={10}
-                updateCellsBatchingPeriod={50}
-                removeClippedSubviews={true}
+                keyExtractor={(item: any) => `verse-${item.id}-${item.surahId}-${item.verseNumber}`}
+                estimatedItemSize={200}
                 ListEmptyComponent={renderEmpty}
                 contentContainerStyle={styles.verseList}
-                scrollEventThrottle={16}
-                onScrollToIndexFailed={(info) => {
-                  console.log('[read] scrollToIndexFailed for Surah verses:', info);
-                  const avg = info.averageItemLength || averageVerseHeight || 200;
-                  const offset = Math.max(0, Math.round(info.index * avg));
-                  flatListRef.current?.scrollToOffset({ offset, animated: true });
-                  
-                  // Retry scrollToIndex after FlatList settles
-                  setTimeout(() => {
-                    flatListRef.current?.scrollToIndex({
-                      index: info.index,
-                      animated: true,
-                      viewPosition: 0.2,
-                    });
-                  }, 100);
-                }}
               />
             )}
           </View>
@@ -1210,71 +1353,49 @@ export default function ReadScreen() {
                 </Pressable>
               </View>
             ) : (
-              <FlatList
+              <FlashList
+                key={`juz-list-${juzListKey}`}
                 ref={flatListRef}
                 data={juzVerses}
-                keyExtractor={(item: any, index) => `jz-${item.verse_id ?? index}-${index}`}
-                renderItem={({ item }) => (
-                  <VerseItem
-                    verse={{
-                      id: item.verse_id,
-                      surahId: item.chapter_id,
-                      verseNumber: item.verse_number,
-                      arabicText: item.ayah,
-                      translation: item.translation || '',
-                      transliteration: item.transliteration || undefined,
-                      pageNumber: item.page_id ? Number(item.page_id) : undefined,
-                      juzNumber: item.part_id ? Number(item.part_id) : undefined,
-                    }}
-                    onPlayAudio={handleVersePlayAudio}
-                    surahMemorizedGlobally={false}
-                    surahRevisedGlobally={false}
-                    onSurahMemorizeToggle={() => {}}
-                    onSurahRevisionToggle={() => {}}
-                    source={'juzList'}
-                  />
-                )}
-                contentContainerStyle={[styles.versesContent, { backgroundColor: '#1a1a1a' }]}
-                getItemLayout={(data, index) => ({
-                  length: averageVerseHeight || 200,
-                  offset: (averageVerseHeight || 200) * index,
-                  index,
-                })}
-                maxToRenderPerBatch={8}
-                windowSize={10}
-                initialNumToRender={8}
-                onScrollToIndexFailed={(info) => {
-                  console.log('[read] scrollToIndexFailed for Juz verses:', info);
-                  const avg = info.averageItemLength || averageVerseHeight || 200;
-                  const offset = Math.max(0, Math.round(info.index * avg));
-                  flatListRef.current?.scrollToOffset({ offset, animated: true });
-                  
-                  // Retry scrollToIndex after FlatList settles
-                  setTimeout(() => {
-                    flatListRef.current?.scrollToIndex({
-                      index: info.index,
-                      animated: true,
-                      viewPosition: 0.2,
-                    });
-                  }, 100);
+                keyExtractor={(item: any, index: number) => `juz-${item.verse_id}-${item.chapter_id}-${item.verse_number}`}
+                estimatedItemSize={200}
+                renderItem={({ item }: { item: any }) => {
+                  const isPlaying = currentlyPlayingVerse !== null && 
+                                    currentlyPlayingVerse.surahId === item.chapter_id && 
+                                    currentlyPlayingVerse.verseNumber === item.verse_number;
+                  return (
+                    <VerseItem
+                      verse={{
+                        id: item.verse_id,
+                        surahId: item.chapter_id,
+                        verseNumber: item.verse_number,
+                        arabicText: item.ayah,
+                        translation: item.translation || '',
+                        transliteration: item.transliteration || undefined,
+                        pageNumber: item.page_id ? Number(item.page_id) : undefined,
+                        juzNumber: item.part_id ? Number(item.part_id) : undefined,
+                      }}
+                      onPlayAudio={handleVersePlayAudio}
+                      surahMemorizedGlobally={false}
+                      surahRevisedGlobally={false}
+                      onSurahMemorizeToggle={() => {}}
+                      onSurahRevisionToggle={() => {}}
+                      source={'juzList'}
+                      isCurrentlyPlaying={isPlaying}
+                    />
+                  );
                 }}
+                contentContainerStyle={[styles.versesContent, { backgroundColor: '#1a1a1a' }]}
               />
             )}
           </View>
         ) : tab === 'surah' ? (
-          <FlatList
+          <FlashList
             ref={surahListRef}
             data={filteredSurahs}
             renderItem={renderSurahItem}
-            keyExtractor={(item) => item.id.toString()}
+            keyExtractor={(item: any) => `surah-${item.id}`}
             contentContainerStyle={[styles.surahListContent, { backgroundColor: '#1a1a1a' }]}
-            style={{ backgroundColor: '#1a1a1a' }}
-            scrollEventThrottle={400}
-            getItemLayout={(data, index) => ({ length: SURAH_ITEM_HEIGHT, offset: SURAH_ITEM_HEIGHT * index, index })}
-            initialNumToRender={12}
-            windowSize={12}
-            maxToRenderPerBatch={12}
-            removeClippedSubviews
           />
         ) : (
           <JuzMemorization onOpenJuz={handleSelectJuz} />

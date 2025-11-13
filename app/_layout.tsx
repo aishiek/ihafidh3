@@ -1,11 +1,15 @@
 import { initDatabase, logBasicStats, runIntegrityCheck } from '@/assets/database/QuranDatabase';
 import { FastingCalendarProvider } from '@/components/fasting/context/FastingCalendarContext';
-import { AyahNotificationService } from '@/services/ayahNotificationService';
+import UpdateModal from '@/components/UpdateModal';
+import { LATEST_VERSION, MIN_SUPPORTED_VERSION } from '@/constants/appConfig';
+import { AyahNotificationService, initializeNotifications, requestNotificationPermissions } from '@/services/NotificationService';
 import { useSettingsStore } from '@/store/settingsStore';
 import { initializeAudio } from '@/utils/audioUtils';
 import { getTodayCardVerse } from '@/utils/ayahOfTheDay';
 import { initGlobalErrorHandlers } from '@/utils/globalErrorHandlers';
+import { fetchRemoteVersionConfig, getEffectiveVersionConfig, type RemoteVersionConfig } from '@/utils/remoteVersion';
 import { runTurboModuleProbe } from '@/utils/turboModuleProbe';
+import { getCurrentVersion, isVersionLower } from '@/utils/versionUtils';
 import * as Font from 'expo-font';
 import * as Notifications from 'expo-notifications';
 import { Stack, router } from 'expo-router';
@@ -68,7 +72,7 @@ async function loadAppFontsOnce() {
     'ScheherazadeNew-Regular': require('../assets/fonts/ScheherazadeNew-Regular.ttf'),
     'ScheherazadeNew-Bold': require('../assets/fonts/ScheherazadeNew-Bold.ttf'),
     'NooreHuda-Regular': require('../assets/fonts/NooreHuda-Regular.ttf'),
-    'UthmanTaha-Ver10': require('../assets/fonts/UthmanTaha-Ver10.otf'),
+    'NotoNaskhArabic-Regular': require('../assets/fonts/NotoNaskhArabic-Regular.ttf'),
   };
   if (amiriAsset) {
     fontMap['AmiriQuran-Regular'] = amiriAsset;
@@ -112,6 +116,13 @@ export default function RootLayout() {
   const [fontsLoaded, setFontsLoaded] = React.useState(false);
   const [fontError, setFontError] = React.useState<Error | null>(null);
   const [forceContinue, setForceContinue] = React.useState(false);
+  const [showUpdatePrompt, setShowUpdatePrompt] = React.useState(false);
+  const [forcedUpdate, setForcedUpdate] = React.useState(false);
+  const [currentVersion, setCurrentVersion] = React.useState<string>('0.0.0');
+  const [latestVersion, setLatestVersion] = React.useState<string | null>(null);
+  const [releaseNotes, setReleaseNotes] = React.useState<string[] | undefined>(undefined);
+  const [iosAppIdOverride, setIosAppIdOverride] = React.useState<string | null>(null);
+  const [androidPkgOverride, setAndroidPkgOverride] = React.useState<string | null>(null);
   const ayahEnabled = useSettingsStore(s => s.ayahDailyNotificationsEnabled ?? false);
   const reminderTime = useSettingsStore(s => s.reminderTime);
 
@@ -135,6 +146,21 @@ export default function RootLayout() {
     initializeAudio().catch(e => console.log('[audio] init failed', e));
   }, []);
 
+  // Initialize unified notification system ONCE at app startup
+  React.useEffect(() => {
+    (async () => {
+      try {
+        await initializeNotifications();
+        const granted = await requestNotificationPermissions();
+        if (!granted) {
+          console.log('[App] Notification permissions not granted');
+        }
+      } catch (e) {
+        console.error('[App] Notification initialization failed', e);
+      }
+    })();
+  }, []);
+
   React.useEffect(() => {
     // Kick off probe shortly after mount (non-blocking)
     const t = setTimeout(() => {
@@ -149,9 +175,9 @@ export default function RootLayout() {
     (async () => {
       try {
         if (ayahEnabled) {
-          await AyahNotificationService.scheduleDailyAyahReminder(reminderTime || '09:00');
+          await AyahNotificationService.scheduleDailyReminder(reminderTime || '09:00');
         } else {
-          await AyahNotificationService.cancelDailyAyahReminder();
+          await AyahNotificationService.cancelDailyReminder();
         }
       } catch (e) {
         console.log('[AyahNotif] sync error', e);
@@ -159,6 +185,66 @@ export default function RootLayout() {
     })();
     return () => { active = false; };
   }, [ayahEnabled, reminderTime]);
+
+  // Version gate: prompt update if current version is lower than minimum supported
+  React.useEffect(() => {
+    try {
+      const { version } = getCurrentVersion();
+      setCurrentVersion(version);
+      // Initial local check (fast fallback before remote arrives)
+      const mustUpdateLocal = isVersionLower(version, MIN_SUPPORTED_VERSION);
+      const softUpdateLocal = !mustUpdateLocal && isVersionLower(version, LATEST_VERSION);
+      if (mustUpdateLocal || softUpdateLocal) {
+        setForcedUpdate(mustUpdateLocal);
+        setLatestVersion(LATEST_VERSION);
+        setShowUpdatePrompt(true);
+      }
+
+      // Remote override
+      (async () => {
+        const remote = await fetchRemoteVersionConfig(false) || await getEffectiveVersionConfig();
+        applyRemoteVersion(remote, version);
+      })();
+    } catch (e) {
+      console.log('[version] check failed', e);
+    }
+  }, []);
+
+  // Re-check on foreground if remote changed (cache TTL handled in util)
+  React.useEffect(() => {
+    const sub = AppState.addEventListener('change', async (state) => {
+      if (state === 'active') {
+        try {
+          const { version } = getCurrentVersion();
+          const remote = await fetchRemoteVersionConfig(false) || await getEffectiveVersionConfig();
+          applyRemoteVersion(remote, version);
+        } catch (e) {
+          console.log('[version] foreground check failed', e);
+        }
+      }
+    });
+    return () => { try { sub.remove(); } catch {} };
+  }, []);
+
+  const applyRemoteVersion = React.useCallback((remote: RemoteVersionConfig, version: string) => {
+    try {
+      setLatestVersion(remote.latest || LATEST_VERSION);
+      setReleaseNotes(remote.release_notes);
+      setIosAppIdOverride(remote.ios_app_id_override ?? null);
+      setAndroidPkgOverride(remote.android_package_id_override ?? null);
+      const mustUpdate = isVersionLower(version, remote.min_supported || MIN_SUPPORTED_VERSION) || !!remote.force;
+      const softUpdate = !mustUpdate && isVersionLower(version, remote.latest || LATEST_VERSION);
+      if (mustUpdate || softUpdate) {
+        setForcedUpdate(mustUpdate);
+        setShowUpdatePrompt(true);
+      } else {
+        // Only hide if not forced by local earlier
+        setShowUpdatePrompt(false);
+      }
+    } catch (e) {
+      console.log('[version] apply remote failed', e);
+    }
+  }, []);
 
   // Deep-link when user taps on a daily ayah notification
   React.useEffect(() => {
@@ -229,6 +315,16 @@ export default function RootLayout() {
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
             </Stack>
+            <UpdateModal
+              visible={showUpdatePrompt}
+              forced={forcedUpdate}
+              currentVersion={currentVersion}
+              latestVersion={latestVersion}
+              onClose={() => setShowUpdatePrompt(false)}
+              releaseNotes={releaseNotes}
+              iosAppIdOverride={iosAppIdOverride}
+              androidPackageIdOverride={androidPkgOverride}
+            />
           </View>
         </FastingCalendarProvider>
       </RootErrorBoundary>

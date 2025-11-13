@@ -1,11 +1,15 @@
 import { BackfillButton } from '@/components/BackfillButton';
+import Slider from '@/components/ui/Slider';
 import { useSettingsStore } from '@/store/settingsStore';
+import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import { useCustomColors } from '@/utils/themeUtils';
 import { router, Stack } from 'expo-router';
 import {
     ArrowLeft,
     Bell,
+    Book,
     Check,
+    ChevronRight,
     Moon,
     Palette,
     RotateCcw,
@@ -14,13 +18,11 @@ import {
     User,
     Volume2
 } from 'lucide-react-native';
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useActivityStore } from '../store/activityStore';
 import { ColorScheme, useThemeStore } from '../store/themeStore';
 import { runFullDiagnostic } from './mushaf/utils/mushafDiagnostics';
-import Slider from '@/components/ui/Slider';
-import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 
 export default function SettingsScreen() {
   const colors = useCustomColors();
@@ -47,9 +49,11 @@ export default function SettingsScreen() {
     reminderTime,
     setReminderTime,
     translationLanguage,
-    setTranslationLanguage
+    setTranslationLanguage,
+    arabicFont,
+    setArabicFont
   } = useSettingsStore();
-  const arabicFamily = useMemo(() => getArabicFontFamily(useSettingsStore.getState().arabicFont as any) || undefined, []);
+  const arabicFamily = useMemo(() => getArabicFontFamily(arabicFont) || undefined, [arabicFont]);
   const [arabicPreview, setArabicPreview] = useState<number>(fontSizeArabic);
   const [transPreview, setTransPreview] = useState<number>(fontSizeTranslation);
   const [translitPreview, setTranslitPreview] = useState<number>(fontSizeTransliteration || 14);
@@ -68,7 +72,7 @@ export default function SettingsScreen() {
     if (translitPreview !== v) setTranslitPreview(v);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fontSizeTransliteration]);
-  const arabicTypo = useMemo(() => getArabicTypographySizing(arabicPreview, useSettingsStore.getState().arabicFont as any), [arabicPreview]);
+  const arabicTypo = useMemo(() => getArabicTypographySizing(arabicPreview, arabicFont), [arabicPreview, arabicFont]);
   
   const { themeMode, colorScheme, setThemeMode, setColorScheme } = useThemeStore();
   const { 
@@ -143,6 +147,30 @@ export default function SettingsScreen() {
               placeholderTextColor="#666666"
             />
           </View>
+        </View>
+        
+        {/* Mushaf Settings */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Mushaf Layouts</Text>
+          
+          <TouchableOpacity
+            style={styles.navigationItem}
+            onPress={() => router.push('/mushaf/settings')}
+            activeOpacity={0.7}
+          >
+            <View style={styles.settingHeader}>
+              <View style={styles.iconContainer}>
+                <Book size={20} color="#10b981" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.settingLabel}>Manage Mushaf Layouts</Text>
+                <Text style={styles.settingDescription}>
+                  Download and manage Madina, Indo-Pak, Warsh, and Tajweed layouts
+                </Text>
+              </View>
+              <ChevronRight size={20} color="#666666" />
+            </View>
+          </TouchableOpacity>
         </View>
         
         {/* Theme Settings */}
@@ -551,6 +579,46 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Arabic Font Style */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Arabic Font Style</Text>
+          
+          <View style={styles.settingItem}>
+            <View style={styles.settingHeader}>
+              <View style={styles.iconContainer}>
+                <Palette size={20} color="#9C27B0" />
+              </View>
+              <View>
+                <Text style={styles.settingLabel}>Font Style</Text>
+                <Text style={styles.settingDescription}>Choose your preferred Arabic font</Text>
+              </View>
+            </View>
+            <View style={styles.toggleGrid}>
+              {[
+                { value: 'default', label: 'System Default' },
+                { value: 'noto-naskh', label: 'Naskh Arabic' },
+                { value: 'amiri-quran', label: 'Amiri' },
+                { value: 'indo-pak', label: 'Indo-Pak' },
+              ].map((font) => (
+                <TouchableOpacity
+                  key={font.value}
+                  style={[
+                    styles.toggleChip,
+                    arabicFont === font.value && styles.toggleChipActive
+                  ]}
+                  onPress={() => setArabicFont(font.value as any)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[
+                    styles.toggleChipText,
+                    arabicFont === font.value && styles.toggleChipTextActive
+                  ]}>{font.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+
         {/* Data Management */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Data Management</Text>
@@ -733,6 +801,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 16,
+  },
+  navigationItem: {
+    backgroundColor: '#0a0a0a',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#1a1a1a',
   },
   settingLabel: {
     fontSize: 16,

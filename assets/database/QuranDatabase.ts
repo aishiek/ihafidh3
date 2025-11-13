@@ -764,15 +764,26 @@ function computeSurahAndNumber(verseId: number): { surahId: number; verseNumber:
 export const logVerseActivity = async (verseId: number, activityType: VerseActivityType, date?: string): Promise<void> => {
   if (!db || Platform.OS === 'web') return;
   try {
-    if (!db.runAsync) return;
+    if (!db.runAsync) {
+      console.warn('[logVerseActivity] db.runAsync not available');
+      return;
+    }
     const { surahId, verseNumber } = computeSurahAndNumber(verseId);
     const activityDate = date || fmtDate(new Date());
+    
+    // Logging disabled for production
+    
     await db.runAsync(
       `INSERT INTO verse_activities (verseId, surahId, verseNumber, activityType, activityDate) VALUES (?, ?, ?, ?, ?)`,
       [verseId, surahId, verseNumber, activityType, activityDate]
-    ).catch(e => console.warn('[sqlite] logVerseActivity insert failed', e));
+    ).catch(e => {
+      console.error('[sqlite] logVerseActivity insert failed:', e);
+      console.error('[sqlite] Failed data:', { verseId, surahId, verseNumber, activityType, activityDate });
+    });
+    
+    // Success logging disabled for production
   } catch (e) {
-    console.warn('[sqlite] logVerseActivity failed', e);
+    console.error('[sqlite] logVerseActivity failed:', e);
   }
 };
 
@@ -813,7 +824,13 @@ export const bulkLogRevisions = async (verseIds: number[], date?: string): Promi
 export const getVerseActivitiesBetween = async (startDate: string, endDate: string): Promise<{ activityDate: string; activityType: VerseActivityType; count: number }[]> => {
   if (!db || Platform.OS === 'web') return [];
   try {
-    if (!db.getAllAsync) return [];
+    if (!db.getAllAsync) {
+      console.warn('[getVerseActivitiesBetween] db.getAllAsync not available');
+      return [];
+    }
+    
+    console.log('[getVerseActivitiesBetween] Querying activities between', startDate, 'and', endDate);
+    
     const rows = await db.getAllAsync(
       `SELECT activityDate, activityType, COUNT(*) as count
        FROM verse_activities
@@ -821,10 +838,22 @@ export const getVerseActivitiesBetween = async (startDate: string, endDate: stri
        GROUP BY activityDate, activityType
        ORDER BY activityDate ASC`,
       [startDate, endDate]
-    ).catch(() => []);
+    ).catch((err) => {
+      console.error('[getVerseActivitiesBetween] Query failed:', err);
+      return [];
+    });
+    
+    console.log('[getVerseActivitiesBetween] Found', rows?.length || 0, 'activity groups');
+    
+    if (!rows || rows.length === 0) {
+      // Check if table has any data at all
+      const totalRows = await db.getAllAsync(`SELECT COUNT(*) as total FROM verse_activities`).catch(() => []);
+      console.log('[getVerseActivitiesBetween] Total rows in verse_activities table:', totalRows);
+    }
+    
     return (rows as any[]).map(r => ({ activityDate: r.activityDate, activityType: r.activityType as VerseActivityType, count: Number(r.count) }));
   } catch (e) {
-    console.warn('[sqlite] getVerseActivitiesBetween failed', e);
+    console.error('[sqlite] getVerseActivitiesBetween failed:', e);
     return [];
   }
 };

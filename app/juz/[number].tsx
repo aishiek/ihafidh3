@@ -1,11 +1,13 @@
 import VerseItem from '@/components/VerseItem';
 import { getVersesByJuz } from '@/data/verses';
 import { useProgressStore } from '@/store/progressStore';
+import { useSettingsStore } from '@/store/settingsStore';
 import { Verse } from '@/types';
 import { useCustomColors } from '@/utils/themeUtils';
+import { FlashList } from '@shopify/flash-list';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 export default function JuzScreen() {
   const { number } = useLocalSearchParams<{ number: string }>();
@@ -18,6 +20,7 @@ export default function JuzScreen() {
   }, [juzNumber]);
   
   const colors = useCustomColors();
+  const { fontSizeArabic } = useSettingsStore();
   // No store method for Juz yet; use data layer
   const { memorizedVerses, revisedVerses } = useProgressStore();
   
@@ -28,6 +31,13 @@ export default function JuzScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const pageSize = 20;
+  
+  const ESTIMATED_ITEM_HEIGHT = useMemo(() => {
+    if (fontSizeArabic <= 24) return 140;
+    if (fontSizeArabic <= 36) return 220;
+    if (fontSizeArabic <= 52) return 320;
+    return 450; // Very large fonts
+  }, [fontSizeArabic]);
   
   const loadVerses = useCallback(async (page: number, isInitialLoad: boolean = false) => {
     // Prevent multiple simultaneous loads
@@ -243,7 +253,7 @@ export default function JuzScreen() {
           </Pressable>
         </View>
       ) : (
-        <FlatList
+        <FlashList
           data={verses}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
@@ -253,12 +263,6 @@ export default function JuzScreen() {
           onEndReachedThreshold={0.5}
           ListFooterComponent={renderFooter}
           ListEmptyComponent={ListEmptyComponent}
-          removeClippedSubviews={true}
-          maxToRenderPerBatch={10}
-          updateCellsBatchingPeriod={50}
-          initialNumToRender={10}
-          windowSize={10}
-          getItemLayout={undefined} // Let FlatList calculate this automatically
         />
       )}
     </View>

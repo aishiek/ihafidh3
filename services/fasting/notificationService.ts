@@ -143,9 +143,9 @@ export class FastingNotificationService {
           data: { type: 'fasting_reminder', fastingType, date: day.date, hijriDate: day.hijriDate.date },
         },
         trigger: { 
-          type: 'date',
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
           date: notificationDate 
-        } as Notifications.DateTriggerInput,
+        },
       });
 
       // Verify scheduling succeeded by fetching scheduled notifications

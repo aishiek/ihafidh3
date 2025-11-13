@@ -1,10 +1,16 @@
 // Full-ish, compatible persisted progress store (types + simple implementations)
+import {
+    bulkLogRevisions,
+    bulkMarkVersesMemorized,
+    logVerseMemorization,
+    logVerseRevision
+} from '@/assets/database/QuranDatabase';
+import { TOTAL_VERSES } from '@/constants/quran';
+import { Verse } from '@/types/verse';
+import { formatDate } from '@/utils/dateUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { formatDate } from '@/utils/dateUtils';
-import { TOTAL_VERSES } from '@/constants/quran';
-import { Verse } from '@/types/verse';
 
 type RevisedVerse = { verseId: number; revisionDate: string };
 type RevisionTracker = { verseId: number; date: string };
@@ -106,9 +112,8 @@ export const useProgressStore = create<ProgressState>()(
       // actions
       markVerseAsMemorized: (verseId: number) => {
         // Log memorization activity to the database
-        import('@/assets/database/QuranDatabase').then(({ logVerseMemorization }) => {
-          logVerseMemorization(verseId).catch(() => {});
-        });
+        logVerseMemorization(verseId).catch(() => {});
+        
         set((s) => {
           if (s.memorizedVerses.includes(verseId)) return {};
           const memorizedVerses = [...s.memorizedVerses, verseId];
@@ -132,9 +137,8 @@ export const useProgressStore = create<ProgressState>()(
 
       bulkMarkVersesMemorized: (ids: number[], isMarking = true) => {
         // Log bulk memorization activities to the database
-        import('@/assets/database/QuranDatabase').then(({ bulkMarkVersesMemorized }) => {
-          bulkMarkVersesMemorized(ids, isMarking).catch(() => {});
-        });
+        bulkMarkVersesMemorized(ids, isMarking).catch(() => {});
+        
         set((s) => {
           const memorizedVerses = isMarking 
             ? Array.from(new Set([...s.memorizedVerses, ...ids])) 
@@ -161,9 +165,8 @@ export const useProgressStore = create<ProgressState>()(
 
       markVerseAsRevised: (verseId: number) => {
         // Log revision activity to the database
-        import('@/assets/database/QuranDatabase').then(({ logVerseRevision }) => {
-          logVerseRevision(verseId).catch(() => {});
-        });
+        logVerseRevision(verseId).catch(() => {});
+        
         set((s) => {
           if (s.revisedVerses.some((r) => r.verseId === verseId)) return {};
           const today = formatDate(new Date());
@@ -215,9 +218,8 @@ export const useProgressStore = create<ProgressState>()(
 
       bulkMarkVersesRevised: (ids: number[]) => {
         // Log bulk revision activity to the database
-        import('@/assets/database/QuranDatabase').then(({ bulkLogRevisions }) => {
-          bulkLogRevisions(ids).catch(() => {});
-        });
+        bulkLogRevisions(ids).catch(() => {});
+        
         set((s) => {
           const today = formatDate(new Date());
           const revisedVerses = [...s.revisedVerses];

@@ -1,22 +1,23 @@
 import { surahsData } from '@/data/surahs';
 import { useBookmarkStore } from '@/store/bookmarkStore';
+import { useSettingsStore } from '@/store/settingsStore';
 import { useThemeColor } from '@/utils/useThemeColor';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { ArrowLeft, Bookmark, Bookmark as BookmarkIcon, BookOpen, ChevronRight, Trash2 } from 'lucide-react-native';
+import { ArrowLeft, Bookmark as BookmarkIcon, BookOpen, Trash2 } from 'lucide-react-native';
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
-  FlatList,
-  // SegmentedControlIOS,
-  Platform,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Alert,
+    FlatList,
+    // SegmentedControlIOS,
+    Platform,
+    Pressable,
+    RefreshControl,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { useMushafBookmarks } from './mushaf/hooks/useMushafBookmarks';
 
@@ -66,10 +67,59 @@ type AppBookmarkCardProps = {
   animating: boolean;
   primary: string;
   nowTick: number;
+  translationLanguage: string;
 };
 
-const AppBookmarkCard = memo(({ item, onPress, onDelete, animating, primary }: AppBookmarkCardProps) => {
+const AppBookmarkCard = memo(({ item, onPress, onDelete, animating, primary, translationLanguage }: AppBookmarkCardProps) => {
   const surahDisplayName = SURAH_NAME_MAP.get(item.surahId) || item.surahName || `Surah ${item.surahId}`;
+  const [currentTranslation, setCurrentTranslation] = useState(item.translation);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch translation when language changes
+  useEffect(() => {
+    let isMounted = true;
+    
+    const fetchTranslation = async () => {
+      // Skip if already showing correct translation or if we don't have verse info
+      if (!item.surahId || !item.verseNumber) {
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const ALQURAN_CLOUD_API = 'https://api.alquran.cloud/v1';
+        const response = await fetch(
+          `${ALQURAN_CLOUD_API}/ayah/${item.surahId}:${item.verseNumber}/${translationLanguage}`
+        );
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch translation');
+        }
+
+        const data = await response.json();
+        
+        if (isMounted && data?.data?.text) {
+          setCurrentTranslation(data.data.text);
+        }
+      } catch (error) {
+        console.warn('[BookmarkCard] Failed to fetch translation:', error);
+        // Keep showing the stored translation if fetch fails
+        if (isMounted) {
+          setCurrentTranslation(item.translation);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchTranslation();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [item.surahId, item.verseNumber, translationLanguage, item.translation]);
   
   return (
     <Pressable
@@ -103,13 +153,20 @@ const AppBookmarkCard = memo(({ item, onPress, onDelete, animating, primary }: A
             Verse {item.verseNumber}
           </Text>
         </View>
+        {item.source === 'juz' && item.juzNumber && (
+          <View style={[styles.versePill, { backgroundColor: '#4A90E2', marginLeft: 6 }]}>
+            <Text style={[styles.versePillText, { color: '#fff' }]}>
+              Juz {item.juzNumber}
+            </Text>
+          </View>
+        )}
       </View>
 
       <Text style={styles.arabic} numberOfLines={3}>
         {item.arabicText}
       </Text>
       <Text style={styles.translation} numberOfLines={3}>
-        {item.translation}
+        {loading ? 'Loading translation...' : currentTranslation}
       </Text>
 
       <View style={styles.cardFooterRow}>
@@ -132,7 +189,7 @@ type MushafBookmarkCardProps = {
 };
 
 // ...existing code...
-import { getPageInfo, initMushafDB } from './mushaf/services/mushafMetadataService';
+import { mushafSurahService } from '@/app/mushaf/services/mushafSurahService';
 
 const MushafBookmarkCard = memo(({ page, onPress, onDelete, animating, primary }: MushafBookmarkCardProps) => {
   const [surahName, setSurahName] = useState<string | null>(null);
@@ -141,18 +198,34 @@ const MushafBookmarkCard = memo(({ page, onPress, onDelete, animating, primary }
     let isMounted = true;
     (async () => {
       try {
-        const db = await initMushafDB();
-        const pageInfo = await getPageInfo(db, page);
+        // Ensure database is initialized
+        if (!mushafSurahService.isInitialized()) {
+          await mushafSurahService.initializeDatabase();
+        }
+        
+        const db = (mushafSurahService as any).db;
+        if (!db) {
+          console.error('Mushaf database not available');
+          return;
+        }
+        
+        // Query for surah number on this page
+        // Get the first surah that appears on this page (ordered by verse position)
+        const result = await db.getFirstAsync(
+          'SELECT surah_number FROM pages WHERE page_number = ? ORDER BY surah_number ASC LIMIT 1',
+          [page]
+        );
+        
         if (isMounted) {
-          // Try to get surah name from metadata, fallback to Surah number
           let name = null;
-          if (pageInfo?.surah_number) {
-            const surahData = surahsData.find(s => s.id === pageInfo.surah_number);
-            name = surahData?.name || `Surah ${pageInfo.surah_number}`;
+          if (result?.surah_number) {
+            const surahData = surahsData.find(s => s.id === result.surah_number);
+            name = surahData?.name || `Surah ${result.surah_number}`;
           }
           setSurahName(name);
         }
-      } catch {
+      } catch (error) {
+        console.error('Failed to load surah name for page', page, error);
         if (isMounted) setSurahName(null);
       }
     })();
@@ -183,17 +256,9 @@ const MushafBookmarkCard = memo(({ page, onPress, onDelete, animating, primary }
           <Text style={{ color: '#94a3b8', fontSize: 13 }}>Tap to view in Mushaf reader</Text>
         </View>
         {/* Actions */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Pressable onPress={() => onDelete(page)} style={{ padding: 8, borderRadius: 8 }}>
-            <Trash2 size={18} color="#ff6b6b" />
-          </Pressable>
-          <ChevronRight size={18} color="#2563eb" />
-        </View>
-      </View>
-      {/* Saved Indicator */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 6 }}>
-        <Bookmark size={12} color="#2563eb" />
-        <Text style={{ color: '#2563eb', fontSize: 12, fontWeight: '500' }}>Saved to collection</Text>
+        <Pressable onPress={() => onDelete(page)} style={{ padding: 8, borderRadius: 8 }}>
+          <Trash2 size={18} color="#ff6b6b" />
+        </Pressable>
       </View>
     </Pressable>
   );
@@ -205,6 +270,9 @@ export default function BookmarksScreen() {
   
   // App bookmarks
   const { bookmarks, reloadBookmarks, removeBookmark, clearAllBookmarks } = useBookmarkStore();
+  
+  // Settings
+  const { translationLanguage } = useSettingsStore();
   
   // Mushaf bookmarks
   const { bookmarks: mushafBookmarks, toggleBookmark: toggleMushafBookmark } = useMushafBookmarks();
@@ -350,8 +418,15 @@ export default function BookmarksScreen() {
 
   const handleAppCardPress = useCallback((item: any) => {
     Haptics.selectionAsync().catch(() => {});
-    // Route to exact verse - verseNumber is the verse ID
-    router.push(`/(tabs)/read?surahId=${item.surahId}&verseId=${item.verseNumber}`);
+    
+    // Navigate based on bookmark source
+    if (item.source === 'juz' && item.juzNumber) {
+      // Navigate to Juz mode with specific verse
+      router.push(`/(tabs)/read?juzNumber=${item.juzNumber}&verseId=${item.verseId}`);
+    } else {
+      // Navigate to Surah mode (default for old bookmarks without source)
+      router.push(`/(tabs)/read?surahId=${item.surahId}&verseId=${item.verseId}`);
+    }
   }, [router]);
 
   const handleMushafCardPress = useCallback((page: number) => {
@@ -369,9 +444,10 @@ export default function BookmarksScreen() {
         animating={animatingIds.has(item.verseId)}
         primary={primary}
         nowTick={nowTick}
+        translationLanguage={translationLanguage}
       />
     ),
-    [animatingIds, primary, handleDeleteAppBookmark, handleAppCardPress, nowTick]
+    [animatingIds, primary, handleDeleteAppBookmark, handleAppCardPress, nowTick, translationLanguage]
   );
 
   const renderMushafItem = useCallback(
@@ -527,6 +603,7 @@ export default function BookmarksScreen() {
           data={currentData}
           keyExtractor={keyExtractor}
           renderItem={tab === 'app' ? renderAppItem : renderMushafItem as any}
+          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
           refreshControl={<RefreshControl tintColor={primary} refreshing={refreshing} onRefresh={onRefresh} />}
           contentContainerStyle={{ paddingVertical: 8 }}
           windowSize={10}

@@ -6,7 +6,6 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { TajweedSettings } from '../../components/Settings/TajweedSettings';
 import LayoutService from '../services/layoutService';
-import { LayoutSelector } from './LayoutSelector';
 import { TajweedRenderer } from './TajweedRenderer';
 
 export const MushafLayout: React.FC = () => {
@@ -14,7 +13,7 @@ export const MushafLayout: React.FC = () => {
   const [totalPages, setTotalPages] = useState(604);
   const [pageLayout, setPageLayout] = useState<PageLayout[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showLayoutSelector, setShowLayoutSelector] = useState(false);
+  // Removed LayoutSelector state; navigation will go to settings screen
   const [showTajweedSettings, setShowTajweedSettings] = useState(false);
   
   const [tajweedConfig, setTajweedConfig] = useState<TajweedConfig>({
@@ -125,7 +124,7 @@ export const MushafLayout: React.FC = () => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => setShowLayoutSelector(true)} style={styles.headerButton}>
+        <TouchableOpacity onPress={() => console.warn('Navigate to settings for layout change')} style={styles.headerButton}>
           <BookOpen size={20} color="#3b82f6" />
           <Text style={styles.headerButtonText}>Layout</Text>
         </TouchableOpacity>
@@ -152,7 +151,7 @@ export const MushafLayout: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      <LayoutSelector visible={showLayoutSelector} onClose={() => setShowLayoutSelector(false)} onLayoutSelected={handleLayoutChange} />
+  {/* LayoutSelector removed. Use settings screen for layout changes. */}
 
       <TajweedSettings config={tajweedConfig} onConfigChange={setTajweedConfig} visible={showTajweedSettings} onClose={() => setShowTajweedSettings(false)} />
     </View>

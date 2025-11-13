@@ -11,7 +11,7 @@ export const DEFAULT_PLAYBACK_SPEED: PlaybackSpeed = 1;
 export const PLAYBACK_SPEED_OPTIONS: PlaybackSpeed[] = [0.5, 0.75, 1, 1.25];
 
 // Keep 'tajweed' in the type for backward compatibility with existing storage
-type ArabicFont = 'default' | 'uthman-taha' | 'scheherazade' | 'scheherazade-bold' | 'indo-pak' | 'amiri-quran' | 'tajweed';
+type ArabicFont = 'default' | 'uthman-taha' | 'scheherazade' | 'scheherazade-bold' | 'indo-pak' | 'amiri-quran' | 'noto-naskh' | 'tajweed';
 
 export interface SettingsState extends AppSettings {
   userName: string;
@@ -103,7 +103,7 @@ export const useSettingsStore = create<SettingsState>()(
       setArabicFont: (arabicFont) => {
         // Handle case where 'tajweed' might be in AsyncStorage from previous version
         const font = (arabicFont === 'tajweed') ? 'scheherazade' : 
-                   (['default', 'uthman-taha', 'scheherazade', 'scheherazade-bold', 'indo-pak', 'amiri-quran'].includes(arabicFont) 
+                   (['default', 'uthman-taha', 'scheherazade', 'scheherazade-bold', 'indo-pak', 'amiri-quran', 'noto-naskh'].includes(arabicFont) 
                      ? arabicFont 
                      : 'default');
         set({ arabicFont: font });
@@ -154,8 +154,8 @@ export const useSettingsStore = create<SettingsState>()(
           state.fontSizeTranslation = state.fontSizeTranslation || 16;
           // @ts-ignore add new field default
           (state as any).fontSizeTransliteration = (state as any).fontSizeTransliteration || 14;
-          // @ts-ignore extend persisted state
-          (state as any).arabicFont = (state as any).arabicFont || 'uthman-taha';
+          // @ts-ignore extend persisted state - use default (ScheherazadeNew) as fallback
+          (state as any).arabicFont = (state as any).arabicFont || 'default';
           state.showTranslation = state.showTranslation ?? true;
           // @ts-ignore extend persisted state
           (state as any).showTransliteration = (state as any).showTransliteration ?? false;

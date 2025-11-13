@@ -2,16 +2,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { Heart } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { BackHandler, Modal, Platform, SafeAreaView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LayoutSelector } from '../components/LayoutSelector';
 import MushafFooter from '../components/MushafFooter';
 import MushafHeader from '../components/MushafHeader';
 import MushafPage from '../components/MushafPage';
 import SurahList from '../components/SurahList';
 import { useMushafBookmarks } from '../hooks/useMushafBookmarks';
-import LayoutService from '../services/layoutService';
 import { getAllSurahs, isMushafDatabaseReady } from '../services/mushafSurahService';
 
 // ...existing imports...
@@ -56,7 +55,7 @@ export default function MushafViewerScreen() {
   }, [params?.pageNumber]);
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [showSurahPicker, setShowSurahPicker] = useState(false);
-  const [showLayoutSelector, setShowLayoutSelector] = useState(false);
+  // Removed old LayoutSelector modal state
   const [showAirplanePrompt, setShowAirplanePrompt] = useState(false);
   const [dontAskAgain, setDontAskAgain] = useState(false);
   const [showPageInput, setShowPageInput] = useState(false);
@@ -189,11 +188,12 @@ export default function MushafViewerScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
+              <Heart size={20} color="#ec4899" fill="#ec4899" style={{ marginRight: 8 }} />
               <Text style={styles.modalTitle}>Airplane Mode Recommended</Text>
             </View>
             <View style={styles.modalBody}>
               <Text style={styles.modalText}>
-                Enable Airplane Mode for undistracted reading.
+                Recite Allah's words without Notification distractions.
               </Text>
               <View style={styles.checkboxRow}>
                 <Switch
@@ -281,35 +281,6 @@ export default function MushafViewerScreen() {
         </SafeAreaView>
       </Modal>
 
-      {/* Layout selector modal */}
-      <LayoutSelector
-        visible={showLayoutSelector}
-        onClose={() => setShowLayoutSelector(false)}
-        onLayoutSelected={async (layoutId) => {
-          try {
-            const currentPageSnapshot = currentPage;
-            const surahInfo = await LayoutService.getSurahForPage(currentPageSnapshot);
-            const success = await LayoutService.setActiveLayout(layoutId);
-            setShowLayoutSelector(false);
-
-            if (!success) {
-              alert('Failed to switch layout');
-              return;
-            }
-
-            if (surahInfo && surahInfo.surah_number) {
-              const newStart = await LayoutService.getSurahStartPage(surahInfo.surah_number);
-              setCurrentPage(newStart || 1);
-            } else {
-              setCurrentPage(1);
-            }
-          } catch (e) {
-            console.error('[MushafViewerScreen] Error switching layout:', e);
-            setShowLayoutSelector(false);
-            setCurrentPage(1);
-          }
-        }}
-      />
 
       {/* Header with bookmark button */}
       <MushafHeader
@@ -317,7 +288,7 @@ export default function MushafViewerScreen() {
         onBookmarkToggle={handleBookmarkToggle}
         onClose={handleClose}
         onHome={handleHome}
-        onChangeLayout={() => setShowLayoutSelector(true)}
+  onChangeLayout={() => router.push('/mushaf/settings')}
       />
 
       {/* Main content - Mushaf page with key to force remount */}
@@ -374,6 +345,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
     backgroundColor: '#f8fafc',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalTitle: {
     fontSize: 16,

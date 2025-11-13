@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import RNFS from 'react-native-fs';
 import Svg, { Rect } from 'react-native-svg';
+import LayoutService from '../services/layoutService';
 import { ensureFileUri } from '../utils/fileUtils';
 import { MUSHAF_CACHE_DIR } from '../utils/mushafConstants';
 
@@ -225,30 +226,128 @@ export function MushafPage(props: MushafPageProps) {
 }
 
 /**
- * Get the image URI for a page
+ * Get the image URI for a page based on active layout
  */
 async function getPageImageUri(pageNumber: number): Promise<string | null> {
-  const candidates = [
-    `${IMAGES_DIR}/page_${pageNumber}.png`,
-    `${IMAGES_DIR}/${pageNumber}.png`,
-    `${IMAGES_DIR}/page_${String(pageNumber).padStart(3, '0')}.png`,
-  ];
+  try {
+    const activeLayout = await LayoutService.getActiveLayout();
+    const layoutId = activeLayout?.layout_id || 'indopak_15';
+    const layoutDirs: Record<string, string> = {
+      'indopak_15': 'indopak',
+      'madina_15': 'madina',
+      'warsh_15': 'warsh',
+      'tajweed': 'tajweed',
+    };
+  const dirName = layoutDirs[layoutId] || 'indopak';
+  // Real-world: Madina archive currently mixed (.jpg & .png). Treat non-Indopak as potentially both.
+  const extCandidates = layoutId === 'indopak_15' ? ['png'] : ['jpg','png'];
+    const baseDir = `${MUSHAF_CACHE_DIR}/images/${dirName}`;
+    const topLevelDir = `${MUSHAF_CACHE_DIR}/${dirName}`;
+    const legacyDir = `${MUSHAF_CACHE_DIR}/images`;
+    const zeroPad = String(pageNumber).padStart(3, '0');
 
-  console.log(`[getPageImageUri] Checking candidates for page ${pageNumber}:`);
-  for (const path of candidates) {
-    try {
-      const exists = await RNFS.exists(path);
-      console.log(`  ${exists ? '✅' : '❌'} ${path.split('/').pop()}`);
-      if (exists) {
-        // Normalize to a file:// URI when possible
-        return ensureFileUri(path) as string;
+    console.log(`[getPageImageUri] Layout: ${layoutId}, checking page ${pageNumber}`);
+
+    // Specialized fast path for IndoPak (known PNG set, avoid mixed-extension scan noise)
+    if (layoutId === 'indopak_15') {
+      const indoPakCandidates = [
+        `${baseDir}/${pageNumber}.png`,
+        `${baseDir}/page_${pageNumber}.png`,
+        `${baseDir}/${zeroPad}.png`,
+        `${baseDir}/page_${zeroPad}.png`,
+        `${legacyDir}/${pageNumber}.png`,
+        `${legacyDir}/page_${pageNumber}.png`,
+        `${legacyDir}/${zeroPad}.png`,
+        `${legacyDir}/page_${zeroPad}.png`,
+        `${topLevelDir}/${pageNumber}.png`,
+        `${topLevelDir}/page_${pageNumber}.png`,
+        `${topLevelDir}/${zeroPad}.png`,
+        `${topLevelDir}/page_${zeroPad}.png`,
+      ];
+      for (const path of indoPakCandidates) {
+        try {
+          const exists = await RNFS.exists(path);
+          console.log(`  ${exists ? '✅' : '❌'} ${path.replace(/^.*\/mushaf\//,'mushaf/').split('/').slice(-2).join('/')}`);
+          if (exists) return ensureFileUri(path) as string;
+        } catch (e) {
+          // continue
+        }
       }
-    } catch (e) {
-      console.warn(`[getPageImageUri] Error checking ${path}:`, e);
+      // If not found in fast path, fall back to heuristic scan below
     }
-  }
 
-  return null;
+    // Generic candidates for mixed-extension layouts
+    // Try standardized filename: page_N.<ext>
+    for (const e of extCandidates) {
+      const filename = `page_${pageNumber}.${e}`;
+      const path = `${baseDir}/${filename}`;
+      try {
+        const exists = await RNFS.exists(path);
+        if (exists) {
+          console.log(`[getPageImageUri] ✅ Found: ${filename}`);
+          return ensureFileUri(path) as string;
+        }
+      } catch (e) {
+        console.warn('[getPageImageUri] Error checking', path, e);
+      }
+    }
+
+    // Fallback: Scan directory to find available pages and use nearest if requested page missing
+    try {
+      const exists = await RNFS.exists(baseDir);
+      if (!exists) {
+        console.log(`[getPageImageUri] ❌ Directory not found: ${baseDir}`);
+        return null;
+      }
+
+      const entries = await RNFS.readDir(baseDir);
+      const files = entries.filter((e: any) => e.isFile).map((e: any) => e.name as string);
+
+      // Build map of page number → filename
+      const pageMap: Record<number, string> = {};
+      for (const f of files) {
+        const match = f.match(/^page_(\d+)\.(png|jpg|jpeg)$/i);
+        if (match) {
+          const pageNum = parseInt(match[1], 10);
+          pageMap[pageNum] = f;
+        }
+      }
+
+      const availablePages = Object.keys(pageMap)
+        .map(k => parseInt(k, 10))
+        .sort((a, b) => a - b);
+
+      // Exact match
+      if (pageMap[pageNumber]) {
+        console.log(`[getPageImageUri] ✅ Found exact: ${pageMap[pageNumber]}`);
+        return ensureFileUri(`${baseDir}/${pageMap[pageNumber]}`) as string;
+      }
+
+      // Fallback: use nearest available page (graceful degradation for incomplete archives)
+      if (availablePages.length > 0) {
+        let nearest = availablePages[0];
+        let minDist = Math.abs(nearest - pageNumber);
+        for (const p of availablePages) {
+          const dist = Math.abs(p - pageNumber);
+          if (dist < minDist) {
+            minDist = dist;
+            nearest = p;
+          }
+        }
+        const fallbackFile = pageMap[nearest];
+        console.log(`[getPageImageUri] ⚠️  Page ${pageNumber} not available. Using nearest: ${nearest} (${fallbackFile})`);
+        return ensureFileUri(`${baseDir}/${fallbackFile}`) as string;
+      }
+
+      console.log(`[getPageImageUri] ❌ No images found in ${baseDir}`);
+    } catch (err) {
+      console.warn('[getPageImageUri] Fallback scan error:', err);
+    }
+    return null;
+  } catch (e) {
+    console.error('[getPageImageUri] Error:', e);
+    return null;
+  }
 }
 
 /**

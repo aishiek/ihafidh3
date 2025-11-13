@@ -7,7 +7,7 @@ import { calculateJuzProgress, getJuzVerseRange } from '@/utils/juzCalculator';
 import { useCustomColors } from '@/utils/themeUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
 import React, { useCallback, useMemo } from 'react';
-import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 function getSurahIdByName(name: string): number | null {
   const surah = surahsData.find(s => s.name === name || s.englishName === name || s.arabicName === name);
@@ -335,8 +335,10 @@ const styles = StyleSheet.create({
   },
   arrow: {
     color: '#60a5fa',
-    fontSize: 22,
-    fontWeight: '500',
+    fontSize: Platform.OS === 'android' ? 26 : 22,
+    fontWeight: Platform.OS === 'android' ? 'bold' : '500',
+    lineHeight: Platform.OS === 'android' ? 26 : 22,
+    includeFontPadding: false,
   },
   statsRow: {
     flexDirection: 'row',

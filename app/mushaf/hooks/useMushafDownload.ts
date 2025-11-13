@@ -22,12 +22,14 @@ export function useMushafDownload() {
   /**
    * Start download.
    * Accepts either a legacy numeric progress callback (percentage) or a richer DownloadProgress callback.
+   * Downloads the default IndoPak layout for backwards compatibility.
    */
   const startDownload = useCallback(async (onProgress?: SimpleProgressCallback | RichProgressCallback) => {
     setStatus('downloading');
     setProgress(null);
     try {
-      await mushafDownloadService.download((p) => {
+      // Download IndoPak layout (default for backwards compatibility)
+      await mushafDownloadService.downloadLayout('indopak_15', (p) => {
         setProgress(p);
         if (onProgress) {
           try { (onProgress as RichProgressCallback)(p); } catch (_) { /* ignore */ }

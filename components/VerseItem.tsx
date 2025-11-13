@@ -1,4 +1,6 @@
 import { useTajweed } from '@/app/hooks/useTajweed';
+import { surahsData } from '@/data/surahs';
+import { fetchTransliterationText } from '@/services/quranApi';
 import { getTranslationRemote } from '@/services/remoteTranslation';
 import { cacheGet, cacheSet } from '@/services/verseCache';
 import { getVerseFromLocalDB } from '@/services/verseDbService';
@@ -12,7 +14,7 @@ import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtil
 import { parseTajweedText } from '@/utils/tajweedParser';
 import { useThemeColor } from '@/utils/useThemeColor';
 import * as Haptics from 'expo-haptics';
-import { Bookmark as BookmarkIcon, BookOpen, Infinity as InfinityIcon, Play, X as XIcon } from 'lucide-react-native';
+import { ArrowLeft, Bookmark as BookmarkIcon, BookOpen, Check, Infinity as InfinityIcon, Play, RefreshCw } from 'lucide-react-native';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import TajweedVerse from 'rn-tajweed-verse';
@@ -26,6 +28,7 @@ interface VerseItemProps {
   onSurahMemorizeToggle?: () => void;
   onSurahRevisionToggle?: () => void;
   moveToVerse?: (verseNumber: number) => boolean | Promise<boolean>;
+  isCurrentlyPlaying?: boolean;
 }
 
 type VerseItemInternalProps = VerseItemProps & { forwardedRef?: any };
@@ -58,8 +61,9 @@ const VerseItem = ({
   forwardedRef,
   moveToVerse,
   source = 'surahList',
+  isCurrentlyPlaying = false,
   ...rest
-}: VerseItemInternalProps & { source?: 'surahList' | 'juzList' | 'mustahabbah' }) => {
+}: VerseItemInternalProps & { source?: 'surahList' | 'juzList' | 'mustahabbah'; isCurrentlyPlaying?: boolean }) => {
   const { primary } = useThemeColor();
 
   // ============ SETTINGS STORE ============
@@ -109,6 +113,39 @@ const VerseItem = ({
   const transliterationAbortRef = useRef<AbortController | null>(null);
   const translationAbortRef = useRef<AbortController | null>(null);
   const localDbAbortRef = useRef<AbortController | null>(null);
+  // CRITICAL: Track if component is mounted and visible
+  const isMountedRef = useRef(true);
+  const loadingStartedRef = useRef(false);
+
+  // ============ CRITICAL FIX: Reset all local state when verse changes (Fix for FlashList recycling) ============
+  useEffect(() => {
+    // When the verse ID changes (component recycled to show different verse),
+    // reset ALL local state to prevent showing old verse's content
+    setRepeatCount(repeatMode || 1);
+    setShowPlaybackModal(false);
+    setShowTafsirModal(false);
+    setShowGoModal(false);
+    setGoInput('');
+    setGoInputError(null);
+    setGoSubmitting(false);
+    setRemoteTransliteration(null);
+    setRemoteTranslation(null);
+    setLocalData({
+      arabic: null,
+      transliteration: null,
+      translation: null,
+    });
+    setLocalDataError(null);
+    
+    // Reset loading flags to allow fresh data load
+    loadingStartedRef.current = false;
+    
+    // Abort any pending async operations from previous verse
+    transliterationAbortRef.current?.abort();
+    translationAbortRef.current?.abort();
+    localDbAbortRef.current?.abort();
+    
+  }, [verse.id, verse.surahId, verse.verseNumber, repeatMode]);
 
   // ============ DERIVED STATE ============
   const surahId = useMemo(() => getSurahId(verse), [verse.surahId, (verse as any).surahNumber, verse.surah?.number]);
@@ -127,7 +164,11 @@ const VerseItem = ({
   }, [revisedVerses, verse.id]);
 
   // ============ FONT & STYLING ============
-  const arabicFamily = useMemo(() => getArabicFontFamily(arabicFont as any), [arabicFont]);
+  const arabicFamily = useMemo(() => {
+    const family = getArabicFontFamily(arabicFont as any);
+    console.log(`[VerseItem] arabicFont: ${arabicFont}, arabicFamily: ${family}`);
+    return family;
+  }, [arabicFont]);
   const arabicTypography = useMemo(() => getArabicTypographySizing(fontSizeArabic, arabicFont as any), [fontSizeArabic, arabicFont]);
 
   const arabicText = useMemo(() => verse.arabicText?.trim() || 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ', [verse.arabicText]);
@@ -250,13 +291,19 @@ const VerseItem = ({
       if (!bookmarked) {
         const arabicSnippet = (verse.arabicText || '').slice(0, 50);
         const translationSnippet = (verse.translation || '').slice(0, 100);
+        // Normalize source: 'juzList' -> 'juz', 'surahList' -> 'surah'
+        const normalizedSource = source === 'juzList' ? 'juz' : 'surah';
+        const juzNum = source === 'juzList' ? verse.juzNumber : undefined;
+        
         await useBookmarkStore.getState().addBookmark(
           verse.id,
           surahId || 0,
           (verse as any).surahName || verse.surah?.englishName || `Surah ${surahId || ''}`,
           verse.verseNumber,
           arabicSnippet,
-          translationSnippet
+          translationSnippet,
+          normalizedSource,
+          juzNum
         );
       } else {
         await useBookmarkStore.getState().removeBookmark(verse.id);
@@ -266,7 +313,7 @@ const VerseItem = ({
     } finally {
       bookmarkBusyRef.current = false;
     }
-  }, [bookmarked, verse, surahId]);
+  }, [bookmarked, verse, surahId, source]);
 
   const handleMarkMemorized = useCallback(() => {
     try {
@@ -337,14 +384,19 @@ const VerseItem = ({
 
   // ============ EFFECTS ============
 
-  // Load local DB data
+  // Load verse data from local DB
   useEffect(() => {
-    let mounted = true;
+    if (!surahId || loadingStartedRef.current) return;
+    
+    isMountedRef.current = true;
+    loadingStartedRef.current = true;
+    
     const controller = new AbortController();
     localDbAbortRef.current = controller;
 
-    const loadLocalData = async () => {
-      if (!surahId) return;
+    // CRITICAL FIX: Debounce to avoid rapid loading during fast scrolls
+    const timeoutId = setTimeout(async () => {
+      if (!isMountedRef.current || controller.signal.aborted) return;
 
       try {
         const cachedArabic = cacheGet<string>(surahId, verse.verseNumber, 'local_ar');
@@ -352,29 +404,30 @@ const VerseItem = ({
         const cachedTrans = cacheGet<string>(surahId, verse.verseNumber, 'local_en');
 
         if (cachedArabic || cachedTranslit || cachedTrans) {
-          if (mounted && !controller.signal.aborted) {
+          if (isMountedRef.current && !controller.signal.aborted) {
             setLocalData({
               arabic: cachedArabic || null,
               transliteration: cachedTranslit || null,
               translation: cachedTrans || null,
             });
-            // Clear any previous local DB error when cache is used
             setLocalDataError(null);
           }
+          loadingStartedRef.current = false;
           return;
         }
 
         const row = await getVerseFromLocalDB(surahId, verse.verseNumber);
 
-        if (!mounted || controller.signal.aborted) return;
+        if (!isMountedRef.current || controller.signal.aborted) return;
+        
         if (!row) {
-          // Verse not found in local DB - surface a helpful error message
           setLocalDataError('Verse not found in local DB');
           setLocalData({
             arabic: null,
             transliteration: null,
             translation: null,
           });
+          loadingStartedRef.current = false;
           return;
         }
 
@@ -383,47 +436,45 @@ const VerseItem = ({
           transliteration: row.transliteration || null,
           translation: row.translation || null,
         });
-        // Clear any previous error on successful load
         setLocalDataError(null);
 
         if (row.ayah) cacheSet(surahId, verse.verseNumber, 'local_ar', row.ayah);
         if (row.transliteration) cacheSet(surahId, verse.verseNumber, 'local_tr', row.transliteration);
         if (row.translation) cacheSet(surahId, verse.verseNumber, 'local_en', row.translation);
       } catch (error) {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && isMountedRef.current) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           console.warn('[VerseItem] Local DB load failed:', errorMsg);
           setLocalDataError(errorMsg);
         }
+      } finally {
+        loadingStartedRef.current = false;
       }
-    };
-
-    loadLocalData();
+    }, 100); // 100ms debounce - critical for smooth scrolling
 
     return () => {
-      mounted = false;
+      clearTimeout(timeoutId);
+      isMountedRef.current = false;
       controller.abort();
     };
-  }, [surahId, verse.verseNumber]);
-
-  // Load remote transliteration
+  }, [surahId, verse.verseNumber]);  // Load remote transliteration
   useEffect(() => {
-    let mounted = true;
+    if (!surahId || !showTransliteration) {
+      setRemoteTransliteration(null);
+      return;
+    }
+
+    isMountedRef.current = true;
     const controller = new AbortController();
     transliterationAbortRef.current = controller;
 
-    const loadTransliteration = async () => {
-      // Keep transliteration simple: always fetch English transliteration.
-      if (!surahId || !showTransliteration) {
-        setRemoteTransliteration(null);
-        return;
-      }
+    // CRITICAL FIX: Debounce remote API calls
+    const timeoutId = setTimeout(async () => {
+      if (!isMountedRef.current || controller.signal.aborted) return;
 
       try {
-        const { fetchTransliterationText } = await import('@/services/quranApi');
         const text = await fetchTransliterationText(surahId, verse.verseNumber, 'en');
-
-        if (mounted && !controller.signal.aborted) {
+        if (isMountedRef.current && !controller.signal.aborted) {
           setRemoteTransliteration(text || null);
         }
       } catch (error) {
@@ -432,49 +483,47 @@ const VerseItem = ({
           setRemoteTransliteration(null);
         }
       }
-    };
-
-    loadTransliteration();
+    }, 150); // Slightly longer debounce for remote calls
 
     return () => {
-      mounted = false;
+      clearTimeout(timeoutId);
+      isMountedRef.current = false;
       controller.abort();
     };
   }, [surahId, verse.verseNumber, showTransliteration, translationLanguage]);
 
   // Load remote translation
   useEffect(() => {
-    let mounted = true;
+    if (!surahId) {
+      setRemoteTranslation(null);
+      return;
+    }
+
+    const langBase = (translationLanguage || '').split('.')[0].toLowerCase();
+    if (langBase === 'en') {
+      setRemoteTranslation(null);
+      return;
+    }
+
+    isMountedRef.current = true;
     const controller = new AbortController();
     translationAbortRef.current = controller;
 
-    const loadTranslation = async () => {
-      if (!surahId) {
-        setRemoteTranslation(null);
-        return;
-      }
-
-      const langBase = (translationLanguage || '').split('.')[0].toLowerCase();
-
-      if (langBase === 'en') {
-        if (mounted && !controller.signal.aborted) {
-          setRemoteTranslation(null);
-        }
-        return;
-      }
+    // CRITICAL FIX: Debounce remote API calls
+    const timeoutId = setTimeout(async () => {
+      if (!isMountedRef.current || controller.signal.aborted) return;
 
       try {
         const cached = cacheGet<string>(surahId, verse.verseNumber, translationLanguage);
         if (cached) {
-          if (mounted && !controller.signal.aborted) {
+          if (isMountedRef.current && !controller.signal.aborted) {
             setRemoteTranslation(cached);
           }
           return;
         }
 
         const remote = await getTranslationRemote(surahId, verse.verseNumber, translationLanguage);
-
-        if (mounted && !controller.signal.aborted && remote) {
+        if (isMountedRef.current && !controller.signal.aborted && remote) {
           setRemoteTranslation(remote);
           cacheSet(surahId, verse.verseNumber, translationLanguage, remote);
         }
@@ -484,12 +533,11 @@ const VerseItem = ({
           setRemoteTranslation(null);
         }
       }
-    };
-
-    loadTranslation();
+    }, 150); // Debounce remote API calls
 
     return () => {
-      mounted = false;
+      clearTimeout(timeoutId);
+      isMountedRef.current = false;
       controller.abort();
     };
   }, [surahId, verse.verseNumber, translationLanguage]);
@@ -497,6 +545,7 @@ const VerseItem = ({
   // Cleanup all abort controllers on unmount
   useEffect(() => {
     return () => {
+      isMountedRef.current = false;
       transliterationAbortRef.current?.abort();
       translationAbortRef.current?.abort();
       localDbAbortRef.current?.abort();
@@ -514,6 +563,17 @@ const VerseItem = ({
   }, [repeatMode, repeatCount]);
 
   // ============ RENDER ============
+  // Get Surah name for Juz mode
+  const getSurahName = () => {
+    if (source === 'juzList') {
+      // For Juz mode, look up the Surah name from surahs data using chapter_id
+      const chapterId = (verse as any).chapter_id || verse.surahId;
+      const surah = surahsData.find(s => s.id === chapterId);
+      return surah ? `${chapterId}: ${surah.englishName}` : `Surah ${chapterId}`;
+    }
+    return `Juz ${verse.juzNumber || 1}`;
+  };
+
   return (
     <Pressable ref={forwardedRef as any} style={[styles.container, containerStyle]}>
       <View style={styles.header}>
@@ -529,40 +589,80 @@ const VerseItem = ({
             numberOfLines={1} 
             ellipsizeMode="tail" 
           > 
-            Juz {verse.juzNumber || 1} • Page {verse.pageNumber || 1} 
+            {getSurahName()}
           </Text> 
         </View>
 
-        <TouchableOpacity 
-          accessibilityRole="button" 
-          accessibilityLabel="Open tafsir" 
-          style={[styles.controlButton, styles.subtleGoldBg, { marginLeft: 8 }]} 
-          onPress={() => setShowTafsirModal(true)} 
-        > 
-          <BookOpen size={18} color="#FFD700" /> 
-        </TouchableOpacity>
+        {/* Right-aligned controls group with minimal spacing */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 'auto' }}>
+          <TouchableOpacity 
+            accessibilityRole="button" 
+            accessibilityLabel="Open tafsir" 
+            style={[styles.controlButton, styles.subtleGoldBg, { marginLeft: 4 }]} 
+            onPress={() => setShowTafsirModal(true)} 
+          > 
+            <BookOpen size={18} color="#FFD700" /> 
+          </TouchableOpacity>
 
-        <Pressable 
-          style={({ pressed }) => [ 
-            styles.bookmarkButton, 
-            bookmarked && { backgroundColor: '#333333' }, 
-            pressed && { opacity: 0.6 } 
-          ]} 
-          onPress={handleToggleBookmark} 
-          accessibilityRole="button" 
-          accessibilityLabel={bookmarked ? 'Remove bookmark' : 'Add bookmark'} 
-        > 
-          <BookmarkIcon size={16} color={bookmarked ? '#FFD700' : '#888888'} fill={bookmarked ? '#FFD700' : 'transparent'} /> 
-        </Pressable>
+          <Pressable 
+            style={({ pressed }) => [ 
+              styles.bookmarkButton, 
+              bookmarked && { backgroundColor: '#333333' }, 
+              pressed && { opacity: 0.6 },
+              { marginLeft: 4 }
+            ]} 
+            onPress={handleToggleBookmark} 
+            accessibilityRole="button" 
+            accessibilityLabel={bookmarked ? 'Remove bookmark' : 'Add bookmark'} 
+          > 
+            <BookmarkIcon size={16} color={bookmarked ? '#FFD700' : '#888888'} fill={bookmarked ? '#FFD700' : 'transparent'} /> 
+          </Pressable>
 
-        <Pressable 
-          style={[styles.audioButton, { backgroundColor: primary, marginRight: 8 }]} 
-          onPress={handlePlayAudio} 
-          accessibilityRole="button" 
-          accessibilityLabel="Play verse audio" 
-        > 
-          <Play size={16} color="#ffffff" /> 
-        </Pressable>
+          <Pressable 
+            style={({ pressed }) => [ 
+              styles.audioButton, 
+              { 
+                backgroundColor: isCurrentlyPlaying ? '#666666' : primary,
+                marginLeft: 4,
+                opacity: pressed ? 0.7 : 1,
+              } 
+            ]} 
+            onPress={handlePlayAudio} 
+            accessibilityRole="button" 
+            accessibilityLabel={isCurrentlyPlaying ? 'Playing verse audio' : 'Play verse audio'}
+            disabled={isCurrentlyPlaying}
+          > 
+            <Play size={16} color="#ffffff" fill={isCurrentlyPlaying ? '#ffffff' : 'transparent'} /> 
+          </Pressable>
+
+          {/* Repeat Mode Button */}
+          <Pressable 
+            style={({ pressed }) => [ 
+              styles.repeatButton, 
+              { 
+                backgroundColor: 'rgba(255, 215, 0, 0.15)',
+                borderColor: 'rgba(255, 215, 0, 0.3)',
+                borderWidth: 1,
+                marginLeft: 4,
+                opacity: pressed ? 0.7 : 1,
+              } 
+            ]} 
+            onPress={() => setShowPlaybackModal(true)} 
+            accessibilityRole="button" 
+            accessibilityLabel="Playback settings"
+          > 
+            {infiniteLoop ? (
+              <InfinityIcon size={14} color="#FFD700" />
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <RefreshCw size={14} color="#FFD700" />
+                <Text style={{ fontSize: 10, fontWeight: '700', color: '#FFD700', marginLeft: 2 }}>
+                  {repeatCount}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        </View>
         {/* Go-to-verse UI removed from per-verse item; centralized in Surah header */}
       </View>
 
@@ -582,14 +682,17 @@ const VerseItem = ({
               }}
             />
           ) : (
-            <Text style={[{
-              color: '#ffffff',
-              fontFamily: arabicFamily,
-              includeFontPadding: false,
-              paddingHorizontal: 4,
-              ...arabicTypography,
-              lineHeight: arabicTypography.lineHeight || Math.round(fontSizeArabic * 2.0),
-            }]}> 
+            <Text 
+              allowFontScaling={false}
+              style={[{
+                color: '#ffffff',
+                fontFamily: arabicFamily,
+                includeFontPadding: false,
+                paddingHorizontal: 4,
+                ...arabicTypography,
+                lineHeight: arabicTypography.lineHeight || Math.round(fontSizeArabic * 2.0),
+              }]}
+            > 
               {displayedArabic}
             </Text>
           )}
@@ -642,63 +745,87 @@ const VerseItem = ({
 
       <View style={styles.actionsContainer}>
         <Pressable
-          style={{
+          style={({ pressed }) => ({
             flex: 1,
             marginHorizontal: 4,
             paddingVertical: 9,
-            borderRadius: 8,
+            borderRadius: 12,
+            flexDirection: 'row',
             alignItems: 'center',
-            backgroundColor: memorized ? '#4CAF50' : '#000000',
-            borderColor: memorized ? '#4CAF50' : '#ffffff',
+            justifyContent: 'center',
+            backgroundColor: memorized ? '#4CAF50' : '#1a1a1a',
+            borderColor: memorized ? '#4CAF50' : '#444444',
             borderWidth: memorized ? 2 : 1,
-          }}
+            opacity: pressed ? 0.7 : 1,
+            shadowColor: memorized ? '#4CAF50' : 'transparent',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.3,
+            shadowRadius: 4,
+            elevation: memorized ? 3 : 0,
+          })}
           onPress={handleMarkMemorized}
           android_ripple={{ color: 'transparent' }}
           accessibilityRole="button"
           accessibilityLabel={memorized ? 'Unmark as memorized' : 'Mark as memorized'}
         >
-          {memorized ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <XIcon size={14} color="#F44336" />
-              <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff', marginLeft: 6 }}>
-                Unmark
-              </Text>
-            </View>
-          ) : (
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff' }}>
-              Mark Memorized
-            </Text>
-          )}
+          <Check size={16} color="#ffffff" />
+          <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff', marginLeft: 6 }}>
+            {memorized ? 'Memorized' : 'Mark Memorized'}
+          </Text>
+          <View style={{ 
+            marginLeft: 4, 
+            padding: 4, 
+            borderRadius: 12,
+            backgroundColor: memorized ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
+            width: 22,
+            height: 22,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            {memorized && <ArrowLeft size={14} color="#ffffff" />}
+          </View>
         </Pressable>
 
         <Pressable
-          style={{
+          style={({ pressed }) => ({
             flex: 1,
             marginHorizontal: 4,
             paddingVertical: 9,
-            borderRadius: 8,
+            borderRadius: 12,
+            flexDirection: 'row',
             alignItems: 'center',
-            backgroundColor: revised ? '#FF9800' : '#000000',
-            borderColor: revised ? '#FF9800' : '#ffffff',
+            justifyContent: 'center',
+            backgroundColor: revised ? '#FF9800' : '#1a1a1a',
+            borderColor: revised ? '#FF9800' : '#444444',
             borderWidth: revised ? 2 : 1,
-          }}
+            opacity: pressed ? 0.7 : 1,
+            shadowColor: revised ? '#FF9800' : 'transparent',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.3,
+            shadowRadius: 4,
+            elevation: revised ? 3 : 0,
+          })}
           onPress={handleMarkRevised}
           android_ripple={{ color: 'transparent' }}
           accessibilityRole="button"
           accessibilityLabel={revised ? 'Unmark as revised' : 'Mark as revised'}
         >
-          {revised ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <XIcon size={14} color="#F44336" />
-              <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff', marginLeft: 6 }}>
-                Unmark
-              </Text>
-            </View>
-          ) : (
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff' }}>
-              Mark Revised
-            </Text>
-          )}
+          <RefreshCw size={16} color="#ffffff" />
+          <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff', marginLeft: 6 }}>
+            {revised ? 'Revised' : 'Mark Revision'}
+          </Text>
+          <View style={{ 
+            marginLeft: 4, 
+            padding: 4, 
+            borderRadius: 12,
+            backgroundColor: revised ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
+            width: 22,
+            height: 22,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            {revised && <ArrowLeft size={14} color="#ffffff" />}
+          </View>
         </Pressable>
       </View>
 
@@ -910,6 +1037,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
+  },
+  repeatButton: {
+    minWidth: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    marginLeft: 4,
   },
   bookmarkButton: {
     width: 32,

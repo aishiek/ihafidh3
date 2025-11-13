@@ -4,10 +4,11 @@ import { getSurahById, isSurahFullyCached } from "@/services/quranApi";
 import { useProgressStore } from "@/store/progressStore";
 import { useSettingsStore } from '@/store/settingsStore';
 import { getAudioUrl, playAudio } from '@/utils/audioUtils';
+import { FlashList } from "@shopify/flash-list";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowRight } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 export default function SurahScreen() {
   const { id: surahId } = useLocalSearchParams<{ id: string }>();
@@ -38,15 +39,28 @@ export default function SurahScreen() {
 
   // Audio URL cache to avoid regenerating/checking availability repeatedly
   const audioUrlCacheRef = useRef<Record<string, string>>({});
-  const { reciterIdentifier } = useSettingsStore();
+  const { reciterIdentifier, fontSizeArabic } = useSettingsStore();
 
   // FlatList ref + jump-to-index support (preferred over measuring)
   const flatListRef = useRef<any | null>(null);
 
-  // Estimated item height. If your VerseItem has variable height, consider
-  // making this dynamic by measuring a sample or using averaged heights.
-  const ESTIMATED_ITEM_HEIGHT = 140;
-  const getItemLayout = (_data: any, index: number) => ({ length: ESTIMATED_ITEM_HEIGHT, offset: ESTIMATED_ITEM_HEIGHT * index, index });
+  // CRITICAL FIX: Dynamic item height based on font size
+  // Small fonts (16-24): ~140px, Medium (28-36): ~200px, Large (40-52): ~300px, XL (56+): ~400px
+  const ESTIMATED_ITEM_HEIGHT = useMemo(() => {
+    if (fontSizeArabic <= 24) return 140;
+    if (fontSizeArabic <= 36) return 220;
+    if (fontSizeArabic <= 52) return 320;
+    return 450; // Very large fonts
+  }, [fontSizeArabic]);
+
+  const getItemLayout = useCallback(
+    (_data: any, index: number) => ({ 
+      length: ESTIMATED_ITEM_HEIGHT, 
+      offset: ESTIMATED_ITEM_HEIGHT * index, 
+      index 
+    }),
+    [ESTIMATED_ITEM_HEIGHT]
+  );
 
   const handleScrollToIndexFailed = (info: { index: number; highestMeasuredFrameIndex: number; averageItemLength: number }) => {
     const offset = info.averageItemLength * info.index;
@@ -220,8 +234,8 @@ export default function SurahScreen() {
     setVerses(window);
     setAllVersesLoaded(end >= (surahData.versesCount || surahData.vers.length));
 
-    // wait a tick for FlatList to render the new window then scroll
-    await new Promise(resolve => setTimeout(resolve, 60));
+    // Wait for FlatList to render the new window using requestAnimationFrame (faster than setTimeout)
+    await new Promise(resolve => requestAnimationFrame(() => resolve(undefined)));
     const idxInWindow = targetIdx - start;
     try {
       flatListRef.current?.scrollToIndex({ index: idxInWindow, animated: true, viewPosition: 0 });
@@ -441,31 +455,25 @@ export default function SurahScreen() {
       </View>
 
       {/* 🔹 Verse List */}
-      <FlatList
+      <FlashList
         data={verses}
-        keyExtractor={(item) => item.id?.toString?.() ?? String(item.verseNumber ?? Math.random())}
-            renderItem={({ item }) => (
-              <VerseItem
-                verse={item}
-                onPlayAudio={(surahNum, verseNum, globalId, repeats, isInfinite) => handlePlayAudio(surahNum, verseNum, globalId, repeats, isInfinite)}
-                surahMemorizedGlobally={isSurahMemorizedGlobally}
-                surahRevisedGlobally={isSurahRevisedGlobally}
-                onSurahMemorizeToggle={handleMarkMemorized}
-                onSurahRevisionToggle={handleMarkRevised}
-                moveToVerse={(v: number) => jumpToVerse(v)}
-              />
-            )}
+        keyExtractor={(item: any) => item.id?.toString?.() ?? String(item.verseNumber ?? Math.random())}
+        renderItem={({ item }: { item: any }) => (
+          <VerseItem
+            verse={item}
+            onPlayAudio={(surahNum, verseNum, globalId, repeats, isInfinite) => handlePlayAudio(surahNum, verseNum, globalId, repeats, isInfinite)}
+            surahMemorizedGlobally={isSurahMemorizedGlobally}
+            surahRevisedGlobally={isSurahRevisedGlobally}
+            onSurahMemorizeToggle={handleMarkMemorized}
+            onSurahRevisionToggle={handleMarkRevised}
+            moveToVerse={(v: number) => jumpToVerse(v)}
+          />
+        )}
         contentContainerStyle={styles.verseList}
-            onEndReached={loadNextBatch}
+        onEndReached={loadNextBatch}
         onEndReachedThreshold={0.5}
-            ListFooterComponent={isLoadingMore ? <ActivityIndicator style={{ margin: 12 }} /> : null}
-        removeClippedSubviews={true}
-        maxToRenderPerBatch={5}
-        updateCellsBatchingPeriod={50}
-        windowSize={5}
+        ListFooterComponent={isLoadingMore ? <ActivityIndicator style={{ margin: 12 }} /> : null}
         ref={flatListRef as any}
-        getItemLayout={getItemLayout}
-        onScrollToIndexFailed={handleScrollToIndexFailed}
       />
 
       <Modal

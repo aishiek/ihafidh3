@@ -1,7 +1,7 @@
 import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as SQLite from 'expo-sqlite';
-import { Platform, Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 
 const DB_NAME = 'AlQurandb.sqlite3';
 const SQLITE_DIR = FileSystem.documentDirectory + 'SQLite';

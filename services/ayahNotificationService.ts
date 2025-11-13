@@ -59,8 +59,13 @@ export class AyahNotificationService {
 
       const identifier = 'daily_ayah';
 
-      // Use a typed daily trigger input. This shape is supported by expo-notifications.
-      const trigger: Notifications.DailyTriggerInput = { type: 'daily', hour, minute } as any;
+      // Use correct DailyTriggerInput format for daily repeating notifications
+      // This ensures the notification repeats daily at the specified time
+      const trigger: Notifications.DailyTriggerInput = {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour,
+        minute,
+      };
 
       const scheduledId = await Notifications.scheduleNotificationAsync({
         identifier,

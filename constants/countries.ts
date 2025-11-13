@@ -51,6 +51,11 @@ export const COUNTRIES: Country[] = [
     cities: ['Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Ahmedabad', 'Chennai', 'Kolkata', 'Pune', 'Jaipur', 'Lucknow']
   },
   {
+    name: 'Sri Lanka',
+    code: 'LK',
+    cities: ['Colombo', 'Kandy', 'Galle', 'Jaffna', 'Negombo', 'Trincomalee', 'Batticaloa', 'Matara', 'Moratuwa', 'Anuradhapura']
+  },
+  {
     name: 'United Kingdom',
     code: 'GB',
     cities: ['London', 'Birmingham', 'Manchester', 'Glasgow', 'Liverpool', 'Leeds', 'Sheffield', 'Edinburgh', 'Bristol', 'Leicester']
@@ -71,6 +76,11 @@ export const COUNTRIES: Country[] = [
     cities: ['Sydney', 'Melbourne', 'Brisbane', 'Perth', 'Adelaide', 'Gold Coast', 'Newcastle', 'Canberra', 'Wollongong', 'Hobart']
   },
   {
+    name: 'New Zealand',
+    code: 'NZ',
+    cities: ['Auckland', 'Wellington', 'Christchurch', 'Hamilton', 'Tauranga', 'Dunedin', 'Palmerston North', 'Napier', 'Porirua', 'Invercargill']
+  },
+  {
     name: 'France',
     code: 'FR',
     cities: ['Paris', 'Marseille', 'Lyon', 'Toulouse', 'Nice', 'Nantes', 'Strasbourg', 'Montpellier', 'Bordeaux', 'Lille']
@@ -89,6 +99,16 @@ export const COUNTRIES: Country[] = [
     name: 'Spain',
     code: 'ES',
     cities: ['Madrid', 'Barcelona', 'Valencia', 'Seville', 'Zaragoza', 'Málaga', 'Murcia', 'Palma', 'Las Palmas', 'Bilbao']
+  },
+  {
+    name: 'Portugal',
+    code: 'PT',
+    cities: ['Lisbon', 'Porto', 'Amadora', 'Braga', 'Setúbal', 'Coimbra', 'Funchal', 'Queluz', 'Cacém', 'Vila Nova de Gaia']
+  },
+  {
+    name: 'Ireland',
+    code: 'IE',
+    cities: ['Dublin', 'Cork', 'Limerick', 'Galway', 'Waterford', 'Drogheda', 'Dundalk', 'Swords', 'Bray', 'Navan']
   },
   {
     name: 'Netherlands',
@@ -144,6 +164,21 @@ export const COUNTRIES: Country[] = [
     name: 'China',
     code: 'CN',
     cities: ['Beijing', 'Shanghai', 'Guangzhou', 'Shenzhen', 'Tianjin', 'Wuhan', 'Xi\'an', 'Chengdu', 'Nanjing', 'Hangzhou']
+  },
+  {
+    name: 'Hong Kong',
+    code: 'HK',
+    cities: ['Hong Kong', 'Kowloon', 'Tsuen Wan', 'Sha Tin', 'Tuen Mun', 'Yuen Long', 'Tseung Kwan O', 'Tai Po', 'Sai Kung', 'Lantau Island']
+  },
+  {
+    name: 'Macau',
+    code: 'MO',
+    cities: ['Macau', 'Taipa', 'Coloane']
+  },
+  {
+    name: 'Taiwan',
+    code: 'TW',
+    cities: ['Taipei', 'Kaohsiung', 'Taichung', 'Tainan', 'Hsinchu', 'Keelung', 'Chiayi', 'Changhua', 'Taoyuan', 'Hualien']
   },
   {
     name: 'Japan',
@@ -453,22 +488,22 @@ export const getCountriesByRegion = () => {
       ['SA', 'AE', 'EG', 'TR', 'IQ', 'IR', 'JO', 'LB', 'SY', 'IL', 'PS', 'KW', 'QA', 'BH', 'OM', 'YE', 'MA', 'DZ', 'TN', 'LY', 'SD'].includes(c.code)
     ),
     'South Asia': COUNTRIES.filter(c => 
-      ['PK', 'BD', 'IN', 'AF'].includes(c.code)
+      ['PK', 'BD', 'IN', 'LK', 'AF'].includes(c.code)
     ),
     'Southeast Asia': COUNTRIES.filter(c => 
       ['MY', 'ID', 'TH', 'PH', 'VN', 'SG', 'BN'].includes(c.code)
     ),
     'East Asia': COUNTRIES.filter(c => 
-      ['CN', 'JP', 'KR'].includes(c.code)
+      ['CN', 'HK', 'MO', 'TW', 'JP', 'KR'].includes(c.code)
     ),
     'Europe': COUNTRIES.filter(c => 
-      ['GB', 'FR', 'DE', 'IT', 'ES', 'NL', 'BE', 'CH', 'AT', 'SE', 'NO', 'DK', 'FI', 'PL', 'RU'].includes(c.code)
+      ['GB', 'IE', 'FR', 'DE', 'IT', 'ES', 'PT', 'NL', 'BE', 'CH', 'AT', 'SE', 'NO', 'DK', 'FI', 'PL', 'RU'].includes(c.code)
     ),
     'North America': COUNTRIES.filter(c => 
       ['US', 'CA'].includes(c.code)
     ),
     'Oceania': COUNTRIES.filter(c => 
-      ['AU'].includes(c.code)
+      ['AU', 'NZ'].includes(c.code)
     ),
     'Africa': COUNTRIES.filter(c => 
       ['ET', 'SO', 'KE', 'TZ', 'UG', 'NG', 'GH', 'SN', 'ML', 'BF', 'NE', 'TD', 'CM', 'CF', 'CD', 'CG', 'GA', 'GQ', 'ST', 'AO', 'ZM', 'ZW', 'BW', 'NA', 'ZA', 'LS', 'SZ', 'MZ', 'MG', 'MU', 'SC', 'KM', 'DJ', 'ER', 'SS'].includes(c.code)

@@ -193,16 +193,13 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    padding: 16,
     borderRadius: 12,
-    borderWidth: 1.5,
-    backgroundColor: '#2b2b2b',
-    gap: 10,
+    borderWidth: 2,
+    backgroundColor: '#333',
+    gap: 12,
     marginHorizontal: 0,
     alignSelf: 'stretch',
-    marginVertical: 6,
-    height: 72,
     position: 'relative',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -213,7 +210,7 @@ const styles = StyleSheet.create({
   iconContainer: {
     width: 40,
     height: 40,
-    borderRadius: 10,
+    borderRadius: 8,
     overflow: 'hidden',
     shadowColor: '#D97706',
     shadowOffset: { width: 0, height: 6 },
@@ -236,19 +233,19 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     minWidth: 0,
-    paddingRight: 64, // reduced reserved room for badge so title has more space
+    paddingRight: 50, // reserved room for badge
     justifyContent: 'center',
   },
   title: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '600',
     color: '#fff',
     marginBottom: 2,
-    lineHeight: 18,
+    lineHeight: 20,
   },
   stats: {
-    fontSize: 12,
-    color: '#cfcfcf',
+    fontSize: 14,
+    color: '#888',
     marginTop: 4,
   },
   // GOLDEN-BROWN BADGE (Download / Percentage)

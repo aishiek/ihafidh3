@@ -107,7 +107,8 @@ export default function SurahList({ onClose, onSelect, extraBottomPadding = 0 }:
 
   return (
     <View style={styles.container}>
-      <View style={[styles.searchContainer, { paddingTop: 12 }]}> {/* Add top padding for safe area */}
+      {/* Add top padding for safe area */}
+      <View style={[styles.searchContainer, { paddingTop: 12 }]}>
         <View style={styles.searchBoxRow}>
           {/* Search Icon (use emoji for simplicity, replace with Icon if available) */}
           <Text style={styles.searchIcon}>🔍</Text>
