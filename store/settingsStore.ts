@@ -13,6 +13,20 @@ export const PLAYBACK_SPEED_OPTIONS: PlaybackSpeed[] = [0.5, 0.75, 1, 1.25];
 // Keep 'tajweed' in the type for backward compatibility with existing storage
 type ArabicFont = 'default' | 'uthman-taha' | 'scheherazade' | 'scheherazade-bold' | 'indo-pak' | 'amiri-quran' | 'noto-naskh' | 'tajweed';
 
+// Notification settings interface
+export interface NotificationSettings {
+  dailyAyah: boolean;
+  dailyVerseReminder: boolean;
+  weeklySurahsReminder: boolean;
+  hifdhPlannerReminder: boolean;
+  revisionReminder: boolean; // Remind to revise memorized verses
+}
+
+export interface RevisionReminderSettings {
+  enabled: boolean;
+  daysThreshold: number; // Days after memorization to remind (default 3)
+}
+
 export interface SettingsState extends AppSettings {
   userName: string;
   userEmail: string;
@@ -23,6 +37,10 @@ export interface SettingsState extends AppSettings {
   arabicFont: ArabicFont;
   playbackSpeed: PlaybackSpeed;
   infiniteLoop: boolean;
+  notificationSettings: NotificationSettings;
+  revisionReminderSettings: RevisionReminderSettings;
+  lastDailyAyahDate: string | null;
+  lastDailyAyahVerse: { surahId: number; verseNumber: number } | null;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
   setRepeatMode: (mode: number) => void;
   setFontSizeArabic: (size: number) => void;
@@ -41,6 +59,9 @@ export interface SettingsState extends AppSettings {
   setReciterIdentifier: (identifier: string) => void;
   setPlaybackSpeed: (speed: PlaybackSpeed) => void;
   setInfiniteLoop: (enabled: boolean) => void;
+  setNotificationSetting: (key: keyof NotificationSettings, value: boolean) => void;
+  setRevisionReminderSettings: (settings: Partial<RevisionReminderSettings>) => void;
+  setLastDailyAyah: (date: string, verse: { surahId: number; verseNumber: number }) => void;
   // Daily Ayah notification controls
   ayahDailyNotificationsEnabled?: boolean;
   setAyahDailyNotificationsEnabled?: (enabled: boolean) => void;
@@ -94,6 +115,19 @@ export const useSettingsStore = create<SettingsState>()(
       playbackSpeed: DEFAULT_PLAYBACK_SPEED,
       infiniteLoop: false,
   ayahDailyNotificationsEnabled: false,
+      notificationSettings: {
+        dailyAyah: false,
+        dailyVerseReminder: false,
+        weeklySurahsReminder: false,
+        hifdhPlannerReminder: false,
+        revisionReminder: false,
+      },
+      revisionReminderSettings: {
+        enabled: false, // Disabled by default as requested
+        daysThreshold: 3, // Default 3 days
+      },
+      lastDailyAyahDate: null,
+      lastDailyAyahVerse: null,
       
       setTheme: (theme) => set({ theme }),
       setRepeatMode: (repeatMode) => set({ repeatMode }),
@@ -136,6 +170,22 @@ export const useSettingsStore = create<SettingsState>()(
       },
       setPlaybackSpeed: (playbackSpeed) => set({ playbackSpeed }),
       setInfiniteLoop: (infiniteLoop) => set({ infiniteLoop }),
+      setNotificationSetting: (key, value) =>
+        set((state) => ({
+          notificationSettings: {
+            ...state.notificationSettings,
+            [key]: value,
+          },
+        })),
+      setRevisionReminderSettings: (settings) =>
+        set((state) => ({
+          revisionReminderSettings: {
+            ...state.revisionReminderSettings,
+            ...settings,
+          },
+        })),
+      setLastDailyAyah: (date, verse) =>
+        set({ lastDailyAyahDate: date, lastDailyAyahVerse: verse }),
       };
     },
     {
@@ -152,6 +202,13 @@ export const useSettingsStore = create<SettingsState>()(
           state.repeatMode = state.repeatMode || 1;
           state.fontSizeArabic = state.fontSizeArabic || 24;
           state.fontSizeTranslation = state.fontSizeTranslation || 16;
+          // Ensure revision reminder settings exist
+          if (!state.revisionReminderSettings) {
+            state.revisionReminderSettings = {
+              enabled: false,
+              daysThreshold: 3,
+            };
+          }
           // @ts-ignore add new field default
           (state as any).fontSizeTransliteration = (state as any).fontSizeTransliteration || 14;
           // @ts-ignore extend persisted state - use default (ScheherazadeNew) as fallback
@@ -172,6 +229,18 @@ export const useSettingsStore = create<SettingsState>()(
           // Default playback settings
           state.playbackSpeed = state.playbackSpeed || DEFAULT_PLAYBACK_SPEED;
           state.infiniteLoop = state.infiniteLoop || false;
+          // Initialize notification settings with defaults
+          // @ts-ignore - extend persisted state
+          (state as any).notificationSettings = (state as any).notificationSettings || {
+            dailyAyah: false,
+            dailyVerseReminder: false,
+            weeklySurahsReminder: false,
+            hifdhPlannerReminder: false,
+          };
+          // @ts-ignore - extend persisted state
+          (state as any).lastDailyAyahDate = (state as any).lastDailyAyahDate || null;
+          // @ts-ignore - extend persisted state
+          (state as any).lastDailyAyahVerse = (state as any).lastDailyAyahVerse || null;
         }
       },
     }

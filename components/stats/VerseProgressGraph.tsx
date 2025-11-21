@@ -155,7 +155,8 @@ export default function VerseProgressGraph({
   const cardPadding = 32;
   const availableScreenWidth = screenWidth - cardPadding;
   const graphHeight = 240;
-  const chartPadding = { top: 24, bottom: 48, left: 12, right: 12 };
+  const yAxisWidth = 40; // Space for Y-axis labels
+  const chartPadding = { top: 24, bottom: 48, left: 12 + yAxisWidth, right: 12 };
   
   const denominator = totalVerses || TOTAL_VERSES;
   const minBarHeight = 2;
@@ -175,32 +176,32 @@ export default function VerseProgressGraph({
     ? stackedData[stackedData.length - 1]._total 
     : 0;
 
-  // Dynamic gridline interval
+  // Dynamic gridline interval - More aggressive spacing for clarity
   const gridInterval = useMemo(() => {
-    const candidates = [200, 400, 800, 1000];
-    const targetLines = 5;
-    const approx = globalProgress / targetLines;
-    let chosen = candidates[0];
-    
-    for (const c of candidates) {
-      if (approx <= c) {
-        chosen = c;
-        break;
-      }
-      chosen = c;
-    }
-    
-    return chosen;
+    if (globalProgress <= 100) return 50;
+    if (globalProgress <= 500) return 250;
+    if (globalProgress <= 1000) return 500;
+    if (globalProgress <= 2000) return 1000;
+    if (globalProgress <= 4000) return 2000;
+    return 3000;
   }, [globalProgress]);
 
-  // Generate gridlines
+  // Generate gridlines - max 4 lines total (including 0)
   const gridlines = useMemo(() => {
-    const lines: number[] = [];
-    for (let v = gridInterval; v < denominator; v += gridInterval) {
-      lines.push(v);
-      if (lines.length > 12) break;
+    const lines: number[] = [0]; // Always show 0
+    
+    // Add only 2 intermediate points
+    const mid1 = gridInterval;
+    const mid2 = gridInterval * 2;
+    
+    if (mid1 < denominator) lines.push(mid1);
+    if (mid2 < denominator) lines.push(mid2);
+    
+    // Always add the max (6236) if not already there
+    if (lines[lines.length - 1] !== denominator) {
+      lines.push(denominator);
     }
-    lines.push(denominator);
+    
     return lines;
   }, [gridInterval, denominator]);
   
@@ -236,6 +237,25 @@ export default function VerseProgressGraph({
   // Graph content component
   const GraphContent = () => (
     <View style={{ width: graphWidth }}>
+      {/* Y-axis labels */}
+      <View style={[styles.yAxisContainer, { height: graphHeight }]}>
+        {gridlines.map((val) => {
+          const ratio = val / denominator;
+          const y = graphHeight - chartPadding.bottom - ratio * availableHeight;
+          
+          return (
+            <View
+              key={`ylabel-${val}`}
+              style={[styles.yAxisLabel, { top: y - 8 }]}
+            >
+              <Text style={[styles.yAxisText, { color: colors.textSecondary }]}>
+                {val}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+      
       <Svg width={graphWidth} height={graphHeight}>
         {/* Baseline */}
         <Line
@@ -439,11 +459,32 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     opacity: 0.7,
   },
+  yAxisContainer: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: 40,
+    zIndex: 1,
+  },
+  yAxisLabel: {
+    position: 'absolute',
+    left: 0,
+    width: 38,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    height: 16,
+  },
+  yAxisText: {
+    fontSize: 10,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
   labelsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 12,
     paddingHorizontal: 4,
+    marginLeft: 40, // Offset for Y-axis
   },
   labelWrapper: {
     alignItems: 'center',

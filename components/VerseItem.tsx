@@ -15,7 +15,7 @@ import { parseTajweedText } from '@/utils/tajweedParser';
 import { useThemeColor } from '@/utils/useThemeColor';
 import * as Haptics from 'expo-haptics';
 import { ArrowLeft, Bookmark as BookmarkIcon, BookOpen, Check, Infinity as InfinityIcon, Play, RefreshCw } from 'lucide-react-native';
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import TajweedVerse from 'rn-tajweed-verse';
 import TafsirModal from './TafsirModal';
@@ -29,6 +29,9 @@ interface VerseItemProps {
   onSurahRevisionToggle?: () => void;
   moveToVerse?: (verseNumber: number) => boolean | Promise<boolean>;
   isCurrentlyPlaying?: boolean;
+  juzSequenceNumber?: number;
+  totalJuzVerses?: number;
+  source?: 'surahList' | 'juzList' | 'mustahabbah';
 }
 
 type VerseItemInternalProps = VerseItemProps & { forwardedRef?: any };
@@ -62,8 +65,10 @@ const VerseItem = ({
   moveToVerse,
   source = 'surahList',
   isCurrentlyPlaying = false,
+  juzSequenceNumber,
+  totalJuzVerses,
   ...rest
-}: VerseItemInternalProps & { source?: 'surahList' | 'juzList' | 'mustahabbah'; isCurrentlyPlaying?: boolean }) => {
+}: VerseItemInternalProps) => {
   const { primary } = useThemeColor();
 
   // ============ SETTINGS STORE ============
@@ -164,11 +169,7 @@ const VerseItem = ({
   }, [revisedVerses, verse.id]);
 
   // ============ FONT & STYLING ============
-  const arabicFamily = useMemo(() => {
-    const family = getArabicFontFamily(arabicFont as any);
-    console.log(`[VerseItem] arabicFont: ${arabicFont}, arabicFamily: ${family}`);
-    return family;
-  }, [arabicFont]);
+  const arabicFamily = useMemo(() => getArabicFontFamily(arabicFont as any), [arabicFont]);
   const arabicTypography = useMemo(() => getArabicTypographySizing(fontSizeArabic, arabicFont as any), [fontSizeArabic, arabicFont]);
 
   const arabicText = useMemo(() => verse.arabicText?.trim() || 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ', [verse.arabicText]);
@@ -321,6 +322,10 @@ const VerseItem = ({
         useProgressStore.getState().unmarkVerseAsMemorized(verse.id);
       } else {
         useProgressStore.getState().markVerseAsMemorized(verse.id);
+        // Check for badge unlocks after marking as memorized
+        setTimeout(() => {
+          useProgressStore.getState().checkAndCelebrateBadges();
+        }, 100);
       }
     } catch (error) {
       console.error('[VerseItem] Mark memorized failed:', error);
@@ -561,17 +566,36 @@ const VerseItem = ({
       setRepeatCount(repeatMode);
     }
   }, [repeatMode, repeatCount]);
-
-  // ============ RENDER ============
   // Get Surah name for Juz mode
   const getSurahName = () => {
     if (source === 'juzList') {
-      // For Juz mode, look up the Surah name from surahs data using chapter_id
+      // For Juz mode, use Arabic name in English (e.g., "Al-Fatihah" not "The Opening")
       const chapterId = (verse as any).chapter_id || verse.surahId;
       const surah = surahsData.find(s => s.id === chapterId);
-      return surah ? `${chapterId}: ${surah.englishName}` : `Surah ${chapterId}`;
+      const surahInfo = surah ? `${chapterId}: ${surah.name}` : `Surah ${chapterId}`;
+      
+      // Add sequence number if available (using != null to catch both null and undefined)
+      if (juzSequenceNumber != null && totalJuzVerses != null) {
+        return `${surahInfo} • ${juzSequenceNumber}/${totalJuzVerses}`;
+      }
+      return surahInfo;
     }
-    return `Juz ${verse.juzNumber || 1}`;
+    
+    // For Surah mode, show Juz and page number instead of redundant surah info
+    const juz = verse.juzNumber;
+    const page = verse.pageNumber;
+    
+    if (juz && page) {
+      return `Juz:${juz} pg:${page}`;
+    } else if (juz) {
+      return `Juz:${juz}`;
+    } else if (page) {
+      return `pg:${page}`;
+    }
+    
+    // Fallback to surah name if juz/page not available
+    const surahName = (verse as any).surahName || verse.surah?.englishName || `Surah ${surahId || ''}`;
+    return surahName;
   };
 
   return (
@@ -587,7 +611,9 @@ const VerseItem = ({
           <Text 
             style={[styles.verseInfoText, { color: '#ffffff' }]} 
             numberOfLines={1} 
-            ellipsizeMode="tail" 
+            ellipsizeMode="tail"
+            adjustsFontSizeToFit={true}
+            minimumFontScale={0.75}
           > 
             {getSurahName()}
           </Text> 
@@ -772,18 +798,20 @@ const VerseItem = ({
           <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff', marginLeft: 6 }}>
             {memorized ? 'Memorized' : 'Mark Memorized'}
           </Text>
-          <View style={{ 
-            marginLeft: 4, 
-            padding: 4, 
-            borderRadius: 12,
-            backgroundColor: memorized ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
-            width: 22,
-            height: 22,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}>
-            {memorized && <ArrowLeft size={14} color="#ffffff" />}
-          </View>
+          {memorized && (
+            <View style={{ 
+              marginLeft: 4, 
+              padding: 4, 
+              borderRadius: 12,
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              width: 20,
+              height: 20,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <ArrowLeft size={12} color="#ffffff" />
+            </View>
+          )}
         </Pressable>
 
         <Pressable
@@ -814,18 +842,20 @@ const VerseItem = ({
           <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff', marginLeft: 6 }}>
             {revised ? 'Revised' : 'Mark Revision'}
           </Text>
-          <View style={{ 
-            marginLeft: 4, 
-            padding: 4, 
-            borderRadius: 12,
-            backgroundColor: revised ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
-            width: 22,
-            height: 22,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}>
-            {revised && <ArrowLeft size={14} color="#ffffff" />}
-          </View>
+          {revised && (
+            <View style={{ 
+              marginLeft: 4, 
+              padding: 4, 
+              borderRadius: 12,
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              width: 20,
+              height: 20,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <ArrowLeft size={12} color="#ffffff" />
+            </View>
+          )}
         </Pressable>
       </View>
 
@@ -1022,9 +1052,10 @@ const styles = StyleSheet.create({
   verseInfo: {
     flex: 1,
     marginLeft: 8,
+    marginRight: 4, // Add small margin to prevent crowding with buttons
   },
   verseInfoText: {
-    fontSize: 12,
+    fontSize: 11.5, // Reduced from 12 for better fit on small screens
     opacity: 0.8,
     flexShrink: 1,
     minWidth: 0,
@@ -1183,4 +1214,6 @@ const styles = StyleSheet.create({
   },
 });
 
-export default memo(VerseItem);
+// Export without memo - FlashList handles optimization via cell recycling
+// Memo was blocking juzSequenceNumber and totalJuzVerses props from updating
+export default VerseItem;

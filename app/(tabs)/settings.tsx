@@ -1,5 +1,6 @@
 import { useFastingCalendar } from '@/components/fasting/context/FastingCalendarContext';
 import LocationSelector from '@/components/LocationSelector';
+import NotificationSettingsCard from '@/components/settings/NotificationSettingsCard';
 import { RECITERS } from '@/constants/reciters';
 import { TRANSLATION_LANGUAGES } from '@/constants/translationLanguages';
 import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
@@ -821,6 +822,9 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Notification Settings Card */}
+        <NotificationSettingsCard />
+
         {/* FastingCalendar Settings Section (always active now) */}
         <View style={styles.section}>
           <View style={styles.sectionTitle}>
@@ -903,7 +907,7 @@ export default function SettingsScreen() {
 
         {/* App version label */}
         <View style={styles.versionRow}>
-          <Text style={styles.versionText}>Ver-1.2.1</Text>
+          <Text style={styles.versionText}>Ver-2.0.1</Text>
         </View>
       </ScrollView>
 

@@ -396,7 +396,8 @@ export default function HomeScreen() {
         startVerseId += surah.versesCount;
       }
       return '';
-    }).filter(Boolean)
+    }).filter(Boolean),
+    memorizedVerseIds: memorizedVerses // Pass cumulative verse IDs for accurate Juz calculation
   }), [memorizedVerses]);
   const progress = progressTracker.calculateProgress();
 

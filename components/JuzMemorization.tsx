@@ -6,6 +6,7 @@ import { useProgressStore } from '@/store/progressStore';
 import { calculateJuzProgress, getJuzVerseRange } from '@/utils/juzCalculator';
 import { useCustomColors } from '@/utils/themeUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
+import { ArrowLeft } from 'lucide-react-native';
 import React, { useCallback, useMemo } from 'react';
 import { FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -121,6 +122,8 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
             {
               opacity: isProcessing ? 0.6 : 1,
               backgroundColor: enabled ? '#4CAF50' : primary,
+              flexDirection: 'row',
+              alignItems: 'center',
             }
           ]}
           onPress={() => bulkToggleJuz(juz, !enabled)}
@@ -128,6 +131,20 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
           activeOpacity={0.8}
         >
           <Text style={styles.completeBtnText}>{enabled ? '✓ Memorized' : inProgress ? 'Complete' : 'Mark All'}</Text>
+          {enabled && (
+            <View style={{ 
+              marginLeft: 6, 
+              padding: 4, 
+              borderRadius: 12,
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              width: 22,
+              height: 22,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <ArrowLeft size={14} color="#ffffff" />
+            </View>
+          )}
         </TouchableOpacity>
 
         <View style={styles.leftContent}>

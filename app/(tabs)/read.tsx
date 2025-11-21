@@ -5,15 +5,15 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, ArrowRight, Check, Pause, Play, RefreshCw, Search, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    Modal,
+    Pressable,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 import JuzMemorization from '@/components/JuzMemorization';
@@ -25,12 +25,12 @@ import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import type { Surah, Verse } from '@/types';
 import {
-  getAudioUrl,
-  pauseAudio,
-  pauseSurahAudio,
-  playAudio,
-  playSurahAudioWithFallback,
-  resumeSurahAudio,
+    getAudioUrl,
+    pauseAudio,
+    pauseSurahAudio,
+    playAudio,
+    playSurahAudioWithFallback,
+    resumeSurahAudio,
 } from '@/utils/audioUtils';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
@@ -114,6 +114,8 @@ export default function ReadScreen() {
   const [progressModalVisible, setProgressModalVisible] = useState(false);
   const [progressAction, setProgressAction] = useState<string | null>(null);
   const [progressCount, setProgressCount] = useState(0);
+
+  // Progress store actions - badge celebrations now handled globally via CelebrationContext in _layout.tsx
 
   // Refs
   const flatListRef = useRef<FlashListRef<any>>(null);
@@ -600,6 +602,8 @@ export default function ReadScreen() {
         setProgressCount(Math.min(i + BATCH_SIZE, toUpdate.length));
         await new Promise((r) => setTimeout(r, 25));
       }
+      
+      // Celebration now handled globally via CelebrationContext in _layout.tsx
     } catch (error) {
       Alert.alert('Error', 'Failed to update verses.');
     } finally {
@@ -634,6 +638,8 @@ export default function ReadScreen() {
         setProgressCount(Math.min(i + BATCH_SIZE, toUpdate.length));
         await new Promise((r) => setTimeout(r, 25));
       }
+      
+      // Celebration now handled globally via CelebrationContext in _layout.tsx
     } catch (error) {
       Alert.alert('Error', 'Failed to update revisions.');
     } finally {
@@ -739,6 +745,9 @@ export default function ReadScreen() {
   useEffect(() => {
     versesRef.current = verses;
   }, [verses]);
+
+  // Badge celebrations now handled globally in _layout.tsx via CelebrationContext
+  // No need for local callback registration
 
   // REMOVED: Auto-open lastViewedSurahId on tab click
   // This conflicted with direct Read tab navigation (should show Surah List)
@@ -1359,7 +1368,7 @@ export default function ReadScreen() {
                 data={juzVerses}
                 keyExtractor={(item: any, index: number) => `juz-${item.verse_id}-${item.chapter_id}-${item.verse_number}`}
                 estimatedItemSize={200}
-                renderItem={({ item }: { item: any }) => {
+                renderItem={({ item, index }: { item: any; index: number }) => {
                   const isPlaying = currentlyPlayingVerse !== null && 
                                     currentlyPlayingVerse.surahId === item.chapter_id && 
                                     currentlyPlayingVerse.verseNumber === item.verse_number;
@@ -1382,6 +1391,8 @@ export default function ReadScreen() {
                       onSurahRevisionToggle={() => {}}
                       source={'juzList'}
                       isCurrentlyPlaying={isPlaying}
+                      juzSequenceNumber={index + 1}
+                      totalJuzVerses={juzVerses.length}
                     />
                   );
                 }}
@@ -1401,6 +1412,8 @@ export default function ReadScreen() {
           <JuzMemorization onOpenJuz={handleSelectJuz} />
         )}
       </View>
+      
+      {/* CelebrationModal removed - now handled globally in _layout.tsx */}
     </View>
   );
 }

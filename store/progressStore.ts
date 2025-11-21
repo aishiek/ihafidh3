@@ -11,6 +11,9 @@ import { formatDate } from '@/utils/dateUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { Badge, useBadgeStore } from './badgeStore';
+
+type BadgeCelebrationCallback = (badge: Badge, isHafidh: boolean) => void;
 
 type RevisedVerse = { verseId: number; revisionDate: string };
 type RevisionTracker = { verseId: number; date: string };
@@ -46,6 +49,12 @@ export interface ProgressState {
   lastOpenDate: string | null;
   timeSpent: TimeSpent;
 
+  // Badge celebration callback (not persisted)
+  badgeCelebrationCallback: BadgeCelebrationCallback | null;
+  setBadgeCelebrationCallback: (callback: BadgeCelebrationCallback | null) => void;
+  celebrateBadge: (badgeId: string) => void;
+  checkAndCelebrateBadges: () => void;
+
   // actions (many are lightweight stubs sufficient for compatibility)
   markVerseAsMemorized: (verseId: number) => void;
   unmarkVerseAsMemorized: (verseId: number) => void;
@@ -66,6 +75,12 @@ export interface ProgressState {
   updateWeeklyRevisedVerses: (verseId: number) => void;
   updateMemorizedVerses: (ids: number[]) => void;
   updateRevisedVerses: (ids: number[]) => void;
+  
+  // NEW: Get activity data for charts (async to query database)
+  getActivityData: () => Promise<{
+    memorizedVerses: Array<{ date: string; count: number }>;
+    revisedVerses: Array<{ date: string; count: number }>;
+  }>;
 }
 
 const DEFAULT_BADGES: Badges = {};
@@ -108,6 +123,91 @@ export const useProgressStore = create<ProgressState>()(
       dailyStreak: 0,
       lastOpenDate: null,
       timeSpent: DEFAULT_TIME,
+
+      // Badge celebration (not persisted)
+      badgeCelebrationCallback: null,
+      
+      setBadgeCelebrationCallback: (callback: BadgeCelebrationCallback | null) => {
+        set({ badgeCelebrationCallback: callback });
+      },
+      
+      /**
+       * Manually trigger celebration for a specific badge by ID.
+       * Useful for celebrating badges that were just unlocked after a re-sync.
+       */
+      celebrateBadge: (badgeId: string) => {
+        const { badgeCelebrationCallback } = get();
+        if (!badgeCelebrationCallback) {
+          console.log('[celebrateBadge] No callback set');
+          return;
+        }
+        
+        const badge = useBadgeStore.getState().badges.find(b => b.id === badgeId);
+        if (!badge) {
+          console.log('[celebrateBadge] Badge not found:', badgeId);
+          return;
+        }
+        
+        if (!badge.unlocked) {
+          console.log('[celebrateBadge] Badge not unlocked:', badgeId);
+          return;
+        }
+        
+        const isHafidh = badge.id === 'hafidh-quran';
+        console.log('[celebrateBadge] Celebrating badge:', badge.name, 'isHafidh:', isHafidh);
+        badgeCelebrationCallback(badge, isHafidh);
+      },
+
+      checkAndCelebrateBadges: () => {
+        const state = get();
+        const { badgeCelebrationCallback, memorizedVerses } = state;
+        
+        if (!badgeCelebrationCallback) return;
+
+        // Use QuranProgressTracker to calculate actual Juz completion (same as stats/badges screen)
+        const { QuranProgressTracker } = require('@/data/quranProgress');
+        const { surahsData } = require('@/data/surahs');
+        
+        // Convert verseIds to surah:verse format for QuranProgressTracker
+        const memorizedVersesFormatted = memorizedVerses.map(verseId => {
+          let startVerseId = 0;
+          for (let i = 1; i <= 114; i++) {
+            const surah = surahsData.find((s: any) => s.id === i);
+            if (!surah) continue;
+            
+            if (verseId <= startVerseId + surah.versesCount) {
+              const verseNumber = verseId - startVerseId;
+              return `${i}:${verseNumber}`;
+            }
+            startVerseId += surah.versesCount;
+          }
+          return '';
+        }).filter(Boolean);
+        
+        const progressTracker = new QuranProgressTracker({
+          memorizedSurahs: [],
+          memorizedJuz: [],
+          memorizedVerses: memorizedVersesFormatted,
+          memorizedVerseIds: memorizedVerses // Pass cumulative verse IDs for accurate Juz calculation
+        });
+        
+        const progress = progressTracker.calculateProgress();
+        const actualCompletedJuz = progress.juz.completed;
+        
+        console.log('[checkAndCelebrateBadges] Actual completed Juz:', actualCompletedJuz, 'Total verses:', memorizedVerses.length);
+        
+        // Check for new badges using actual Juz count
+        const newlyUnlocked = useBadgeStore.getState().checkAndUnlockBadges(actualCompletedJuz);
+        
+        console.log('[checkAndCelebrateBadges] Newly unlocked badges:', newlyUnlocked.map(b => b.name));
+        
+        // Celebrate each newly unlocked badge
+        newlyUnlocked.forEach(badge => {
+          const isHafidh = badge.id === 'hafidh-quran';
+          if (__DEV__) console.log('[checkAndCelebrateBadges] Celebrating badge:', badge.name, 'isHafidh:', isHafidh);
+          badgeCelebrationCallback(badge, isHafidh);
+        });
+      },
 
       // actions
       markVerseAsMemorized: (verseId: number) => {
@@ -161,6 +261,14 @@ export const useProgressStore = create<ProgressState>()(
           const agg = recomputeAggregatesFromStatus(verseStatus);
           return { memorizedVerses, memorizedVerseDates, verseStatus, ...agg };
         });
+        
+        // Check for badge unlocks after marking (only when marking, not unmarking)
+        if (isMarking) {
+          // Use setTimeout to ensure state has been updated
+          setTimeout(() => {
+            get().checkAndCelebrateBadges();
+          }, 100);
+        }
       },
 
       markVerseAsRevised: (verseId: number) => {
@@ -417,6 +525,93 @@ export const useProgressStore = create<ProgressState>()(
           };
         });
       },
+
+      // NEW: Get activity data for charts - reads from database for accurate stats
+      getActivityData: async () => {
+        try {
+          // Import database function dynamically to avoid circular dependencies
+          const { getVerseActivitiesBetween } = await import('@/assets/database/QuranDatabase');
+          
+          // Query last 3 years of data to cover all timeframes in the chart
+          const endDate = formatDate(new Date());
+          const startDate = new Date();
+          startDate.setFullYear(startDate.getFullYear() - 3);
+          const startDateStr = formatDate(startDate);
+          
+          console.log('[getActivityData] Querying database from', startDateStr, 'to', endDate);
+          
+          // Get activities from database
+          const activities = await getVerseActivitiesBetween(startDateStr, endDate);
+          
+          console.log('[getActivityData] Retrieved', activities.length, 'activity groups from database');
+          
+          // Aggregate by date and type
+          const memorizedByDate: Record<string, number> = {};
+          const revisedByDate: Record<string, number> = {};
+          
+          activities.forEach((activity) => {
+            if (activity.activityType === 'memorized') {
+              memorizedByDate[activity.activityDate] = (memorizedByDate[activity.activityDate] || 0) + activity.count;
+            } else if (activity.activityType === 'revised') {
+              revisedByDate[activity.activityDate] = (revisedByDate[activity.activityDate] || 0) + activity.count;
+            }
+          });
+          
+          const result = {
+            memorizedVerses: Object.entries(memorizedByDate).map(([date, count]) => ({
+              date,
+              count,
+            })),
+            revisedVerses: Object.entries(revisedByDate).map(([date, count]) => ({
+              date,
+              count,
+            })),
+          };
+          
+          console.log('[getActivityData] Processed results:', {
+            memorizedDates: result.memorizedVerses.length,
+            revisedDates: result.revisedVerses.length,
+            totalMemorized: Object.values(memorizedByDate).reduce((a, b) => a + b, 0),
+            totalRevised: Object.values(revisedByDate).reduce((a, b) => a + b, 0),
+          });
+          
+          return result;
+        } catch (error) {
+          console.error('[getActivityData] Error querying database:', error);
+          
+          // Fallback to store data if database query fails
+          const state = get();
+          const memorizedByDate: Record<string, number> = {};
+          
+          Object.entries(state.memorizedVerseDates).forEach(([verseId, date]) => {
+            if (date) {
+              memorizedByDate[date] = (memorizedByDate[date] || 0) + 1;
+            }
+          });
+          
+          const revisedByDate: Record<string, Set<number>> = {};
+          
+          state.revisedVerses.forEach((verse) => {
+            if (verse.revisionDate) {
+              if (!revisedByDate[verse.revisionDate]) {
+                revisedByDate[verse.revisionDate] = new Set();
+              }
+              revisedByDate[verse.revisionDate].add(verse.verseId);
+            }
+          });
+          
+          return {
+            memorizedVerses: Object.entries(memorizedByDate).map(([date, count]) => ({
+              date,
+              count,
+            })),
+            revisedVerses: Object.entries(revisedByDate).map(([date, verseSet]) => ({
+              date,
+              count: verseSet.size,
+            })),
+          };
+        }
+      },
     }),
     {
       name: 'progress-storage',
@@ -439,6 +634,48 @@ export const useProgressStore = create<ProgressState>()(
         const { memorizedCount, revisedCount } = recomputeAggregatesFromStatus(state.verseStatus);
         state.memorizedCount = memorizedCount;
         state.revisedCount = revisedCount;
+        
+        // Re-sync badge states with actual progress to fix any stale data
+        setTimeout(() => {
+          try {
+            const { QuranProgressTracker } = require('@/data/quranProgress');
+            const { surahsData } = require('@/data/surahs');
+            const memorizedVerses = state.memorizedVerses || [];
+            
+            // Convert verseIds to surah:verse format for QuranProgressTracker
+            const memorizedVersesFormatted = memorizedVerses.map(verseId => {
+              let startVerseId = 0;
+              for (let i = 1; i <= 114; i++) {
+                const surah = surahsData.find((s: any) => s.id === i);
+                if (!surah) continue;
+                
+                if (verseId <= startVerseId + surah.versesCount) {
+                  const verseNumber = verseId - startVerseId;
+                  return `${i}:${verseNumber}`;
+                }
+                startVerseId += surah.versesCount;
+              }
+              return '';
+            }).filter(Boolean);
+            
+            const progressTracker = new QuranProgressTracker({
+              memorizedSurahs: [],
+              memorizedJuz: [],
+              memorizedVerses: memorizedVersesFormatted
+            });
+            
+            const progress = progressTracker.calculateProgress();
+            const actualCompletedJuz = progress.juz.completed;
+            
+            console.log('[onRehydrateStorage] Re-syncing badges with actual progress:', actualCompletedJuz, 'Juz');
+            const resynced = useBadgeStore.getState().resyncBadgesWithProgress(actualCompletedJuz);
+            
+            // Note: We don't celebrate on rehydration - celebrations only happen when 
+            // actively unlocking badges during app use, not on every app restart
+          } catch (error) {
+            console.error('[onRehydrateStorage] Error re-syncing badges:', error);
+          }
+        }, 100);
       },
     }
   )

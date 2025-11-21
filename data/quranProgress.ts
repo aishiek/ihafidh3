@@ -1,5 +1,5 @@
+import { getAllJuzDetails, getCompletedJuzList, getJuzDetail } from '@/utils/juzCalculations';
 import { surahsData } from './surahs';
-import { Surah } from '@/types';
 
 // Juz mapping for each surah
 const surahJuzMap: { [key: number]: number | number[] } = {
@@ -123,6 +123,7 @@ export interface ProgressData {
   memorizedSurahs: number[];
   memorizedJuz: number[];
   memorizedVerses: string[]; // Format: "surah:verse"
+  memorizedVerseIds?: number[]; // Cumulative verse IDs (1-6236)
 }
 
 export class QuranProgressTracker {
@@ -130,13 +131,15 @@ export class QuranProgressTracker {
     memorizedSurahs: Set<number>;
     memorizedJuz: Set<number>;
     memorizedVerses: Set<string>;
+    memorizedVerseIds: number[]; // Cumulative verse IDs for Juz calculations
   };
 
   constructor(savedProgress?: ProgressData) {
     this.userProgress = {
       memorizedSurahs: new Set(savedProgress?.memorizedSurahs || []),
       memorizedJuz: new Set(savedProgress?.memorizedJuz || []),
-      memorizedVerses: new Set(savedProgress?.memorizedVerses || [])
+      memorizedVerses: new Set(savedProgress?.memorizedVerses || []),
+      memorizedVerseIds: savedProgress?.memorizedVerseIds || []
     };
     // Calculate initial surah and juz completion based on provided memorized verses
     this.calculateInitialCompletion();
@@ -147,6 +150,25 @@ export class QuranProgressTracker {
     // Clear existing calculated surah and juz data before recalculating
     this.userProgress.memorizedSurahs.clear();
     this.userProgress.memorizedJuz.clear();
+
+    // Convert verse references to cumulative IDs if not already done
+    if (this.userProgress.memorizedVerseIds.length === 0 && this.userProgress.memorizedVerses.size > 0) {
+      const verseIds: number[] = [];
+      this.userProgress.memorizedVerses.forEach(verseRef => {
+        const [surahIdStr, verseNumStr] = verseRef.split(':');
+        const surahId = parseInt(surahIdStr, 10);
+        const verseNum = parseInt(verseNumStr, 10);
+        
+        // Calculate cumulative verse ID
+        let cumulativeId = 0;
+        for (let i = 1; i < surahId; i++) {
+          const surah = surahsData.find(s => s.id === i);
+          if (surah) cumulativeId += surah.versesCount;
+        }
+        verseIds.push(cumulativeId + verseNum);
+      });
+      this.userProgress.memorizedVerseIds = verseIds;
+    }
 
     // Iterate through all surahs and check completion based on memorized verses
     surahsData.forEach(surah => {
@@ -162,8 +184,15 @@ export class QuranProgressTracker {
       }
     });
 
-    // Now check juz completion based on the initially calculated memorized surahs
-    this.checkJuzCompletion();
+    // Use the new Juz calculation logic based on verse ranges
+    const completedJuzList = getCompletedJuzList(this.userProgress.memorizedVerseIds);
+    this.userProgress.memorizedJuz = new Set(completedJuzList);
+    
+    console.log('[QuranProgressTracker] Juz completion calculated:', {
+      completedJuz: completedJuzList.length,
+      juzNumbers: completedJuzList,
+      totalVerses: this.userProgress.memorizedVerseIds.length
+    });
   }
 
   // Get total verse count (6,236 verses)
@@ -176,6 +205,9 @@ export class QuranProgressTracker {
     const totalSurahs = 114;
     const totalJuz = 30;
     const totalVerses = this.getTotalVerses();
+    
+    // Get detailed Juz information
+    const juzDetails = getAllJuzDetails(this.userProgress.memorizedVerseIds);
 
     return {
       surahs: {
@@ -186,7 +218,8 @@ export class QuranProgressTracker {
       juz: {
         completed: this.userProgress.memorizedJuz.size,
         total: totalJuz,
-        percentage: Math.round((this.userProgress.memorizedJuz.size / totalJuz) * 100)
+        percentage: Math.round((this.userProgress.memorizedJuz.size / totalJuz) * 100),
+        details: juzDetails // Add detailed Juz information
       },
       verses: {
         completed: this.userProgress.memorizedVerses.size,
@@ -222,8 +255,18 @@ export class QuranProgressTracker {
 
     this.userProgress.memorizedVerses.add(`${surah.id}:${verseNumber}`);
     
+    // Add to cumulative verse IDs array
+    if (!this.userProgress.memorizedVerseIds.includes(verseId)) {
+      this.userProgress.memorizedVerseIds.push(verseId);
+    }
+    
     // Check if surah is now complete
     this.checkSurahCompletion(surah.id);
+    
+    // Recalculate Juz completion using the new logic
+    const completedJuzList = getCompletedJuzList(this.userProgress.memorizedVerseIds);
+    this.userProgress.memorizedJuz = new Set(completedJuzList);
+    
     return true;
   }
 
@@ -242,66 +285,22 @@ export class QuranProgressTracker {
 
     if (allVersesMemorized) {
       this.userProgress.memorizedSurahs.add(surahId);
-      this.checkJuzCompletion();
+      // Juz completion is now recalculated in markVerseMemorized
     }
   }
 
-  // Check if any Juz is complete
+  // Deprecated: Juz completion is now calculated using verse ranges in juzCalculations.ts
+  // Kept for backward compatibility but not actively used
   private checkJuzCompletion() {
-    for (let juzNum = 1; juzNum <= 30; juzNum++) {
-      if (this.userProgress.memorizedJuz.has(juzNum)) continue;
-
-      const juzSurahs = surahsData.filter(surah => {
-        const surahJuz = surahJuzMap[surah.id];
-        return Array.isArray(surahJuz) ? surahJuz.includes(juzNum) : surahJuz === juzNum;
-      });
-
-      const allSurahsMemorized = juzSurahs.every(surah => 
-        this.userProgress.memorizedSurahs.has(surah.id)
-      );
-
-      if (allSurahsMemorized) {
-        this.userProgress.memorizedJuz.add(juzNum);
-      }
-    }
+    const completedJuzList = getCompletedJuzList(this.userProgress.memorizedVerseIds);
+    this.userProgress.memorizedJuz = new Set(completedJuzList);
   }
 
-  // Get Juz progress details
+  // Get Juz progress details - now uses the new calculation method
   getJuzProgress(juzNumber: number) {
     if (juzNumber < 1 || juzNumber > 30) return null;
 
-    const juzSurahs = surahsData.filter(surah => {
-      const surahJuz = surahJuzMap[surah.id];
-      return Array.isArray(surahJuz) ? surahJuz.includes(juzNumber) : surahJuz === juzNumber;
-    });
-
-    const totalVerses = juzSurahs.reduce((sum, surah) => sum + surah.versesCount, 0);
-    const isComplete = this.userProgress.memorizedJuz.has(juzNumber);
-    
-    let memorizedVerses = 0;
-    juzSurahs.forEach(surah => {
-      for (let verse = 1; verse <= surah.versesCount; verse++) {
-        if (this.userProgress.memorizedVerses.has(`${surah.id}:${verse}`)) {
-          memorizedVerses++;
-        }
-      }
-    });
-
-    return {
-      juzNumber,
-      name: this.getJuzName(juzNumber),
-      isComplete,
-      memorizedVerses,
-      totalVerses,
-      percentage: Math.round((memorizedVerses / totalVerses) * 100),
-      surahs: juzSurahs.map(surah => ({
-        id: surah.id,
-        name: surah.name,
-        englishName: surah.englishName,
-        verses: surah.versesCount,
-        isMemorized: this.userProgress.memorizedSurahs.has(surah.id)
-      }))
-    };
+    return getJuzDetail(juzNumber, this.userProgress.memorizedVerseIds);
   }
 
   // Get Juz names (traditional names)
@@ -322,7 +321,8 @@ export class QuranProgressTracker {
     return {
       memorizedSurahs: Array.from(this.userProgress.memorizedSurahs),
       memorizedJuz: Array.from(this.userProgress.memorizedJuz),
-      memorizedVerses: Array.from(this.userProgress.memorizedVerses)
+      memorizedVerses: Array.from(this.userProgress.memorizedVerses),
+      memorizedVerseIds: this.userProgress.memorizedVerseIds
     };
   }
 

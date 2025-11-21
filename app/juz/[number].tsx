@@ -188,12 +188,20 @@ export default function JuzScreen() {
     return juzDescriptions[juzNumber] || `Juz ${juzNumber}`;
   }, []);
   
-  const renderItem = useCallback(({ item }: { item: Verse }) => (
-    <VerseItem 
-      verse={item} 
-      onPlayAudio={(surahNum, verseNum, globalId, repeats, isInfinite) => { /* noop for now */ }}
-    />
-  ), []);
+  const renderItem = useCallback(({ item, index }: { item: Verse; index: number }) => {
+    const sequenceNumber = index + 1;
+    const totalVerses = verses.length;
+    
+    return (
+      <VerseItem 
+        verse={item} 
+        onPlayAudio={(surahNum, verseNum, globalId, repeats, isInfinite) => { /* noop for now */ }}
+        source="juzList"
+        juzSequenceNumber={sequenceNumber}
+        totalJuzVerses={totalVerses}
+      />
+    );
+  }, [verses]);
   
   const keyExtractor = useCallback((item: Verse) => {
     const a = typeof item.id !== 'undefined' ? String(item.id) : '';
@@ -257,6 +265,7 @@ export default function JuzScreen() {
           data={verses}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
+          extraData={verses.length}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           onEndReached={handleLoadMore}

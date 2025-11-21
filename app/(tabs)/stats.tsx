@@ -10,6 +10,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 // Remove unused import - now using calculateJuzProgress from juzCalculator
 import CircularProgress from '@/components/CircularProgress';
+import ActivityBarChart from '@/components/stats/ActivityBarChart';
+import ActivityTimeSeriesGraph from '@/components/stats/ActivityTimeSeriesGraph';
+import HeatmapCalendar from '@/components/stats/HeatmapCalendar';
 import LifetimeProgressCard from '@/components/stats/LifetimeProgressCard';
 import VerseProgressCard from '@/components/stats/VerseProgressCard';
 import { useQuranStore } from '@/store/quranStore';
@@ -103,8 +106,45 @@ export default function StatsScreen() {
   const [viewMode, setViewMode] = useState('surah');
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [juzProgressData, setJuzProgressData] = useState<JuzProgressData>({});
+  const [heatmapType, setHeatmapType] = useState<'memorized' | 'revised'>('memorized');
+  const [activityData, setActivityData] = useState<{
+    memorizedVerses: Array<{ date: string; count: number }>;
+    revisedVerses: Array<{ date: string; count: number }>;
+  }>({ memorizedVerses: [], revisedVerses: [] });
   
-  const { memorizedVerses } = useProgressStore();
+  const { memorizedVerses, revisedVerses, getActivityData } = useProgressStore();
+  
+  // Load activity data from database
+  useEffect(() => {
+    let mounted = true;
+    
+    const loadActivityData = async () => {
+      try {
+        console.log('[stats] Loading activity data from database...');
+        const data = await getActivityData();
+        
+        if (mounted) {
+          console.log('[stats] Activity Data loaded:', {
+            memorizedCount: data.memorizedVerses.length,
+            revisedCount: data.revisedVerses.length,
+            memorizedSample: data.memorizedVerses.slice(0, 3),
+            revisedSample: data.revisedVerses.slice(0, 3),
+            totalMemorized: data.memorizedVerses.reduce((sum, d) => sum + d.count, 0),
+            totalRevised: data.revisedVerses.reduce((sum, d) => sum + d.count, 0),
+          });
+          setActivityData(data);
+        }
+      } catch (error) {
+        console.error('[stats] Error loading activity data:', error);
+      }
+    };
+    
+    loadActivityData();
+    
+    return () => {
+      mounted = false;
+    };
+  }, [getActivityData, memorizedVerses, revisedVerses]); // Reload when memorizedVerses OR revisedVerses changes
   
   // Load juz progress data using the same calculation as Juz Memorization page
   useEffect(() => {
@@ -479,6 +519,50 @@ export default function StatsScreen() {
         </Pressable>
       </Modal>
       
+      {/* Activity Bar Chart with Timeframe Selector */}
+      <ActivityBarChart data={activityData} />
+
+      {/* Time Series Graph - Google Play Console Style */}
+      <ActivityTimeSeriesGraph data={activityData} />
+
+      {/* Tab Selector for Heatmap */}
+      <View style={[styles.progressCard, { backgroundColor: '#333333', borderColor: '#555555', padding: 0, overflow: 'hidden' }]}>
+        <View style={styles.heatmapTabSelector}>
+          <TouchableOpacity
+            style={[
+              styles.heatmapTab,
+              heatmapType === 'memorized' && { backgroundColor: primary }
+            ]}
+            onPress={() => setHeatmapType('memorized')}
+          >
+            <Text style={[
+              styles.heatmapTabText,
+              { color: heatmapType === 'memorized' ? '#ffffff' : '#666666' }
+            ]}>
+              Memorization
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[
+              styles.heatmapTab,
+              heatmapType === 'revised' && { backgroundColor: primary }
+            ]}
+            onPress={() => setHeatmapType('revised')}
+          >
+            <Text style={[
+              styles.heatmapTabText,
+              { color: heatmapType === 'revised' ? '#ffffff' : '#666666' }
+            ]}>
+              Revision
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Heatmap Calendar */}
+      <HeatmapCalendar data={activityData} type={heatmapType} />
+      
       {/* Verse Activity Graph - Mobile pattern: positioned at bottom */}
       <VerseProgressCard />
 
@@ -646,6 +730,23 @@ const styles = StyleSheet.create({
   },
   modalButtonText: {
     color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  heatmapTabSelector: {
+    flexDirection: 'row',
+    backgroundColor: '#2a2a2a',
+    padding: 4,
+    gap: 4,
+  },
+  heatmapTab: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  heatmapTabText: {
     fontSize: 16,
     fontWeight: '600',
   },

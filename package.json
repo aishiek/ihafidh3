@@ -1,7 +1,7 @@
 {
   "name": "ihafidh3",
   "main": "expo-router/entry",
-  "version": "1.2.1",
+  "version": "2.0.1",
   "scripts": {
     "start": "expo start --dev-client",
     "android": "cross-env NODE_ENV=development expo run:android",
@@ -38,6 +38,7 @@
     "expo": "~54.0.7",
     "expo-audio": "~1.0.11",
     "expo-av": "~16.0.7",
+    "expo-background-fetch": "~14.0.7",
     "expo-build-properties": "~1.0.8",
     "expo-constants": "~18.0.8",
     "expo-crypto": "~15.0.7",
@@ -53,6 +54,7 @@
     "expo-sensors": "~15.0.7",
     "expo-sqlite": "~16.0.8",
     "expo-status-bar": "~3.0.8",
+    "expo-task-manager": "~14.0.8",
     "expo-web-browser": "~15.0.7",
     "hijri-converter": "^1.1.1",
     "lucide-react-native": "^0.511.0",
@@ -61,6 +63,7 @@
     "react-dom": "19.1.0",
     "react-native": "^0.81.4",
     "react-native-auto-size-text": "^1.1.1",
+    "react-native-confetti-cannon": "^1.5.2",
     "react-native-fs": "^2.20.0",
     "react-native-reanimated": "~4.1.0",
     "react-native-safe-area-context": "~5.6.0",

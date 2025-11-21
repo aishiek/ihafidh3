@@ -1,5 +1,5 @@
-import { surahsData } from '@/data/surahs';
 import { JUZ_MAPPING } from '@/data/juzMapping';
+import { surahsData } from '@/data/surahs';
 
 export interface JuzVerseRange {
   juzNumber: number;
@@ -12,6 +12,8 @@ export interface JuzVerseRange {
 const SURAH_NAME_ALIASES: Record<string, string> = {
   // Juz 28 mapping uses "Al-Mujadilah" while dataset uses "Al-Mujadila"
   'Al-Mujadilah': 'Al-Mujadila',
+  // Juz 28 mapping uses "As-Saff" while dataset uses "As-Saf"
+  'As-Saff': 'As-Saf',
 };
 
 // Convert surah name and verse number to global verse ID

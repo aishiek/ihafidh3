@@ -2,7 +2,7 @@
   "expo": {
     "name": "iHafidh",
     "slug": "ihafidh2",
-    "version": "1.3.1",
+    "version": "2.0.1",
     "orientation": "default",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
@@ -47,7 +47,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ihafidh",
-      "buildNumber": "11",
+      "buildNumber": "24",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app needs access to your location to determine Qibla direction and to enhance fasting calendar accuracy.",
         "ITSAppUsesNonExemptEncryption": false,
@@ -94,7 +94,7 @@
     },
     "android": {
       "package": "com.ihafidh",
-      "versionCode": 24,
+      "versionCode": 27,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",

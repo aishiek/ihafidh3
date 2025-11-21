@@ -865,6 +865,112 @@ export const getVerseActivityBreakdown = async (startDate: string, endDate: stri
   return { memorized, revised };
 };
 
+// Get fully memorized surahs that haven't been revised in the last X days
+export const getSurahsNeedingRevision = async (daysSinceMemorized: number = 3): Promise<Array<{
+  surahId: number;
+  surahName: string;
+  memorizedDate: string;
+  daysSince: number;
+  versesCount: number;
+}>> => {
+  if (!db || Platform.OS === 'web') return [];
+  
+  try {
+    if (!db.getAllAsync) {
+      console.warn('[getSurahsNeedingRevision] db.getAllAsync not available');
+      return [];
+    }
+    
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysSinceMemorized);
+    const cutoffDateStr = fmtDate(cutoffDate);
+    const today = fmtDate(new Date());
+    
+    console.log(`[getSurahsNeedingRevision] Checking fully memorized surahs before ${cutoffDateStr} without recent revision`);
+    
+    // Filter results to only include fully memorized surahs
+    const fullySurahs: Array<{
+      surahId: number;
+      surahName: string;
+      memorizedDate: string;
+      daysSince: number;
+      versesCount: number;
+    }> = [];
+    
+    // Check each surah from surahsData
+    for (const surah of surahsData) {
+      // Get count of memorized verses for this surah
+      const memorizedCount = await db.getAllAsync(
+        `SELECT COUNT(DISTINCT verseId) as count
+         FROM verse_activities
+         WHERE surahId = ?
+           AND activityType = 'memorized'`,
+        [surah.id]
+      );
+      
+      const count = (memorizedCount[0] as any)?.count || 0;
+      
+      // Only proceed if ALL verses are memorized (100% completion)
+      if (count !== surah.versesCount) {
+        continue;
+      }
+      
+      // Get the earliest memorization date for this fully memorized surah
+      const dates = await db.getAllAsync(
+        `SELECT MIN(activityDate) as memorizedDate
+         FROM verse_activities
+         WHERE surahId = ?
+           AND activityType = 'memorized'
+           AND activityDate <= ?`,
+        [surah.id, cutoffDateStr]
+      );
+      
+      const memorizedDate = (dates[0] as any)?.memorizedDate;
+      
+      if (!memorizedDate) {
+        continue; // Surah was memorized after cutoff
+      }
+      
+      // Check if any verse from this surah was revised since cutoff
+      const revisedCount = await db.getAllAsync(
+        `SELECT COUNT(*) as count
+         FROM verse_activities
+         WHERE surahId = ?
+           AND activityType = 'revised'
+           AND activityDate > ?`,
+        [surah.id, cutoffDateStr]
+      );
+      
+      const hasRevision = (revisedCount[0] as any)?.count > 0;
+      
+      if (!hasRevision) {
+        // Calculate days since memorization
+        const daysSince = Math.floor(
+          (new Date(today).getTime() - new Date(memorizedDate).getTime()) / (1000 * 60 * 60 * 24)
+        );
+        
+        fullySurahs.push({
+          surahId: surah.id,
+          surahName: surah.arabicName,
+          memorizedDate,
+          daysSince,
+          versesCount: surah.versesCount
+        });
+      }
+    }
+    
+    // Sort by memorizedDate (oldest first)
+    fullySurahs.sort((a, b) => a.memorizedDate.localeCompare(b.memorizedDate));
+    
+    console.log(`[getSurahsNeedingRevision] Found ${fullySurahs.length} fully memorized surahs needing revision`);
+    
+    return fullySurahs.slice(0, 50); // Limit to 50
+  } catch (e) {
+    console.error('[getSurahsNeedingRevision] Error:', e);
+    return [];
+  }
+};
+
 // Get verse memorization status
 export const getVerseMemorizationStatus = async (
   surahId: number,

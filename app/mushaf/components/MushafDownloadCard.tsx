@@ -120,7 +120,7 @@ export const MushafDownloadCard: React.FC = () => {
   const icon = <Text style={styles.iconEmoji}>📖</Text>;
 
   // Title and badge based on state - NO SUBTITLE
-  const title = 'Mushaf (15 lines Hifdh)';
+  const title = 'Mushaf (15 lines)';
   let badge: React.ReactNode = null;
 
   if (status === 'not-installed') {
@@ -175,7 +175,7 @@ export const MushafDownloadCard: React.FC = () => {
 
       {/* Content */}
       <View style={styles.content}>
-        <Text style={styles.title} numberOfLines={1} ellipsizeMode="tail">{title}</Text>
+        <Text style={styles.title} numberOfLines={2} ellipsizeMode="tail">{title}</Text>
         <Text style={styles.stats}>
           {PAGES} pages • {SIZE_MB}MB • {status === 'ready' ? 'Downloaded ✓' : status === 'downloading' ? 'Downloading' : 'Not downloaded'}
         </Text>
@@ -233,15 +233,15 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     minWidth: 0,
-    paddingRight: 50, // reserved room for badge
+    paddingRight: 56, // reserved room for badge - increased for Android
     justifyContent: 'center',
   },
   title: {
-    fontSize: 16,
+    fontSize: 15, // Reduced slightly for better fit
     fontWeight: '600',
     color: '#fff',
     marginBottom: 2,
-    lineHeight: 20,
+    lineHeight: 18,
   },
   stats: {
     fontSize: 14,

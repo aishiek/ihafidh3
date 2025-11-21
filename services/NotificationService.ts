@@ -20,42 +20,44 @@ export async function initializeNotifications(): Promise<void> {
         shouldShowAlert: true,
         shouldPlaySound: true,
         shouldSetBadge: true,
-        shouldShowBanner: true,
-        shouldShowList: true,
       }),
     });
     console.log('[NotificationService] Handler set');
 
     // Create Android notification channels
     if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'Default Notifications',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FFD700',
-      });
-
-      await Notifications.setNotificationChannelAsync('fasting', {
-        name: 'Fasting Reminders',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FFD700',
-      });
-
-      await Notifications.setNotificationChannelAsync('ayah', {
-        name: 'Daily Ayah',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FFD700',
-      });
-
-      await Notifications.setNotificationChannelAsync('revision', {
-        name: 'Revision Reminders',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FFD700',
-      });
-
+      await Promise.all([
+        Notifications.setNotificationChannelAsync('default', {
+          name: 'Default Notifications',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FFD700',
+        }),
+        Notifications.setNotificationChannelAsync('fasting', {
+          name: 'Fasting Reminders',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FFD700',
+        }),
+        Notifications.setNotificationChannelAsync('ayah', {
+          name: 'Daily Ayah',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FFD700',
+        }),
+        Notifications.setNotificationChannelAsync('revision', {
+          name: 'Revision Reminders',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FFD700',
+        }),
+        Notifications.setNotificationChannelAsync('planner', {
+          name: 'Hifdh Planner',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FFD700',
+        }),
+      ]);
       console.log('[NotificationService] Android channels created');
     }
 
@@ -114,20 +116,13 @@ export async function scheduleNotificationAtDate({
   data?: Record<string, any>;
 }): Promise<string | null> {
   try {
-    // Validate date is in future
     if (!isDateInFuture(date)) {
-      console.warn('[NotificationService] Cannot schedule notification in the past:', {
-        id,
-        date: date.toISOString(),
-        now: new Date().toISOString(),
-      });
+      console.warn('[NotificationService] Cannot schedule in past:', id);
       return null;
     }
 
-    // Cancel existing notification with same ID
     await cancelNotification(id);
 
-    // Schedule new notification
     const notificationId = await Notifications.scheduleNotificationAsync({
       identifier: id,
       content: {
@@ -138,21 +133,14 @@ export async function scheduleNotificationAtDate({
         ...(Platform.OS === 'android' && { channelId }),
       },
       trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
         date,
-      } as any,
+      },
     });
 
-    console.log('[NotificationService] Scheduled notification:', {
-      id,
-      notificationId,
-      date: date.toISOString(),
-      channelId,
-    });
-
+    console.log('[NotificationService] Scheduled:', id, 'at', date.toISOString());
     return notificationId;
   } catch (error) {
-    console.error('[NotificationService] Failed to schedule notification:', error);
+    console.error('[NotificationService] Schedule failed:', error);
     return null;
   }
 }
@@ -175,16 +163,13 @@ export async function scheduleDailyNotification({
   data?: Record<string, any>;
 }): Promise<string | null> {
   try {
-    // Validate hour and minute
     if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-      console.warn('[NotificationService] Invalid hour or minute:', { hour, minute });
+      console.warn('[NotificationService] Invalid time:', { hour, minute });
       return null;
     }
 
-    // Cancel existing notification with same ID
     await cancelNotification(id);
 
-    // Schedule daily notification
     const notificationId = await Notifications.scheduleNotificationAsync({
       identifier: id,
       content: {
@@ -195,23 +180,16 @@ export async function scheduleDailyNotification({
         ...(Platform.OS === 'android' && { channelId }),
       },
       trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DAILY,
         hour,
         minute,
-      } as any,
+        repeats: true,
+      },
     });
 
-    console.log('[NotificationService] Scheduled daily notification:', {
-      id,
-      notificationId,
-      hour,
-      minute,
-      channelId,
-    });
-
+    console.log('[NotificationService] Scheduled daily:', id, `at ${hour}:${minute}`);
     return notificationId;
   } catch (error) {
-    console.error('[NotificationService] Failed to schedule daily notification:', error);
+    console.error('[NotificationService] Daily schedule failed:', error);
     return null;
   }
 }
@@ -267,11 +245,6 @@ export async function sendTestNotification(): Promise<void> {
 // ============================================================================
 
 export class FastingNotificationService {
-  static async initialize(): Promise<void> {
-    // No-op - handled by initializeNotifications()
-    console.log('[FastingNotificationService] Using centralized initialization');
-  }
-
   static async scheduleReminder({
     fastingType,
     fastingName,
@@ -283,25 +256,23 @@ export class FastingNotificationService {
     fastingType: string;
     fastingName: string;
     fastingDescription: string;
-    date: string; // Format: YYYY-MM-DD
+    date: string;
     beforeDays?: number;
-    time?: string; // Format: HH:mm
+    time?: string;
   }): Promise<void> {
     try {
-      // Parse time
       const [hourStr, minuteStr] = time.split(':');
       const hour = parseInt(hourStr, 10);
       const minute = parseInt(minuteStr, 10);
 
       if (isNaN(hour) || isNaN(minute)) {
-        console.warn('[FastingNotificationService] Invalid time format:', time);
+        console.warn('[FastingNotificationService] Invalid time:', time);
         return;
       }
 
-      // Parse fasting date and subtract beforeDays
       const fastingDate = new Date(date);
       if (isNaN(fastingDate.getTime())) {
-        console.warn('[FastingNotificationService] Invalid date format:', date);
+        console.warn('[FastingNotificationService] Invalid date:', date);
         return;
       }
 
@@ -324,7 +295,7 @@ export class FastingNotificationService {
         },
       });
     } catch (error) {
-      console.error('[FastingNotificationService] Failed to schedule reminder:', error);
+      console.error('[FastingNotificationService] Schedule failed:', error);
     }
   }
 
@@ -337,14 +308,10 @@ export class FastingNotificationService {
         await cancelNotification(notification.identifier);
       }
 
-      console.log('[FastingNotificationService] Cancelled all fasting reminders:', fastingNotifications.length);
+      console.log('[FastingNotificationService] Cancelled all fasting reminders');
     } catch (error) {
-      console.error('[FastingNotificationService] Failed to cancel fasting reminders:', error);
+      console.error('[FastingNotificationService] Cancel failed:', error);
     }
-  }
-
-  static async cancelReminder(id: string): Promise<void> {
-    await cancelNotification(id);
   }
 }
 
@@ -355,20 +322,14 @@ export class FastingNotificationService {
 export class AyahNotificationService {
   private static readonly DAILY_AYAH_ID = 'daily_ayah';
 
-  static async initialize(): Promise<void> {
-    // No-op - handled by initializeNotifications()
-    console.log('[AyahNotificationService] Using centralized initialization');
-  }
-
   static async scheduleDailyReminder(time: string): Promise<void> {
     try {
-      // Parse time string "HH:mm"
       const [hourStr, minuteStr] = time.split(':');
       const hour = parseInt(hourStr, 10);
       const minute = parseInt(minuteStr, 10);
 
       if (isNaN(hour) || isNaN(minute)) {
-        console.warn('[AyahNotificationService] Invalid time format:', time);
+        console.warn('[AyahNotificationService] Invalid time:', time);
         return;
       }
 
@@ -384,7 +345,7 @@ export class AyahNotificationService {
         },
       });
     } catch (error) {
-      console.error('[AyahNotificationService] Failed to schedule daily reminder:', error);
+      console.error('[AyahNotificationService] Schedule failed:', error);
     }
   }
 
@@ -410,24 +371,20 @@ export class RevisionNotificationService {
     try {
       if (!incomplete) {
         await cancelNotification(this.DAILY_REVISION_ID);
-        console.log('[RevisionNotificationService] Daily goal complete - reminder cancelled');
         return;
       }
 
-      // Schedule for end of day (23:59)
       const endOfDay = new Date();
       endOfDay.setHours(23, 59, 0, 0);
 
-      // Only schedule if end of day is in future
       if (!isDateInFuture(endOfDay)) {
-        console.log('[RevisionNotificationService] End of day has passed - skipping daily reminder');
         return;
       }
 
       await scheduleNotificationAtDate({
         id: this.DAILY_REVISION_ID,
         title: '📚 Daily Revision Reminder',
-        body: "You haven't completed your daily Quran revision goal. Open iHafidh to stay on track!",
+        body: "You haven't completed your daily Quran revision goal. Stay on track!",
         date: endOfDay,
         channelId: 'revision',
         data: {
@@ -435,7 +392,7 @@ export class RevisionNotificationService {
         },
       });
     } catch (error) {
-      console.error('[RevisionNotificationService] Failed to schedule daily reminder:', error);
+      console.error('[RevisionNotificationService] Daily schedule failed:', error);
     }
   }
 
@@ -443,27 +400,23 @@ export class RevisionNotificationService {
     try {
       if (!incomplete) {
         await cancelNotification(this.WEEKLY_REVISION_ID);
-        console.log('[RevisionNotificationService] Weekly goal complete - reminder cancelled');
         return;
       }
 
-      // Calculate end of week (Sunday 23:59)
       const now = new Date();
       const endOfWeek = new Date(now);
-      const daysUntilSunday = 7 - now.getDay();
+      const daysUntilSunday = (7 - now.getDay()) % 7 || 7;
       endOfWeek.setDate(now.getDate() + daysUntilSunday);
       endOfWeek.setHours(23, 59, 0, 0);
 
-      // Only schedule if end of week is in future
       if (!isDateInFuture(endOfWeek)) {
-        console.log('[RevisionNotificationService] End of week has passed - skipping weekly reminder');
         return;
       }
 
       await scheduleNotificationAtDate({
         id: this.WEEKLY_REVISION_ID,
         title: '📅 Weekly Revision Reminder',
-        body: 'Weekly revision goal not achieved. Review your progress and keep your streak alive!',
+        body: 'Weekly revision goal not achieved. Review your progress!',
         date: endOfWeek,
         channelId: 'revision',
         data: {
@@ -471,21 +424,195 @@ export class RevisionNotificationService {
         },
       });
     } catch (error) {
-      console.error('[RevisionNotificationService] Failed to schedule weekly reminder:', error);
+      console.error('[RevisionNotificationService] Weekly schedule failed:', error);
     }
   }
 
-  static async cancelDailyReminder(): Promise<void> {
+  static async cancelAllReminders(): Promise<void> {
     await cancelNotification(this.DAILY_REVISION_ID);
-  }
-
-  static async cancelWeeklyReminder(): Promise<void> {
     await cancelNotification(this.WEEKLY_REVISION_ID);
   }
+}
 
-  static async cancelAllReminders(): Promise<void> {
-    await this.cancelDailyReminder();
-    await this.cancelWeeklyReminder();
-    console.log('[RevisionNotificationService] Cancelled all revision reminders');
+// ============================================================================
+// ENHANCED NOTIFICATION SERVICE
+// ============================================================================
+
+export class EnhancedNotificationService {
+  static async scheduleDailyVerseReminder(): Promise<void> {
+    try {
+      await scheduleDailyNotification({
+        id: 'daily-verse-reminder',
+        title: '🎯 Daily Goal Reminder',
+        body: "You haven't completed your daily verse target. Keep going! 💪",
+        hour: 20,
+        minute: 0,
+        channelId: 'revision',
+        data: {
+          type: 'daily-verse-reminder',
+        },
+      });
+    } catch (error) {
+      console.error('[EnhancedNotificationService] Daily verse failed:', error);
+    }
+  }
+
+  static async scheduleWeeklySurahReminder(): Promise<void> {
+    try {
+      // Schedule for Fridays at 6 PM
+      // Note: This schedules daily but only shows on Friday via notification received listener
+      await scheduleDailyNotification({
+        id: 'weekly-surah-reminder',
+        title: '📅 Weekly Surah Check-in',
+        body: 'Time to review your weekly Surah progress. Stay consistent! 🌟',
+        hour: 18,
+        minute: 0,
+        channelId: 'revision',
+        data: {
+          type: 'weekly-surah-reminder',
+          dayOfWeek: 5, // Friday
+        },
+      });
+    } catch (error) {
+      console.error('[EnhancedNotificationService] Weekly surah failed:', error);
+    }
+  }
+
+  static async scheduleHifdhPlannerReminder(overdueItems: Array<{ title: string; dueDate: string }>): Promise<void> {
+    try {
+      if (overdueItems.length === 0) return;
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '⏰ Hifdh Reminder',
+          body: `You have ${overdueItems.length} overdue memorization ${overdueItems.length === 1 ? 'task' : 'tasks'}. 📋`,
+          data: {
+            type: 'hifdh-overdue',
+            overdueCount: overdueItems.length,
+          },
+          sound: true,
+          ...(Platform.OS === 'android' && { channelId: 'planner' }),
+        },
+        trigger: null,
+      });
+    } catch (error) {
+      console.error('[EnhancedNotificationService] Planner reminder failed:', error);
+    }
+  }
+
+  static async checkAndSendDailyReminders(): Promise<void> {
+    console.log('[EnhancedNotificationService] Daily reminder check');
+  }
+
+  static async cancelDailyVerseReminder(): Promise<void> {
+    await cancelNotification('daily-verse-reminder');
+  }
+
+  static async cancelWeeklySurahReminder(): Promise<void> {
+    await cancelNotification('weekly-surah-reminder');
+  }
+
+  static async cancelAllEnhancedNotifications(): Promise<void> {
+    await this.cancelDailyVerseReminder();
+    await this.cancelWeeklySurahReminder();
+  }
+}
+
+// ============================================================================
+// REVISION REMINDER SERVICE
+// ============================================================================
+
+export class RevisionReminderService {
+  private static REVISION_REMINDER_ID = 'revision-check-daily';
+  
+  /**
+   * Schedule daily check for surahs needing revision at 9 PM
+   * Uses NotificationReceivedListener to execute actual check
+   */
+  static async scheduleDailyRevisionCheck(): Promise<void> {
+    try {
+      console.log('[RevisionReminder] Scheduling daily revision check at 9 PM');
+      
+      await cancelNotification(this.REVISION_REMINDER_ID);
+      
+      // Schedule silent notification that triggers background check
+      await Notifications.scheduleNotificationAsync({
+        identifier: this.REVISION_REMINDER_ID,
+        content: {
+          title: '🔄 Revision Check',
+          body: 'Checking for surahs that need revision...',
+          data: { 
+            type: 'revision-check',
+            action: 'check-and-notify' 
+          },
+          sound: false, // Silent - will only show actual notification if surahs found
+        },
+        trigger: {
+          hour: 21,
+          minute: 0,
+          repeats: true, // Daily repeating
+        },
+      });
+      
+      console.log('[RevisionReminder] Daily check scheduled for 9 PM (repeating)');
+    } catch (error) {
+      console.error('[RevisionReminder] Error scheduling daily check:', error);
+    }
+  }
+  
+  /**
+   * Check for surahs needing revision and send notification if found
+   */
+  static async checkAndNotifyRevisionNeeded(daysThreshold: number = 3): Promise<void> {
+    try {
+      console.log(`[RevisionReminder] Checking for surahs needing revision (${daysThreshold} days threshold)`);
+      
+      const { getSurahsNeedingRevision } = await import('@/assets/database/QuranDatabase');
+      const surahsNeedingRevision = await getSurahsNeedingRevision(daysThreshold);
+      
+      if (surahsNeedingRevision.length === 0) {
+        console.log('[RevisionReminder] No surahs need revision');
+        return;
+      }
+
+      const oldestSurah = surahsNeedingRevision[0];
+      const count = surahsNeedingRevision.length;
+      
+      const title = count === 1 
+        ? '🔄 Time to Revise!' 
+        : `🔄 ${count} Surahs Need Revision`;
+      
+      const body = count === 1
+        ? `${oldestSurah.surahName} hasn't been revised in ${oldestSurah.daysSince} days. 💪`
+        : `${count} surahs need revision. ${oldestSurah.surahName} hasn't been reviewed in ${oldestSurah.daysSince} days! 💪`;
+      
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          data: { 
+            type: 'revision-needed',
+            count,
+            oldestDays: oldestSurah.daysSince,
+          },
+          sound: true,
+          ...(Platform.OS === 'android' && { channelId: 'revision' }),
+        },
+        trigger: null,
+      });
+      
+      console.log('[RevisionReminder] Sent notification for', count, 'surahs');
+    } catch (error) {
+      console.error('[RevisionReminder] Check failed:', error);
+    }
+  }
+  
+  static async cancelRevisionReminders(): Promise<void> {
+    try {
+      await cancelNotification(this.REVISION_REMINDER_ID);
+      console.log('[RevisionReminder] Cancelled revision reminders');
+    } catch (error) {
+      console.error('[RevisionReminder] Error cancelling reminders:', error);
+    }
   }
 }

@@ -37,7 +37,13 @@ export default function MushafHeader({
         </TouchableOpacity>
 
         <View style={styles.headerCenter}> 
-          <Text style={[styles.headerTitle, { color: '#FFD60A' }]}>Mushaf Reader</Text> 
+          <Text 
+            style={[styles.headerTitle, { color: '#FFD60A' }]} 
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            Mushaf Reader
+          </Text> 
         </View>
 
         <View style={styles.headerButtonsRight}> 
@@ -104,6 +110,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    marginHorizontal: 8,
   },
   headerTitle: {
     fontSize: 16,

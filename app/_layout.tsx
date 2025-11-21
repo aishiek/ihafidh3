@@ -1,8 +1,13 @@
 import { initDatabase, logBasicStats, runIntegrityCheck } from '@/assets/database/QuranDatabase';
+import CelebrationModal from '@/components/CelebrationModal';
 import { FastingCalendarProvider } from '@/components/fasting/context/FastingCalendarContext';
 import UpdateModal from '@/components/UpdateModal';
 import { LATEST_VERSION, MIN_SUPPORTED_VERSION } from '@/constants/appConfig';
-import { AyahNotificationService, initializeNotifications, requestNotificationPermissions } from '@/services/NotificationService';
+import { CelebrationProvider, useCelebration } from '@/contexts/CelebrationContext';
+import { FastingNotificationService } from '@/services/fasting/notificationService';
+import { AyahNotificationService, EnhancedNotificationService, RevisionReminderService, initializeNotifications, requestNotificationPermissions } from '@/services/NotificationService';
+import type { Badge } from '@/store/badgeStore';
+import { useProgressStore } from '@/store/progressStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { initializeAudio } from '@/utils/audioUtils';
 import { getTodayCardVerse } from '@/utils/ayahOfTheDay';
@@ -112,7 +117,8 @@ async function loadAppFontsOnce() {
   return __fontLoadPromise;
 }
 
-export default function RootLayout() {
+// Separate component to use celebration hook (must be inside provider)
+function RootLayoutContent() {
   const [fontsLoaded, setFontsLoaded] = React.useState(false);
   const [fontError, setFontError] = React.useState<Error | null>(null);
   const [forceContinue, setForceContinue] = React.useState(false);
@@ -125,6 +131,20 @@ export default function RootLayout() {
   const [androidPkgOverride, setAndroidPkgOverride] = React.useState<string | null>(null);
   const ayahEnabled = useSettingsStore(s => s.ayahDailyNotificationsEnabled ?? false);
   const reminderTime = useSettingsStore(s => s.reminderTime);
+  const notificationSettings = useSettingsStore(s => s.notificationSettings);
+  const revisionReminderSettings = useSettingsStore(s => s.revisionReminderSettings);
+  
+  // Global celebration hook - available on all screens
+  const { 
+    celebrationVisible, 
+    celebrationType, 
+    customMessage, 
+    badgeName,
+    showCelebration, 
+    hideCelebration 
+  } = useCelebration();
+  
+  const setBadgeCelebrationCallback = useProgressStore((s) => s.setBadgeCelebrationCallback);
 
   React.useEffect(() => {
     let mounted = true;
@@ -155,6 +175,10 @@ export default function RootLayout() {
         if (!granted) {
           console.log('[App] Notification permissions not granted');
         }
+        
+        // Initialize fasting notification service early
+        // This ensures it's ready even if user enables notifications without opening calendar
+        await FastingNotificationService.initialize();
       } catch (e) {
         console.error('[App] Notification initialization failed', e);
       }
@@ -186,14 +210,97 @@ export default function RootLayout() {
     return () => { active = false; };
   }, [ayahEnabled, reminderTime]);
 
+  // Sync enhanced notification settings
+  React.useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        // Daily Ayah (using the new notification settings)
+        if (notificationSettings?.dailyAyah) {
+          await AyahNotificationService.scheduleDailyReminder(reminderTime || '09:00');
+        }
+
+        // Daily Verse Reminder
+        if (notificationSettings?.dailyVerseReminder) {
+          await EnhancedNotificationService.scheduleDailyVerseReminder();
+        } else {
+          await EnhancedNotificationService.cancelDailyVerseReminder();
+        }
+
+        // Weekly Surahs Reminder
+        if (notificationSettings?.weeklySurahsReminder) {
+          await EnhancedNotificationService.scheduleWeeklySurahReminder();
+        } else {
+          await EnhancedNotificationService.cancelWeeklySurahReminder();
+        }
+
+        // Hifdh Planner - check for overdue items (placeholder logic)
+        if (notificationSettings?.hifdhPlannerReminder) {
+          // In a real implementation, you would check for overdue items from your store
+          // For now, we just log that the feature is enabled
+          console.log('[NotificationSync] Hifdh planner reminder enabled');
+        }
+      } catch (e) {
+        console.log('[NotificationSync] error', e);
+      }
+    })();
+    return () => { active = false; };
+  }, [notificationSettings, reminderTime]);
+
+  // Sync revision reminder settings (surah-level)
+  React.useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        if (revisionReminderSettings.enabled) {
+          console.log('[RevisionReminder] Scheduling daily surah revision check at 9 PM');
+          await RevisionReminderService.scheduleDailyRevisionCheck();
+          // Also check immediately on app startup if enabled
+          await RevisionReminderService.checkAndNotifyRevisionNeeded(revisionReminderSettings.daysThreshold);
+        } else {
+          console.log('[RevisionReminder] Disabled - cancelling reminders');
+          await RevisionReminderService.cancelRevisionReminders();
+        }
+      } catch (e) {
+        console.log('[RevisionReminder] sync error', e);
+      }
+    })();
+    return () => { active = false; };
+  }, [revisionReminderSettings]);
+
+  // Set up global badge celebration callback
+  React.useEffect(() => {
+    const handleBadgeCelebration = (badge: Badge, isHafidh: boolean) => {
+      console.log('[RootLayout] Badge unlocked globally:', badge.name, 'isHafidh:', isHafidh);
+      
+      const celebType = isHafidh ? 'hafidh-badge' : 'badge-unlocked';
+      
+      // Use setTimeout to ensure it triggers after any state updates
+      setTimeout(() => {
+        showCelebration(celebType, undefined, badge.name);
+      }, 100);
+    };
+    
+    setBadgeCelebrationCallback(handleBadgeCelebration);
+    
+    return () => {
+      setBadgeCelebrationCallback(null);
+    };
+  }, [setBadgeCelebrationCallback, showCelebration]);
+
   // Version gate: prompt update if current version is lower than minimum supported
   React.useEffect(() => {
     try {
       const { version } = getCurrentVersion();
       setCurrentVersion(version);
+      console.log('[version] Current version:', version, 'MIN:', MIN_SUPPORTED_VERSION, 'LATEST:', LATEST_VERSION);
+      
       // Initial local check (fast fallback before remote arrives)
       const mustUpdateLocal = isVersionLower(version, MIN_SUPPORTED_VERSION);
       const softUpdateLocal = !mustUpdateLocal && isVersionLower(version, LATEST_VERSION);
+      
+      console.log('[version] Local check - mustUpdate:', mustUpdateLocal, 'softUpdate:', softUpdateLocal);
+      
       if (mustUpdateLocal || softUpdateLocal) {
         setForcedUpdate(mustUpdateLocal);
         setLatestVersion(LATEST_VERSION);
@@ -202,7 +309,9 @@ export default function RootLayout() {
 
       // Remote override
       (async () => {
-        const remote = await fetchRemoteVersionConfig(false) || await getEffectiveVersionConfig();
+        // Force refresh to bypass stale cache (temporary fix for testing)
+        const remote = await fetchRemoteVersionConfig(true) || await getEffectiveVersionConfig();
+        console.log('[version] Remote config:', remote);
         applyRemoteVersion(remote, version);
       })();
     } catch (e) {
@@ -228,17 +337,24 @@ export default function RootLayout() {
 
   const applyRemoteVersion = React.useCallback((remote: RemoteVersionConfig, version: string) => {
     try {
+      console.log('[version] Applying remote - current:', version, 'min:', remote.min_supported, 'latest:', remote.latest, 'force:', remote.force);
+      
       setLatestVersion(remote.latest || LATEST_VERSION);
       setReleaseNotes(remote.release_notes);
       setIosAppIdOverride(remote.ios_app_id_override ?? null);
       setAndroidPkgOverride(remote.android_package_id_override ?? null);
+      
       const mustUpdate = isVersionLower(version, remote.min_supported || MIN_SUPPORTED_VERSION) || !!remote.force;
       const softUpdate = !mustUpdate && isVersionLower(version, remote.latest || LATEST_VERSION);
+      
+      console.log('[version] Remote check - mustUpdate:', mustUpdate, 'softUpdate:', softUpdate);
+      
+      // Only show modal if there's actually an update needed
       if (mustUpdate || softUpdate) {
         setForcedUpdate(mustUpdate);
         setShowUpdatePrompt(true);
       } else {
-        // Only hide if not forced by local earlier
+        // Hide modal when versions match
         setShowUpdatePrompt(false);
       }
     } catch (e) {
@@ -251,16 +367,60 @@ export default function RootLayout() {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       try {
         const data: any = response?.notification?.request?.content?.data || {};
-        if (data?.type === 'daily_ayah') {
-          const today = getTodayCardVerse(new Date());
-          // Use replace for notification deep-links to avoid creating stacked Read entries
-          try { router.replace(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); } catch { router.push(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); }
+        
+        // Handle all notification types
+        switch (data?.type) {
+          case 'daily_ayah':
+          case 'daily-ayah':
+            const today = getTodayCardVerse(new Date());
+            try { router.replace(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); } catch { router.push(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); }
+            break;
+          case 'daily-verse-reminder':
+            try { router.replace('/(tabs)/read'); } catch { router.push('/(tabs)/read'); }
+            break;
+          case 'weekly-surah-reminder':
+            try { router.replace('/(tabs)/stats'); } catch { router.push('/(tabs)/stats'); }
+            break;
+          case 'hifdh-overdue':
+            try { router.replace('/(tabs)/index'); } catch { router.push('/(tabs)/index'); }
+            break;
+          case 'revision-needed':
+            // User tapped on revision reminder - go to stats/revision page
+            try { router.replace('/(tabs)/stats'); } catch { router.push('/(tabs)/stats'); }
+            break;
+          default:
+            console.log('[NotificationDeepLink] Unknown type:', data?.type);
         }
       } catch (e) {
-        console.log('[AyahNotif] deep link failed', e);
+        console.log('[NotificationDeepLink] deep link failed', e);
       }
     });
     return () => { try { sub.remove(); } catch {} };
+  }, []);
+
+  // Background notification handler - executes when notifications fire (even if app is backgrounded)
+  React.useEffect(() => {
+    const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
+      try {
+        const data: any = notification?.request?.content?.data || {};
+        
+        // Handle revision check notification
+        if (data?.type === 'revision-check' && data?.action === 'check-and-notify') {
+          console.log('[RevisionReminder] Daily check triggered at 9 PM');
+          
+          // Get current threshold from settings
+          const settings = useSettingsStore.getState();
+          const daysThreshold = settings.revisionReminderSettings?.daysThreshold || 3;
+          
+          // Execute the actual check and send notification if needed
+          await RevisionReminderService.checkAndNotifyRevisionNeeded(daysThreshold);
+        }
+      } catch (e) {
+        console.error('[NotificationReceived] Handler failed:', e);
+      }
+    });
+    
+    return () => { try { subscription.remove(); } catch {} };
   }, []);
 
   // Persistence guard and DB lifecycle management
@@ -325,9 +485,25 @@ export default function RootLayout() {
               iosAppIdOverride={iosAppIdOverride}
               androidPackageIdOverride={androidPkgOverride}
             />
+            <CelebrationModal
+              visible={celebrationVisible}
+              type={celebrationType}
+              customMessage={customMessage}
+              badgeName={badgeName}
+              onComplete={hideCelebration}
+            />
           </View>
         </FastingCalendarProvider>
       </RootErrorBoundary>
     </SafeAreaProvider>
+  );
+}
+
+// Main export wraps everything in the CelebrationProvider
+export default function RootLayout() {
+  return (
+    <CelebrationProvider>
+      <RootLayoutContent />
+    </CelebrationProvider>
   );
 }

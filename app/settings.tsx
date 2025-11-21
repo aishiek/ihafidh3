@@ -10,6 +10,7 @@ import {
     Book,
     Check,
     ChevronRight,
+    Clock,
     Moon,
     Palette,
     RotateCcw,
@@ -51,7 +52,9 @@ export default function SettingsScreen() {
     translationLanguage,
     setTranslationLanguage,
     arabicFont,
-    setArabicFont
+    setArabicFont,
+    revisionReminderSettings,
+    setRevisionReminderSettings
   } = useSettingsStore();
   const arabicFamily = useMemo(() => getArabicFontFamily(arabicFont) || undefined, [arabicFont]);
   const [arabicPreview, setArabicPreview] = useState<number>(fontSizeArabic);
@@ -254,6 +257,156 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+          </View>
+        </View>
+        
+        {/* Notifications */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Notifications</Text>
+          
+          {/* Daily Ayah Notification */}
+          <View style={styles.settingItem}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <View style={styles.iconContainer}>
+                  <Bell size={20} color="#4CAF50" />
+                </View>
+                <View>
+                  <Text style={styles.settingLabel}>Daily Ayah Notification</Text>
+                  <Text style={styles.settingDescription}>
+                    Receive a daily verse notification
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={false}
+                onValueChange={() => {}}
+                trackColor={{ false: '#444444', true: '#4CAF5080' }}
+                thumbColor={false ? '#4CAF50' : '#888888'}
+                ios_backgroundColor="#444444"
+              />
+            </View>
+          </View>
+
+          {/* Daily Verse */}
+          <View style={styles.settingItem}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <View style={styles.iconContainer}>
+                  <Book size={20} color="#2196F3" />
+                </View>
+                <View>
+                  <Text style={styles.settingLabel}>Daily Verse</Text>
+                  <Text style={styles.settingDescription}>
+                    Get notified with a verse each day
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={false}
+                onValueChange={() => {}}
+                trackColor={{ false: '#444444', true: '#2196F380' }}
+                thumbColor={false ? '#2196F3' : '#888888'}
+                ios_backgroundColor="#444444"
+              />
+            </View>
+          </View>
+
+          {/* Weekly Surahs */}
+          <View style={styles.settingItem}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <View style={styles.iconContainer}>
+                  <RotateCcw size={20} color="#FF9800" />
+                </View>
+                <View>
+                  <Text style={styles.settingLabel}>Weekly Surahs</Text>
+                  <Text style={styles.settingDescription}>
+                    Weekly surah revision reminders
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={false}
+                onValueChange={() => {}}
+                trackColor={{ false: '#444444', true: '#FF980080' }}
+                thumbColor={false ? '#FF9800' : '#888888'}
+                ios_backgroundColor="#444444"
+              />
+            </View>
+          </View>
+
+          {/* Hifdh Planner */}
+          <View style={styles.settingItem}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <View style={styles.iconContainer}>
+                  <Target size={20} color="#9C27B0" />
+                </View>
+                <View>
+                  <Text style={styles.settingLabel}>Hifdh Planner</Text>
+                  <Text style={styles.settingDescription}>
+                    Get reminders for your memorization plan
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={false}
+                onValueChange={() => {}}
+                trackColor={{ false: '#444444', true: '#9C27B080' }}
+                thumbColor={false ? '#9C27B0' : '#888888'}
+                ios_backgroundColor="#444444"
+              />
+            </View>
+          </View>
+
+          {/* Revision Reminder */}
+          <View style={styles.settingItem}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <View style={styles.iconContainer}>
+                  <Clock size={20} color="#FF5722" />
+                </View>
+                <View>
+                  <Text style={styles.settingLabel}>Surah Revision Reminder (9 PM)</Text>
+                  <Text style={styles.settingDescription}>
+                    Check for fully memorized surahs needing revision
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={revisionReminderSettings.enabled}
+                onValueChange={(enabled) => 
+                  setRevisionReminderSettings({ ...revisionReminderSettings, enabled })
+                }
+                trackColor={{ false: '#444444', true: '#FF572280' }}
+                thumbColor={revisionReminderSettings.enabled ? '#FF5722' : '#888888'}
+                ios_backgroundColor="#444444"
+              />
+            </View>
+            {revisionReminderSettings.enabled && (
+              <View style={styles.settingSubItem}>
+                <Text style={styles.settingSubLabel}>Days before reminder:</Text>
+                <View style={styles.daysInputContainer}>
+                  <TextInput
+                    style={styles.daysInput}
+                    value={revisionReminderSettings.daysThreshold.toString()}
+                    onChangeText={(text) => {
+                      const days = parseInt(text) || 3;
+                      if (days >= 1 && days <= 30) {
+                        setRevisionReminderSettings({ 
+                          ...revisionReminderSettings, 
+                          daysThreshold: days 
+                        });
+                      }
+                    }}
+                    keyboardType="number-pad"
+                    maxLength={2}
+                  />
+                  <Text style={styles.daysLabel}>days</Text>
+                </View>
+              </View>
+            )}
           </View>
         </View>
         
@@ -900,6 +1053,41 @@ const styles = StyleSheet.create({
   toggleChipTextActive: {
     color: '#ffffff',
     fontWeight: '600',
+  },
+  settingSubItem: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingLeft: 44, // Align with text above
+  },
+  settingSubLabel: {
+    fontSize: 14,
+    color: '#aaaaaa',
+    fontWeight: '500',
+  },
+  daysInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  daysInput: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: '#ffffff',
+    fontWeight: '600',
+    textAlign: 'center',
+    minWidth: 50,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  daysLabel: {
+    fontSize: 14,
+    color: '#888888',
+    fontWeight: '500',
   },
   timeSelector: {
     backgroundColor: '#1a1a1a',

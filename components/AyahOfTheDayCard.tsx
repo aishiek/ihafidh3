@@ -224,8 +224,27 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style }) => 
   const { addBookmark } = useBookmarkStore();
   const viewShotRef = useRef<ViewShot>(null);
   const [cardLayout, setCardLayout] = useState<{ width: number; height: number } | null>(null);
+  const [imagesLoaded, setImagesLoaded] = useState(false);
 
   const computeKey = (d = new Date()) => d.toISOString().split('T')[0];
+
+  // Preload images for sharing - ensure they're cached before capture
+  useEffect(() => {
+    const preloadImages = async () => {
+      try {
+        await Promise.all([
+          Image.prefetch(Image.resolveAssetSource(require('@/assets/images/icon.png')).uri),
+          Image.prefetch(Image.resolveAssetSource(require('@/assets/images/appstore.png')).uri),
+          Image.prefetch(Image.resolveAssetSource(require('@/assets/images/playstore.png')).uri),
+        ]);
+        setImagesLoaded(true);
+      } catch (error) {
+        console.warn('[AyahOfTheDay] Image preload failed:', error);
+        setImagesLoaded(true); // Continue anyway
+      }
+    };
+    preloadImages();
+  }, []);
 
   const loadAyah = useCallback(async () => {
     setLoading(true); 
@@ -327,11 +346,18 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style }) => 
   };
 
   const handleShare = async () => {
-    if (!ayah || !viewShotRef.current || sharing) return;
+    if (!ayah || !viewShotRef.current || sharing || !imagesLoaded) return;
     setSharing(true);
     try {
-      // Wait a few frames so conditional branding becomes visible before capture
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      // Wait for layout and render to complete
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            // Extra delay to ensure images are fully rendered
+            setTimeout(() => resolve(), 100);
+          });
+        });
+      });
 
       // If we don't have a measured layout yet, wait briefly for onLayout to run
       const maxWait = 500; // ms
@@ -379,6 +405,13 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style }) => 
 
   return (
     <View style={[styles.containerWrapper, style]}>
+      {/* Hidden images to preload/cache them */}
+      <View style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }}>
+        <Image source={require('@/assets/images/icon.png')} style={{ width: 1, height: 1 }} />
+        <Image source={require('@/assets/images/appstore.png')} style={{ width: 1, height: 1 }} />
+        <Image source={require('@/assets/images/playstore.png')} style={{ width: 1, height: 1 }} />
+      </View>
+
       {/* ViewShot wrapper for capturing as image */}
       <ViewShot
         ref={viewShotRef}

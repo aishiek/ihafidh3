@@ -50,6 +50,17 @@ class MushafDownloadService {
     try {
       this.log('CHECK', 'Checking if Mushaf is installed...');
       
+      // Check if at least one layout is installed (new layout-specific system)
+      const layoutIds = ['indopak_15', 'madina_15', 'warsh_15', 'tajweed'];
+      for (const layoutId of layoutIds) {
+        const layoutInstalled = await this.isLayoutInstalled(layoutId);
+        if (layoutInstalled) {
+          this.log('CHECK', `✅ Mushaf installed: Layout ${layoutId} is ready`);
+          return true;
+        }
+      }
+      
+      // Fallback: Check legacy installation (for backwards compatibility)
       const dbExists = await RNFS.exists(`${MUSHAF_CACHE_DIR}/qudratullah-indopak-15-lines.db`);
       
       // Check page coordinate JSON files
@@ -60,26 +71,12 @@ class MushafDownloadService {
           const jsonContents = await RNFS.readDir(jsonDir);
           const pageJsonFiles = jsonContents.filter((f: any) => f.isFile && /^\d+\.json$/.test(f.name));
           pageJsonCount = pageJsonFiles.length;
-
-          // Debug: on first run, dump the directory structure when counts are suspicious
-          const isDev = (typeof __DEV__ !== 'undefined' && __DEV__ === true);
-          if (isDev) {
-            if (pageJsonCount > 0 && pageJsonCount < 50) {
-              this.log('CHECK', `⚠️  DEBUG: Found ${pageJsonCount} page JSON files. Expected 610.`);
-              const fileList = pageJsonFiles.slice(0, 10).map((f: any) => f.name).join(', ');
-              this.log('CHECK', `Sample files: ${fileList}...`);
-            } else {
-              this.log('CHECK', `Found ${pageJsonCount}/610 page JSON files`);
-            }
-          }
         } catch (e) {
           this.logError('CHECK', 'Failed to read json directory', e);
         }
-      } else {
-        this.log('CHECK', `⚠️  JSON directory does not exist at ${jsonDir}`);
       }
 
-      // Check images count across known locations
+      // Check images count across known locations (legacy)
       let imageCount = 0;
       const imagesDir = `${MUSHAF_CACHE_DIR}/images`;
       try {
@@ -87,55 +84,19 @@ class MushafDownloadService {
           const files = await RNFS.readDir(imagesDir);
           const rootImages = files.filter((f: any) => f.isFile && (f.name.endsWith('.png') || f.name.endsWith('.jpg') || f.name.endsWith('.jpeg')));
           imageCount += rootImages.length;
-
-          // Inspect known subdirectories under images/
-          const subdirs = ['indopak', 'madina', 'warsh', 'tajweed'];
-          for (const s of subdirs) {
-            const subdir = `${imagesDir}/${s}`;
-            if (await RNFS.exists(subdir)) {
-              const subFiles = await RNFS.readDir(subdir);
-              const subImages = subFiles.filter((f: any) => f.isFile && (f.name.endsWith('.png') || f.name.endsWith('.jpg') || f.name.endsWith('.jpeg')));
-              imageCount += subImages.length;
-            }
-          }
-        } else {
-          this.log('CHECK', `⚠️  Images directory does not exist at ${imagesDir}`);
         }
       } catch (e) {
         this.logError('CHECK', 'Failed to aggregate images count', e);
       }
 
-      // Also consider top-level layout directories (e.g., `${MUSHAF_CACHE_DIR}/madina`)
-      const topLevelDirs = ['indopak', 'madina', 'warsh', 'tajweed'];
-      for (const t of topLevelDirs) {
-        try {
-          const topDir = `${MUSHAF_CACHE_DIR}/${t}`;
-          if (await RNFS.exists(topDir)) {
-            const files = await RNFS.readDir(topDir);
-            const imgs = files.filter((f: any) => f.isFile && (f.name.endsWith('.png') || f.name.endsWith('.jpg') || f.name.endsWith('.jpeg')));
-            imageCount += imgs.length;
-          }
-        } catch (e) {
-          // best effort; continue
-        }
-      }
-
-      if (typeof __DEV__ !== 'undefined' && __DEV__ === true) {
-        if (imageCount < 50) {
-          this.log('CHECK', `⚠️  DEBUG: Aggregated ${imageCount} images across all locations.`);
-        } else {
-          this.log('CHECK', `Aggregated image count: ${imageCount}`);
-        }
-      }
-
-      // Relaxed check: require DB + JSON + at least 500 images from any location
-      const isComplete = dbExists && pageJsonCount >= 500 && imageCount >= 500;
+      // Relaxed legacy check: require DB + JSON + at least 500 images
+      const legacyComplete = dbExists && pageJsonCount >= 500 && imageCount >= 500;
       
-      if (isComplete) {
-  this.log('CHECK', `✅ Mushaf installed: DB ✓, ${pageJsonCount} pages ✓, ${imageCount} images (aggregated) ✓`);
+      if (legacyComplete) {
+        this.log('CHECK', `✅ Mushaf installed (legacy): DB ✓, ${pageJsonCount} pages ✓, ${imageCount} images ✓`);
         return true;
       } else {
-  this.log('CHECK', `❌ Installation incomplete. DB: ${dbExists}, Pages: ${pageJsonCount}, Images (aggregated): ${imageCount}`);
+        this.log('CHECK', `❌ No layouts installed. DB: ${dbExists}, Pages: ${pageJsonCount}, Images: ${imageCount}`);
         return false;
       }
     } catch (e) {
@@ -657,6 +618,13 @@ class MushafDownloadService {
 
     const targetDir = `${MUSHAF_CACHE_DIR}/images/${dirName}`;
     const topLevelDir = `${MUSHAF_CACHE_DIR}/${dirName}`;
+    
+    // Possible source locations after extraction
+    const possibleSources = [
+      topLevelDir,                                    // e.g., mushaf/indopak/
+      `${MUSHAF_CACHE_DIR}/mushaf-images/${dirName}`, // e.g., mushaf/mushaf-images/indopak/
+      `${MUSHAF_CACHE_DIR}/mushaf-images`             // e.g., mushaf/mushaf-images/ (flat)
+    ];
 
     try {
       // Ensure target directory exists
@@ -664,9 +632,13 @@ class MushafDownloadService {
         await RNFS.mkdir(targetDir, { mkdirs: true });
       }
 
-      // ONLY move from layout-specific top-level dir, NOT from legacy images dir
-      if (await RNFS.exists(topLevelDir)) {
-        const files = await RNFS.readDir(topLevelDir);
+      let totalMoved = 0;
+      
+      // Try each possible source location
+      for (const sourceDir of possibleSources) {
+        if (!(await RNFS.exists(sourceDir))) continue;
+        
+        const files = await RNFS.readDir(sourceDir);
         let movedCount = 0;
         
         for (const f of files) {
@@ -686,31 +658,16 @@ class MushafDownloadService {
           }
         }
         
-        this.log('NORMALIZE', `Moved ${movedCount} images for ${layoutId}`);
-        
-        // Only remove source dir if it's now empty
-        try {
-          const remaining = await RNFS.readDir(topLevelDir);
-          if (remaining.length === 0) {
-            await RNFS.unlink(topLevelDir);
-          }
-        } catch (e) {
-          // Non-critical
-        }
-      }
-
-      // Standardize filenames in target directory
-      const targetFiles = await RNFS.readDir(targetDir);
-      let renamedCount = 0;
-      for (const f of targetFiles) {
-        if (f.isFile && /\.(png|jpe?g)$/i.test(f.name)) {
-          const standardized = this.standardizeFilename(f.name, layoutId);
-          if (standardized !== f.name) {
-            const newPath = `${targetDir}/${standardized}`;
+        if (movedCount > 0) {
+          totalMoved += movedCount;
+          this.log('NORMALIZE', `Moved ${movedCount} images from ${sourceDir.split('/').pop()}/ for ${layoutId}`);
+          
+          // Only remove source dir if it's now empty and not the images dir itself
+          if (sourceDir !== `${MUSHAF_CACHE_DIR}/images`) {
             try {
-              if (!(await RNFS.exists(newPath))) {
-                await RNFS.moveFile(f.path, newPath);
-                renamedCount++;
+              const remaining = await RNFS.readDir(sourceDir);
+              if (remaining.length === 0) {
+                await RNFS.unlink(sourceDir);
               }
             } catch (e) {
               // Non-critical
@@ -718,9 +675,36 @@ class MushafDownloadService {
           }
         }
       }
-      
-      if (renamedCount > 0) {
-        this.log('NORMALIZE', `Standardized ${renamedCount} filenames for ${layoutId}`);
+
+      // Standardize filenames in target directory (images may already be there from extraction)
+      if (await RNFS.exists(targetDir)) {
+        const targetFiles = await RNFS.readDir(targetDir);
+        let renamedCount = 0;
+        for (const f of targetFiles) {
+          if (f.isFile && /\.(png|jpe?g)$/i.test(f.name)) {
+            const standardized = this.standardizeFilename(f.name, layoutId);
+            if (standardized !== f.name) {
+              const newPath = `${targetDir}/${standardized}`;
+              try {
+                if (!(await RNFS.exists(newPath))) {
+                  await RNFS.moveFile(f.path, newPath);
+                  renamedCount++;
+                }
+              } catch (e) {
+                // Non-critical
+              }
+            }
+          }
+        }
+        
+        if (renamedCount > 0) {
+          this.log('NORMALIZE', `Standardized ${renamedCount} filenames for ${layoutId}`);
+        }
+        
+        // Log final count after normalization
+        const finalFiles = await RNFS.readDir(targetDir);
+        const imageCount = finalFiles.filter((f: any) => f.isFile && /\.(png|jpe?g)$/i.test(f.name)).length;
+        this.log('NORMALIZE', `Final image count in ${targetDir}: ${imageCount}`);
       }
     } catch (e) {
       this.logError('NORMALIZE', `Failed to normalize images for ${layoutId}`, e);

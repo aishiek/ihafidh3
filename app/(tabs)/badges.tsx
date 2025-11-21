@@ -2,9 +2,11 @@ import { QuranProgressTracker } from '@/data/quranProgress';
 import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
 import { calculateCurrentBadge } from '@/utils/badgeUtils';
+import { getJuz30Progress } from '@/utils/juzCalculations';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { ArrowLeft, Award, CheckCircle, Lock } from 'lucide-react-native';
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
     Pressable,
     ScrollView,
@@ -15,6 +17,17 @@ import {
 
 export default function BadgesScreen() {
   const { memorizedVerses } = useProgressStore();
+  const previousBadgeLevel = useRef<number>(0);
+  
+  // Load previous badge level on mount
+  useEffect(() => {
+    AsyncStorage.getItem('lastBadgeLevel').then(level => {
+      if (level) {
+        previousBadgeLevel.current = parseFloat(level);
+        console.log('[BadgesScreen] Loaded previous badge level:', previousBadgeLevel.current);
+      }
+    });
+  }, []);
 
   // Calculate dynamic progress data
   const progressTracker = useMemo(() => {
@@ -34,40 +47,46 @@ export default function BadgesScreen() {
           startVerseId += surah.versesCount;
         }
         return '';
-      }).filter(Boolean)
+      }).filter(Boolean),
+      memorizedVerseIds: memorizedVerses // Pass cumulative verse IDs
     });
   }, [memorizedVerses]);
 
   const progress = progressTracker.calculateProgress();
+
+  // Add detailed logging for debugging
+  React.useEffect(() => {
+    console.log('[BadgesScreen] Progress calculated:', {
+      totalVerses: memorizedVerses.length,
+      completedJuz: progress.juz.completed,
+      juzDetails: progress.juz.details?.slice(0, 5), // Log first 5 Juz
+      completedJuzNumbers: progress.juz.details?.filter(j => j.isComplete).map(j => j.juzNumber)
+    });
+  }, [progress, memorizedVerses.length]);
+
+  // Track badge level for display purposes only (celebration handled by progressStore)
+  useEffect(() => {
+    if (memorizedVerses.length === 0) return;
+    
+    const completedJuz = progress.juz.completed;
+    const currentBadge = calculateCurrentBadge(memorizedVerses, completedJuz);
+
+    // Update stored badge level for persistence
+    if (currentBadge.level > previousBadgeLevel.current) {
+      console.log(`📊 [BadgesScreen] Badge level updated: ${currentBadge.name} (level ${currentBadge.level})`);
+      previousBadgeLevel.current = currentBadge.level;
+      AsyncStorage.setItem('lastBadgeLevel', currentBadge.level.toString());
+    }
+  }, [memorizedVerses, progress.juz.completed]);
 
   // Badge definitions and logic
   const badges = useMemo(() => {
     const totalVerses = memorizedVerses.length;
     const completedJuz = progress.juz.completed;
     
-    // Check for specific 30th Juz completion (Surah 78-114)
-    const juz30SurahIds = Array.from({ length: 37 }, (_, i) => 78 + i);
-    let juz30VerseCount = 0;
-    let juz30TotalVerses = 0;
-    
-    juz30SurahIds.forEach(surahId => {
-      const surah = surahsData.find(s => s.id === surahId);
-      if (surah) {
-        juz30TotalVerses += surah.versesCount;
-        let startVerseId = 0;
-        for (let i = 1; i < surahId; i++) {
-          const prevSurah = surahsData.find(s => s.id === i);
-          if (prevSurah) startVerseId += prevSurah.versesCount;
-        }
-        const startVerse = startVerseId + 1;
-        const endVerse = startVerseId + surah.versesCount;
-        const memorizedInSurah = memorizedVerses.filter(id => id >= startVerse && id <= endVerse).length;
-        juz30VerseCount += memorizedInSurah;
-      }
-    });
-    
-    const isJuz30Complete = juz30VerseCount === juz30TotalVerses;
-    const juz30Progress = juz30TotalVerses > 0 ? (juz30VerseCount / juz30TotalVerses) * 100 : 0;
+    // Use the new Juz 30 calculation
+    const juz30Progress = getJuz30Progress(memorizedVerses);
+    const isJuz30Complete = juz30Progress.isComplete;
 
     return [
       {
@@ -85,11 +104,11 @@ export default function BadgesScreen() {
         name: 'Awwal Noor',
         description: 'First Light',
         icon: '✨',
-        requirement: 'Complete the 30th Juz (Juz Amma) - Surah 78 to 114',
+        requirement: 'Complete the 30th Juz (Juz Amma)',
         isUnlocked: isJuz30Complete,
-        progress: juz30Progress,
+        progress: juz30Progress.percentage,
         level: 1,
-        details: `${juz30VerseCount}/${juz30TotalVerses} verses memorized in Juz Amma`
+        details: `${juz30Progress.memorized}/${juz30Progress.total} verses memorized in Juz Amma`
       },
       // 3 Juz Completed
       {
