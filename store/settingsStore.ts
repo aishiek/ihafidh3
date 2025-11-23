@@ -39,6 +39,8 @@ export interface SettingsState extends AppSettings {
   infiniteLoop: boolean;
   notificationSettings: NotificationSettings;
   revisionReminderSettings: RevisionReminderSettings;
+  // Default number of verses per page used by Page Mode (global setting)
+  defaultVersesPerPage: number;
   lastDailyAyahDate: string | null;
   lastDailyAyahVerse: { surahId: number; verseNumber: number } | null;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
@@ -62,6 +64,7 @@ export interface SettingsState extends AppSettings {
   setNotificationSetting: (key: keyof NotificationSettings, value: boolean) => void;
   setRevisionReminderSettings: (settings: Partial<RevisionReminderSettings>) => void;
   setLastDailyAyah: (date: string, verse: { surahId: number; verseNumber: number }) => void;
+  setDefaultVersesPerPage: (v: number) => void;
   // Daily Ayah notification controls
   ayahDailyNotificationsEnabled?: boolean;
   setAyahDailyNotificationsEnabled?: (enabled: boolean) => void;
@@ -128,6 +131,8 @@ export const useSettingsStore = create<SettingsState>()(
       },
       lastDailyAyahDate: null,
       lastDailyAyahVerse: null,
+      // default Verses per page for Page Mode
+      defaultVersesPerPage: 15,
       
       setTheme: (theme) => set({ theme }),
       setRepeatMode: (repeatMode) => set({ repeatMode }),
@@ -186,6 +191,10 @@ export const useSettingsStore = create<SettingsState>()(
         })),
       setLastDailyAyah: (date, verse) =>
         set({ lastDailyAyahDate: date, lastDailyAyahVerse: verse }),
+      setDefaultVersesPerPage: (v: number) => {
+        const clamped = Math.max(3, Math.min(20, Math.floor(v) || 3));
+        set({ defaultVersesPerPage: clamped });
+      },
       };
     },
     {
@@ -241,6 +250,9 @@ export const useSettingsStore = create<SettingsState>()(
           (state as any).lastDailyAyahDate = (state as any).lastDailyAyahDate || null;
           // @ts-ignore - extend persisted state
           (state as any).lastDailyAyahVerse = (state as any).lastDailyAyahVerse || null;
+          // Ensure persisted default verses per page exists
+          // @ts-ignore - extend persisted state
+          (state as any).defaultVersesPerPage = (state as any).defaultVersesPerPage || 15;
         }
       },
     }

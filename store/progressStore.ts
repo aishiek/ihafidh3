@@ -27,11 +27,23 @@ type RevisionSchedule = { versesPerDay: number; surahsPerWeek: number[]; complet
 
 type VerseStatusEntry = { status: 'not_started' | 'memorized' | 'revised'; last_updated?: string };
 
+// Page mark entry: tracks when a page was marked memorized/revised
+type PageMark = {
+  scope: 'surah' | 'juz';
+  entityId: number; // surahId or juzNumber
+  pageIndex: number;
+  versesPerPage: number;
+  verseIds: number[]; // verses in this page
+  markedDate: string;
+  type: 'memorized' | 'revised';
+};
+
 export interface ProgressState {
   // persisted arrays / objects
   memorizedVerses: number[];
   memorizedVerseDates: Record<number, string>;
   revisedVerses: RevisedVerse[];
+  pageMarks: PageMark[]; // NEW: Track page-level marks
   dailyRevisedVerses: RevisionTracker[];
   weeklyRevisedVerses: RevisionTracker[];
   verseStatus: Record<number, VerseStatusEntry>;
@@ -76,6 +88,14 @@ export interface ProgressState {
   updateMemorizedVerses: (ids: number[]) => void;
   updateRevisedVerses: (ids: number[]) => void;
   
+  // NEW: Page-level tracking
+  markPageAsMemorized: (scope: 'surah' | 'juz', entityId: number, pageIndex: number, versesPerPage: number, verseIds: number[]) => void;
+  markPageAsRevised: (scope: 'surah' | 'juz', entityId: number, pageIndex: number, versesPerPage: number, verseIds: number[]) => void;
+  unmarkPageAsMemorized: (scope: 'surah' | 'juz', entityId: number, pageIndex: number) => void;
+  unmarkPageAsRevised: (scope: 'surah' | 'juz', entityId: number, pageIndex: number) => void;
+  getPageMarks: (scope: 'surah' | 'juz', entityId: number, type?: 'memorized' | 'revised') => PageMark[];
+  isPageMarked: (scope: 'surah' | 'juz', entityId: number, pageIndex: number, type: 'memorized' | 'revised') => boolean;
+  
   // NEW: Get activity data for charts (async to query database)
   getActivityData: () => Promise<{
     memorizedVerses: Array<{ date: string; count: number }>;
@@ -107,6 +127,7 @@ export const useProgressStore = create<ProgressState>()(
       memorizedVerses: [],
       memorizedVerseDates: {},
       revisedVerses: [],
+      pageMarks: [],
       dailyRevisedVerses: [],
       weeklyRevisedVerses: [],
       verseStatus: {},
@@ -526,6 +547,79 @@ export const useProgressStore = create<ProgressState>()(
         });
       },
 
+      // NEW: Page-level tracking
+      markPageAsMemorized: (scope, entityId, pageIndex, versesPerPage, verseIds) => {
+        set((s) => {
+          const existing = s.pageMarks.find(
+            (m) => m.scope === scope && m.entityId === entityId && m.pageIndex === pageIndex && m.type === 'memorized'
+          );
+          if (existing) return {}; // Already marked
+          
+          const newMark: PageMark = {
+            scope,
+            entityId,
+            pageIndex,
+            versesPerPage,
+            verseIds,
+            markedDate: formatDate(new Date()),
+            type: 'memorized',
+          };
+          
+          return { pageMarks: [...s.pageMarks, newMark] };
+        });
+      },
+
+      markPageAsRevised: (scope, entityId, pageIndex, versesPerPage, verseIds) => {
+        set((s) => {
+          const existing = s.pageMarks.find(
+            (m) => m.scope === scope && m.entityId === entityId && m.pageIndex === pageIndex && m.type === 'revised'
+          );
+          if (existing) return {}; // Already marked
+          
+          const newMark: PageMark = {
+            scope,
+            entityId,
+            pageIndex,
+            versesPerPage,
+            verseIds,
+            markedDate: formatDate(new Date()),
+            type: 'revised',
+          };
+          
+          return { pageMarks: [...s.pageMarks, newMark] };
+        });
+      },
+
+      unmarkPageAsMemorized: (scope, entityId, pageIndex) => {
+        set((s) => ({
+          pageMarks: s.pageMarks.filter(
+            (m) => !(m.scope === scope && m.entityId === entityId && m.pageIndex === pageIndex && m.type === 'memorized')
+          ),
+        }));
+      },
+
+      unmarkPageAsRevised: (scope, entityId, pageIndex) => {
+        set((s) => ({
+          pageMarks: s.pageMarks.filter(
+            (m) => !(m.scope === scope && m.entityId === entityId && m.pageIndex === pageIndex && m.type === 'revised')
+          ),
+        }));
+      },
+
+      getPageMarks: (scope, entityId, type) => {
+        const state = get();
+        return state.pageMarks.filter(
+          (m) => m.scope === scope && m.entityId === entityId && (!type || m.type === type)
+        );
+      },
+
+      isPageMarked: (scope, entityId, pageIndex, type) => {
+        const state = get();
+        return state.pageMarks.some(
+          (m) => m.scope === scope && m.entityId === entityId && m.pageIndex === pageIndex && m.type === type
+        );
+      },
+
       // NEW: Get activity data for charts - reads from database for accurate stats
       getActivityData: async () => {
         try {
@@ -622,6 +716,7 @@ export const useProgressStore = create<ProgressState>()(
         // Ensure all required arrays/objects exist
         if (!Array.isArray(state.memorizedVerses)) state.memorizedVerses = [];
         if (!Array.isArray(state.revisedVerses)) state.revisedVerses = [];
+        if (!Array.isArray(state.pageMarks)) state.pageMarks = [];
         if (!Array.isArray(state.dailyRevisedVerses)) state.dailyRevisedVerses = [];
         if (!Array.isArray(state.weeklyRevisedVerses)) state.weeklyRevisedVerses = [];
         if (!state.memorizedVerseDates) state.memorizedVerseDates = {};

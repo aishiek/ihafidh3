@@ -190,6 +190,10 @@ export async function playAudio(url: string, repeats: number = 1, callback?: (st
         return reject(new Error('Playback aborted'));
       }
 
+      // Only resolve when we have actually started playback and then observe didJustFinish.
+      // This prevents resolving immediately if the underlying player returns a stale didJustFinish state.
+      let started = false;
+
       const handler = async (s: any) => {
         try {
           onPlaybackStatus(s);
@@ -200,7 +204,12 @@ export async function playAudio(url: string, repeats: number = 1, callback?: (st
             return reject(new Error(s.error));
           }
 
-          if (s.didJustFinish) {
+          if (!started && s.isLoaded && s.isPlaying) {
+            started = true;
+          }
+
+          if (started && s.didJustFinish) {
+            // restore global status handler
             versePlayer?.setOnPlaybackStatusUpdate(onPlaybackStatus);
             return resolve();
           }
@@ -490,10 +499,31 @@ export async function stopAudio() {
   }
 
   try {
-    await player?.stopAsync();
-    await player?.unloadAsync();
-    await versePlayer?.stopAsync();
-    await versePlayer?.unloadAsync();
+    // Only call stop/unload if sound is loaded — avoids noisy `sound is not loaded` warnings
+    if (player) {
+      try {
+        const st = await player.getStatusAsync();
+        if (st.isLoaded) {
+          await player.stopAsync();
+          await player.unloadAsync();
+        }
+      } catch (e) {
+        // Be quiet on status errors — fallback to best effort unload
+        try { await player.unloadAsync(); } catch (_) {}
+      }
+    }
+
+    if (versePlayer) {
+      try {
+        const st2 = await versePlayer.getStatusAsync();
+        if (st2.isLoaded) {
+          await versePlayer.stopAsync();
+          await versePlayer.unloadAsync();
+        }
+      } catch (e) {
+        try { await versePlayer.unloadAsync(); } catch (_) {}
+      }
+    }
   } catch (e) {
     console.warn('AudioUtils: Error during stop:', e);
   }
@@ -512,8 +542,17 @@ export async function stopAudio() {
 
 export async function stopSurahAudio() {
   try {
-    await surahPlayer?.stopAsync();
-    await surahPlayer?.unloadAsync();
+    if (surahPlayer) {
+      try {
+        const st = await surahPlayer.getStatusAsync();
+        if (st.isLoaded) {
+          await surahPlayer.stopAsync();
+          await surahPlayer.unloadAsync();
+        }
+      } catch (e) {
+        try { await surahPlayer.unloadAsync(); } catch (_) {}
+      }
+    }
   } catch (e) {
     console.warn('AudioUtils: Error during surah stop:', e);
   }

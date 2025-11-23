@@ -1,4 +1,5 @@
 import { BackfillButton } from '@/components/BackfillButton';
+import PageSettings from '@/components/PageSettings';
 import Slider from '@/components/ui/Slider';
 import { useSettingsStore } from '@/store/settingsStore';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
@@ -54,12 +55,16 @@ export default function SettingsScreen() {
     arabicFont,
     setArabicFont,
     revisionReminderSettings,
-    setRevisionReminderSettings
+    setRevisionReminderSettings,
+    defaultVersesPerPage,
+    setDefaultVersesPerPage
   } = useSettingsStore();
   const arabicFamily = useMemo(() => getArabicFontFamily(arabicFont) || undefined, [arabicFont]);
   const [arabicPreview, setArabicPreview] = useState<number>(fontSizeArabic);
   const [transPreview, setTransPreview] = useState<number>(fontSizeTranslation);
   const [translitPreview, setTranslitPreview] = useState<number>(fontSizeTransliteration || 14);
+
+  const [pageSettingsVisible, setPageSettingsVisible] = useState(false);
 
   // Keep local previews in sync if store updates from elsewhere
   React.useEffect(() => {
@@ -732,6 +737,26 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Page Mode defaults */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Page Mode</Text>
+          <View style={styles.settingItem}>
+            <View style={styles.settingHeader}>
+              <View style={styles.iconContainer}>
+                <Book size={20} color="#FFD700" />
+              </View>
+              <View>
+                <Text style={styles.settingLabel}>Verses per page</Text>
+                <Text style={styles.settingDescription}>Default number of verses used by Page Mode (3–20)</Text>
+              </View>
+            </View>
+            <TouchableOpacity onPress={() => setPageSettingsVisible(true)} style={[styles.timeSelector, { paddingHorizontal: 16 }] } activeOpacity={0.8}>
+              <Text style={[styles.settingLabel, { fontSize: 16 }]}>{defaultVersesPerPage} verses</Text>
+              <Text style={styles.settingDescription}>Tap to change</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Arabic Font Style */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Arabic Font Style</Text>
@@ -818,6 +843,15 @@ export default function SettingsScreen() {
         <View style={styles.versionRow}>
           <Text style={styles.versionText}>Ver-2.0.0</Text>
         </View>
+        <PageSettings
+          visible={pageSettingsVisible}
+          currentValue={defaultVersesPerPage}
+          onSelect={(v) => {
+            setDefaultVersesPerPage(v);
+            setPageSettingsVisible(false);
+          }}
+          onClose={() => setPageSettingsVisible(false)}
+        />
       </ScrollView>
     </View>
   );

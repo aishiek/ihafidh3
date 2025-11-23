@@ -27,7 +27,8 @@ export class FastingNotificationService {
       try {
         Notifications.setNotificationHandler({
           handleNotification: async () => ({
-            shouldShowAlert: true,
+            shouldShowBanner: true,
+            shouldShowList: true,
             shouldPlaySound: true,
             shouldSetBadge: false,
           }),
@@ -206,14 +207,13 @@ export class FastingNotificationService {
         sound: true,
       };
 
-      // Add Android-specific channel
-      if (Platform.OS === 'android') {
-        notificationContent.channelId = 'fasting-reminders';
-      }
+      // Add Android-specific channel via trigger (channelId belongs on trigger / channel-aware triggers)
 
       // Prepare trigger - use date-based trigger
       const trigger: Notifications.NotificationTriggerInput = {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
         date: notificationDate,
+        ...(Platform.OS === 'android' && { channelId: 'fasting-reminders' }),
       };
 
       // Schedule the notification
@@ -344,10 +344,7 @@ export class FastingNotificationService {
         sound: true,
       };
 
-      // Add Android-specific channel
-      if (Platform.OS === 'android') {
-        notificationContent.channelId = 'fasting-reminders';
-      }
+      // For immediate scheduling with Android channel, pass channel via trigger
 
       await Notifications.scheduleNotificationAsync({
         content: notificationContent,

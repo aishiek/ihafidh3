@@ -1,6 +1,6 @@
 import React from 'react';
-import { TouchableOpacity, View, Text, StyleSheet, ViewStyle } from 'react-native';
-import Svg, { Rect, Line } from 'react-native-svg';
+import { StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import Svg, { Line, Rect } from 'react-native-svg';
 
 type Props = {
   onPress?: () => void;

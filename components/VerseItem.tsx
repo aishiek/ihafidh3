@@ -29,6 +29,10 @@ interface VerseItemProps {
   onSurahRevisionToggle?: () => void;
   moveToVerse?: (verseNumber: number) => boolean | Promise<boolean>;
   isCurrentlyPlaying?: boolean;
+  // Page mode playback visuals
+  pageIsPlaying?: boolean;
+  pageIsCompleted?: boolean;
+  pageRepeatInfo?: string | undefined;
   juzSequenceNumber?: number;
   totalJuzVerses?: number;
   source?: 'surahList' | 'juzList' | 'mustahabbah';
@@ -65,6 +69,9 @@ const VerseItem = ({
   moveToVerse,
   source = 'surahList',
   isCurrentlyPlaying = false,
+  pageIsPlaying = false,
+  pageIsCompleted = false,
+  pageRepeatInfo,
   juzSequenceNumber,
   totalJuzVerses,
   ...rest
@@ -172,11 +179,33 @@ const VerseItem = ({
   const arabicFamily = useMemo(() => getArabicFontFamily(arabicFont as any), [arabicFont]);
   const arabicTypography = useMemo(() => getArabicTypographySizing(fontSizeArabic, arabicFont as any), [fontSizeArabic, arabicFont]);
 
-  const arabicText = useMemo(() => verse.arabicText?.trim() || 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ', [verse.arabicText]);
-  const defaultTranslation = 'In the name of Allah, the Entirely Merciful, the Especially Merciful.';
+  // Only treat Bismillah as the verse text when this item represents an explicit
+  // Bismillah verse (verseNumber === 0 or negative id used by DB). Do NOT fall
+  // back to Bismillah for missing/empty arabicText — that caused Bismillah to
+  // appear for unrelated verses when list items were recycled.
+  const arabicText = useMemo(() => {
+    const txt = typeof verse.arabicText === 'string' ? verse.arabicText.trim() : '';
+    if (txt && txt.length > 0) return txt;
+    // DB uses verseNumber === 0 or negative IDs for synthetic Bismillah entries
+    const vnum = (verse as any).verseNumber;
+    const vid = (verse as any).id;
+    if (vnum === 0 || (typeof vid === 'number' && vid < 0)) {
+      return 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';
+    }
+    // No arabic text available — return empty string to avoid showing Bismillah
+    return '';
+  }, [verse.arabicText, (verse as any).verseNumber, (verse as any).id]);
+  // No fallback translation for missing Arabic to avoid showing Bismillah text
+  // incorrectly for other verses when data is missing.
+  const defaultTranslation = '';
 
   // ============ DISPLAY VALUES ============
-  const displayedArabic = useMemo(() => localData.arabic || arabicText, [localData.arabic, arabicText]);
+  // Prefer explicitly loaded local data; otherwise use computed arabicText.
+  // If neither is present, show an empty string (prevents accidental Bismillah fallbacks).
+  const displayedArabic = useMemo(() => {
+    if (localData.arabic && localData.arabic.trim().length > 0) return localData.arabic;
+    return arabicText || '';
+  }, [localData.arabic, arabicText]);
 
   // Simplified: prefer remote (English) transliteration when available, then local cache.
   const displayedTransliteration = useMemo(() => {
@@ -193,6 +222,24 @@ const VerseItem = ({
   const containerStyle = useMemo(() => {
     const isMemorized = memorized || surahMemorizedGlobally;
     const isRevised = revised || surahRevisedGlobally;
+
+    // Page-mode PLAYING state takes precedence (blue)
+    if (pageIsPlaying) {
+      return {
+        backgroundColor: '#1E3A8A',
+        borderColor: '#3B82F6',
+        borderWidth: 2,
+      };
+    }
+
+    // Page-mode COMPLETED state (green border) has next precedence
+    if (pageIsCompleted) {
+      return {
+        backgroundColor: '#1a1a1a',
+        borderColor: '#10B981',
+        borderWidth: 2,
+      };
+    }
 
     if (isMemorized && isRevised) {
       return {
@@ -224,7 +271,7 @@ const VerseItem = ({
       borderColor: '#ffffff',
       borderWidth: 1,
     };
-  }, [memorized, surahMemorizedGlobally, revised, surahRevisedGlobally]);
+  }, [memorized, surahMemorizedGlobally, revised, surahRevisedGlobally, pageIsPlaying, pageIsCompleted]);
 
   // ============ TAJWEED COMPUTATIONS ============
   const tajweedTextRaw = (verse as any).tajweedText || null;
@@ -572,7 +619,9 @@ const VerseItem = ({
       // For Juz mode, use Arabic name in English (e.g., "Al-Fatihah" not "The Opening")
       const chapterId = (verse as any).chapter_id || verse.surahId;
       const surah = surahsData.find(s => s.id === chapterId);
-      const surahInfo = surah ? `${chapterId}: ${surah.name}` : `Surah ${chapterId}`;
+      // prefer englishName, then name; avoid undefined showing in UI
+      const surahName = surah ? (surah.englishName || surah.name) : undefined;
+      const surahInfo = surahName ? `${chapterId}: ${surahName}` : `Surah ${chapterId}`;
       
       // Add sequence number if available (using != null to catch both null and undefined)
       if (juzSequenceNumber != null && totalJuzVerses != null) {
@@ -601,10 +650,15 @@ const VerseItem = ({
   return (
     <Pressable ref={forwardedRef as any} style={[styles.container, containerStyle]}>
       <View style={styles.header}>
-        <View style={[styles.verseNumber, { backgroundColor: primary }]}> 
+        <View style={[styles.verseNumber, { backgroundColor: primary, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }]}> 
           <Text style={[styles.verseNumberText, { color: '#ffffff' }]}> 
             {verse.verseNumber} 
-          </Text> 
+          </Text>
+          {pageIsCompleted && (
+            <View style={{ marginLeft: 6, backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+              <Check size={14} color="#10B981" />
+            </View>
+          )}
         </View>
 
         <View style={styles.verseInfo}> 
@@ -693,6 +747,12 @@ const VerseItem = ({
       </View>
 
           {/* Arabic / Tajweed rendering */}
+          {pageIsPlaying && (
+            <View style={{ marginTop: 8, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8, backgroundColor: '#1E3A8A', borderColor: '#3B82F6', borderWidth: 1, alignSelf: 'flex-start' }}>
+              <Text style={{ color: '#e6f0ff', fontWeight: '700' }}>🔊 Playing{pageRepeatInfo ? ` ${pageRepeatInfo}` : ''}</Text>
+            </View>
+          )}
+
           {shouldUseTajweed ? (
             <TajweedVerse
               verse={normalizedTajweedText || displayedArabic}

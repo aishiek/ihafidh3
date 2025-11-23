@@ -2,10 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import type { FlashListRef } from '@shopify/flash-list';
 import { FlashList } from '@shopify/flash-list';
+import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, ArrowRight, Check, Pause, Play, RefreshCw, Search, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import * as Haptics from 'expo-haptics';
 import PageAudioManager, { AudioState, getPageAudioManager } from '../audio/PageAudioManager';
 
 import {
@@ -43,8 +43,8 @@ import { useThemeColor } from '@/utils/useThemeColor';
 import { getAverageVerseHeight } from '@/utils/verseLayoutUtils';
 import { AutoSizeText, ResizeTextMode } from 'react-native-auto-size-text';
 // Page audio indicator removed from header (compacting UI)
-import PageModeConfig from '@/components/PageModeConfig';
 import PageModeButton from '@/components/PageModeButton';
+import PageModeConfig from '@/components/PageModeConfig';
 import { calculatePages } from '@/utils/pageUtils';
 
 export default function ReadScreen() {
