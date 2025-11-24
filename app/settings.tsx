@@ -6,19 +6,20 @@ import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtil
 import { useCustomColors } from '@/utils/themeUtils';
 import { router, Stack } from 'expo-router';
 import {
-    ArrowLeft,
-    Bell,
-    Book,
-    Check,
-    ChevronRight,
-    Clock,
-    Moon,
-    Palette,
-    RotateCcw,
-    Sun,
-    Target,
-    User,
-    Volume2
+  ArrowLeft,
+  Bell,
+  Book,
+  Check,
+  ChevronRight,
+  Clock,
+  FileText,
+  Moon,
+  Palette,
+  RotateCcw,
+  Sun,
+  Target,
+  User,
+  Volume2
 } from 'lucide-react-native';
 import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -28,7 +29,7 @@ import { runFullDiagnostic } from './mushaf/utils/mushafDiagnostics';
 
 export default function SettingsScreen() {
   const colors = useCustomColors();
-  
+
   const {
     userName,
     setUserName,
@@ -56,6 +57,8 @@ export default function SettingsScreen() {
     setArabicFont,
     revisionReminderSettings,
     setRevisionReminderSettings,
+    pageReminderSettings,
+    setPageReminderSettings,
     defaultVersesPerPage,
     setDefaultVersesPerPage
   } = useSettingsStore();
@@ -81,26 +84,44 @@ export default function SettingsScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fontSizeTransliteration]);
   const arabicTypo = useMemo(() => getArabicTypographySizing(arabicPreview, arabicFont), [arabicPreview, arabicFont]);
-  
+
   const { themeMode, colorScheme, setThemeMode, setColorScheme } = useThemeStore();
-  const { 
-    dailyRevisionTarget, 
-    weeklyRevisionTarget, 
-    setDailyRevisionTarget, 
-    setWeeklyRevisionTarget 
+  const {
+    dailyRevisionTarget,
+    weeklyRevisionTarget,
+    setDailyRevisionTarget,
+    setWeeklyRevisionTarget
   } = useActivityStore();
-  
+
   const [localName, setLocalName] = useState(userName);
-  
+
   const handleNameChange = (text: string) => {
     setLocalName(text);
     setUserName(text);
   };
-  
-  
+
+
 
   const handleBack = () => {
     router.back();
+  };
+
+  // Local editable input for revision reminder days (allow empty while typing)
+  const [revisionDaysInput, setRevisionDaysInput] = React.useState(
+    revisionReminderSettings.daysThreshold.toString()
+  );
+
+  React.useEffect(() => {
+    setRevisionDaysInput(revisionReminderSettings.daysThreshold.toString());
+  }, [revisionReminderSettings.daysThreshold]);
+
+  const commitRevisionDaysInput = (text?: string) => {
+    const value = text ?? revisionDaysInput;
+    const parsed = parseInt(value, 10);
+    const defaultDays = 3;
+    const clamped = Number.isNaN(parsed) ? defaultDays : Math.min(30, Math.max(1, parsed));
+    setRevisionReminderSettings({ ...revisionReminderSettings, daysThreshold: clamped });
+    setRevisionDaysInput(clamped.toString());
   };
 
   const colorSchemes: { value: ColorScheme; label: string; color: string }[] = [
@@ -112,18 +133,18 @@ export default function SettingsScreen() {
 
   const dailyTargets = [3, 5, 10, 15, 20];
   const weeklyTargets = [1, 2, 3, 5, 7];
-  
+
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ 
+      <Stack.Screen options={{
         title: 'Settings',
         headerStyle: {
           backgroundColor: '#000000',
         },
         headerTintColor: '#ffffff',
       }} />
-      
-      <ScrollView 
+
+      <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -135,11 +156,11 @@ export default function SettingsScreen() {
           <Text style={styles.headerTitle}>Settings</Text>
           <View style={{ width: 40 }} />
         </View>
-        
+
         {/* User Information Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>User Information</Text>
-          
+
           <View style={styles.inputContainer}>
             <View style={styles.inputHeader}>
               <View style={styles.iconContainer}>
@@ -156,11 +177,11 @@ export default function SettingsScreen() {
             />
           </View>
         </View>
-        
+
         {/* Mushaf Settings */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Mushaf Layouts</Text>
-          
+
           <TouchableOpacity
             style={styles.navigationItem}
             onPress={() => router.push('/mushaf/settings')}
@@ -180,7 +201,7 @@ export default function SettingsScreen() {
             </View>
           </TouchableOpacity>
         </View>
-        
+
         {/* Theme Settings */}
 
         {/* Translation Language Selector */}
@@ -201,7 +222,7 @@ export default function SettingsScreen() {
         </View>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Appearance</Text>
-          
+
           {/* Theme Mode */}
           <View style={styles.settingItem}>
             <View style={styles.settingRow}>
@@ -264,11 +285,11 @@ export default function SettingsScreen() {
             </View>
           </View>
         </View>
-        
+
         {/* Notifications */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notifications</Text>
-          
+
           {/* Daily Ayah Notification */}
           <View style={styles.settingItem}>
             <View style={styles.settingRow}>
@@ -285,7 +306,7 @@ export default function SettingsScreen() {
               </View>
               <Switch
                 value={false}
-                onValueChange={() => {}}
+                onValueChange={() => { }}
                 trackColor={{ false: '#444444', true: '#4CAF5080' }}
                 thumbColor={false ? '#4CAF50' : '#888888'}
                 ios_backgroundColor="#444444"
@@ -309,7 +330,7 @@ export default function SettingsScreen() {
               </View>
               <Switch
                 value={false}
-                onValueChange={() => {}}
+                onValueChange={() => { }}
                 trackColor={{ false: '#444444', true: '#2196F380' }}
                 thumbColor={false ? '#2196F3' : '#888888'}
                 ios_backgroundColor="#444444"
@@ -333,7 +354,7 @@ export default function SettingsScreen() {
               </View>
               <Switch
                 value={false}
-                onValueChange={() => {}}
+                onValueChange={() => { }}
                 trackColor={{ false: '#444444', true: '#FF980080' }}
                 thumbColor={false ? '#FF9800' : '#888888'}
                 ios_backgroundColor="#444444"
@@ -357,7 +378,7 @@ export default function SettingsScreen() {
               </View>
               <Switch
                 value={false}
-                onValueChange={() => {}}
+                onValueChange={() => { }}
                 trackColor={{ false: '#444444', true: '#9C27B080' }}
                 thumbColor={false ? '#9C27B0' : '#888888'}
                 ios_backgroundColor="#444444"
@@ -381,7 +402,7 @@ export default function SettingsScreen() {
               </View>
               <Switch
                 value={revisionReminderSettings.enabled}
-                onValueChange={(enabled) => 
+                onValueChange={(enabled) =>
                   setRevisionReminderSettings({ ...revisionReminderSettings, enabled })
                 }
                 trackColor={{ false: '#444444', true: '#FF572280' }}
@@ -395,16 +416,13 @@ export default function SettingsScreen() {
                 <View style={styles.daysInputContainer}>
                   <TextInput
                     style={styles.daysInput}
-                    value={revisionReminderSettings.daysThreshold.toString()}
+                    value={revisionDaysInput}
                     onChangeText={(text) => {
-                      const days = parseInt(text) || 3;
-                      if (days >= 1 && days <= 30) {
-                        setRevisionReminderSettings({ 
-                          ...revisionReminderSettings, 
-                          daysThreshold: days 
-                        });
-                      }
+                      const digitsOnly = text.replace(/[^0-9]/g, '');
+                      setRevisionDaysInput(digitsOnly);
                     }}
+                    onBlur={() => commitRevisionDaysInput()}
+                    onSubmitEditing={() => commitRevisionDaysInput()}
                     keyboardType="number-pad"
                     maxLength={2}
                   />
@@ -413,12 +431,38 @@ export default function SettingsScreen() {
               </View>
             )}
           </View>
+
+          {/* Page Revision Reminder */}
+          <View style={styles.settingItem}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <View style={styles.iconContainer}>
+                  <FileText size={20} color="#4ECDC4" />
+                </View>
+                <View>
+                  <Text style={styles.settingLabel}>Page Revision Reminder</Text>
+                  <Text style={styles.settingDescription}>
+                    Get notified when daily/weekly page goals are incomplete
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={pageReminderSettings?.enabled || false}
+                onValueChange={(enabled) =>
+                  setPageReminderSettings({ enabled })
+                }
+                trackColor={{ false: '#444444', true: '#4ECDC480' }}
+                thumbColor={pageReminderSettings?.enabled ? '#4ECDC4' : '#888888'}
+                ios_backgroundColor="#444444"
+              />
+            </View>
+          </View>
         </View>
-        
+
         {/* Revision Goals */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Revision Goals</Text>
-          
+
           {/* Daily Target */}
           <View style={styles.settingItem}>
             <View style={styles.settingHeader}>
@@ -481,11 +525,11 @@ export default function SettingsScreen() {
             </View>
           </View>
         </View>
-        
+
         {/* Audio Settings */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Audio Settings</Text>
-          
+
           <View style={styles.settingItem}>
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
@@ -539,11 +583,11 @@ export default function SettingsScreen() {
             </View>
           </View>
         </View>
-        
+
         {/* Notification Settings */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notifications</Text>
-          
+
           {/* Ayah of the Day Notification Toggle (single, fixed) */}
           <View style={styles.settingItem}>
             <View style={styles.settingRow}>
@@ -750,7 +794,7 @@ export default function SettingsScreen() {
                 <Text style={styles.settingDescription}>Default number of verses used by Page Mode (3–20)</Text>
               </View>
             </View>
-            <TouchableOpacity onPress={() => setPageSettingsVisible(true)} style={[styles.timeSelector, { paddingHorizontal: 16 }] } activeOpacity={0.8}>
+            <TouchableOpacity onPress={() => setPageSettingsVisible(true)} style={[styles.timeSelector, { paddingHorizontal: 16 }]} activeOpacity={0.8}>
               <Text style={[styles.settingLabel, { fontSize: 16 }]}>{defaultVersesPerPage} verses</Text>
               <Text style={styles.settingDescription}>Tap to change</Text>
             </TouchableOpacity>
@@ -760,7 +804,7 @@ export default function SettingsScreen() {
         {/* Arabic Font Style */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Arabic Font Style</Text>
-          
+
           <View style={styles.settingItem}>
             <View style={styles.settingHeader}>
               <View style={styles.iconContainer}>

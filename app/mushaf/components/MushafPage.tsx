@@ -1,3 +1,4 @@
+import { useThemeStore } from '@/store/themeStore';
 import { useRoute } from '@react-navigation/native';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -29,19 +30,19 @@ const PAGE_HEIGHT = 866;
 
 export function MushafPage(props: MushafPageProps) {
   const route = useRoute();
-  
+
   // Get page number from multiple sources (priority order)
   const getPageNumber = (): number => {
     // 1. From props
     if (props.pageNumber !== undefined && props.pageNumber > 0) {
       return props.pageNumber;
     }
-    
+
     // 2. From route params
     if ((route as any)?.params?.pageNumber !== undefined) {
       return (route as any).params.pageNumber;
     }
-    
+
     // 3. Default to page 1
     console.warn('[MushafPage] pageNumber not provided, defaulting to page 1');
     return 1;
@@ -60,6 +61,9 @@ export function MushafPage(props: MushafPageProps) {
     error: null,
   });
 
+  const { themeMode } = useThemeStore();
+  const isDark = themeMode === 'dark';
+
   useEffect(() => {
     const currentPage = getPageNumber();
     console.log(`[MushafPage] Loading page ${currentPage}`);
@@ -76,7 +80,7 @@ export function MushafPage(props: MushafPageProps) {
       // Load image
       const imageUri = await getPageImageUri(pageNum);
       console.log(`[MushafPage] Image URI: ${imageUri ? 'Found' : 'Not found'}`);
-      
+
       if (!imageUri) {
         throw new Error(`Page image not found for page ${pageNum}`);
       }
@@ -88,10 +92,10 @@ export function MushafPage(props: MushafPageProps) {
       console.log(`[MushafPage] Loaded ${wordBoxes.length} word boxes`);
 
       setState({
-  imageUri,
-  wordBoxes: wordBoxes,
-  loading: false,
-  error: null,
+        imageUri,
+        wordBoxes: wordBoxes,
+        loading: false,
+        error: null,
       });
 
       console.log(
@@ -138,7 +142,7 @@ export function MushafPage(props: MushafPageProps) {
   // Calculate dimensions to fit the screen while maintaining aspect ratio
   const windowWidth = Dimensions.get('window').width;
   const windowHeight = Dimensions.get('window').height - 180; // Account for header and footer
-  
+
   // Calculate scale to fit width while maintaining aspect ratio
   const scale = Math.min(
     (windowWidth - 16) / PAGE_WIDTH, // 16 = horizontal padding
@@ -146,8 +150,8 @@ export function MushafPage(props: MushafPageProps) {
   ) * 0.95; // 95% of max possible scale to ensure it fits
 
   return (
-    <ScrollView 
-      style={[styles.container, { alignItems: undefined, justifyContent: undefined }]}
+    <ScrollView
+      style={[styles.container, { backgroundColor: isDark ? '#000000' : '#f5f5f5', alignItems: undefined, justifyContent: undefined }]}
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
       contentInsetAdjustmentBehavior="automatic"
@@ -160,6 +164,7 @@ export function MushafPage(props: MushafPageProps) {
             width: PAGE_WIDTH * scale,
             height: PAGE_HEIGHT * scale,
             maxWidth: '100%',
+            backgroundColor: isDark ? '#1a1a1a' : '#ffffff',
           },
         ]}
       >
@@ -185,7 +190,7 @@ export function MushafPage(props: MushafPageProps) {
         />
 
         {/* Page number badge (overlay) */}
-        <View style={[styles.pageNumberBadge, { right: 8, bottom: 8 }]}> 
+        <View style={[styles.pageNumberBadge, { right: 8, bottom: 8 }]}>
           <Text style={[styles.pageNumberText, { fontSize: Math.max(12 * scale, 10) }]}>{pageNumber}</Text>
         </View>
 
@@ -238,9 +243,9 @@ async function getPageImageUri(pageNumber: number): Promise<string | null> {
       'warsh_15': 'warsh',
       'tajweed': 'tajweed',
     };
-  const dirName = layoutDirs[layoutId] || 'indopak';
-  // Real-world: Madina archive currently mixed (.jpg & .png). Treat non-Indopak as potentially both.
-  const extCandidates = layoutId === 'indopak_15' ? ['png'] : ['jpg','png'];
+    const dirName = layoutDirs[layoutId] || 'indopak';
+    // Real-world: Madina archive currently mixed (.jpg & .png). Treat non-Indopak as potentially both.
+    const extCandidates = layoutId === 'indopak_15' ? ['png'] : ['jpg', 'png'];
     const baseDir = `${MUSHAF_CACHE_DIR}/images/${dirName}`;
     const topLevelDir = `${MUSHAF_CACHE_DIR}/${dirName}`;
     const legacyDir = `${MUSHAF_CACHE_DIR}/images`;
@@ -267,7 +272,7 @@ async function getPageImageUri(pageNumber: number): Promise<string | null> {
       for (const path of indoPakCandidates) {
         try {
           const exists = await RNFS.exists(path);
-          console.log(`  ${exists ? '✅' : '❌'} ${path.replace(/^.*\/mushaf\//,'mushaf/').split('/').slice(-2).join('/')}`);
+          console.log(`  ${exists ? '✅' : '❌'} ${path.replace(/^.*\/mushaf\//, 'mushaf/').split('/').slice(-2).join('/')}`);
           if (exists) return ensureFileUri(path) as string;
         } catch (e) {
           // continue
@@ -357,7 +362,7 @@ async function loadWordCoordinates(pageNumber: number): Promise<WordBox[]> {
   try {
     const jsonPath = `${JSON_DIR}/${pageNumber}.json`;
     console.log(`[loadWordCoordinates] Loading: ${jsonPath}`);
-    
+
     const exists = await RNFS.exists(jsonPath);
 
     if (!exists) {

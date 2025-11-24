@@ -27,6 +27,10 @@ export interface RevisionReminderSettings {
   daysThreshold: number; // Days after memorization to remind (default 3)
 }
 
+export interface PageReminderSettings {
+  enabled: boolean;
+}
+
 export interface SettingsState extends AppSettings {
   userName: string;
   userEmail: string;
@@ -39,6 +43,7 @@ export interface SettingsState extends AppSettings {
   infiniteLoop: boolean;
   notificationSettings: NotificationSettings;
   revisionReminderSettings: RevisionReminderSettings;
+  pageReminderSettings: PageReminderSettings;
   // Default number of verses per page used by Page Mode (global setting)
   defaultVersesPerPage: number;
   lastDailyAyahDate: string | null;
@@ -63,6 +68,7 @@ export interface SettingsState extends AppSettings {
   setInfiniteLoop: (enabled: boolean) => void;
   setNotificationSetting: (key: keyof NotificationSettings, value: boolean) => void;
   setRevisionReminderSettings: (settings: Partial<RevisionReminderSettings>) => void;
+  setPageReminderSettings: (settings: Partial<PageReminderSettings>) => void;
   setLastDailyAyah: (date: string, verse: { surahId: number; verseNumber: number }) => void;
   setDefaultVersesPerPage: (v: number) => void;
   // Daily Ayah notification controls
@@ -77,10 +83,10 @@ const initializeStore = async (set: any) => {
       AsyncStorage.getItem('user_name'),
       AsyncStorage.getItem('user_email')
     ]);
-    
+
     if (userName) {
       console.log('Initializing store with values from AsyncStorage:', { userName });
-      set({ 
+      set({
         userName: userName || '',
       });
     }
@@ -97,104 +103,114 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => {
       // Initialize store when created
       initializeStore(set);
-      
+
       return {
-      theme: 'dark',
-      repeatMode: 1,
-      fontSizeArabic: 24,
-      fontSizeTranslation: 16,
-      fontSizeTransliteration: 14,
-      showTranslation: true,
-      showTransliteration: false,
-      autoPlayAudio: false,
-      notificationsEnabled: false,
-      reminderTime: '09:00',
-      userName: '',
-    userEmail: '',
-      quizVerseCount: 5,
-      translationLanguage: 'en.sahih',
-      reciterIdentifier: 'ar.alafasy',
-      arabicFont: 'default',
-      playbackSpeed: DEFAULT_PLAYBACK_SPEED,
-      infiniteLoop: false,
-  ayahDailyNotificationsEnabled: false,
-      notificationSettings: {
-        dailyAyah: false,
-        dailyVerseReminder: false,
-        weeklySurahsReminder: false,
-        hifdhPlannerReminder: false,
-        revisionReminder: false,
-      },
-      revisionReminderSettings: {
-        enabled: false, // Disabled by default as requested
-        daysThreshold: 3, // Default 3 days
-      },
-      lastDailyAyahDate: null,
-      lastDailyAyahVerse: null,
-      // default Verses per page for Page Mode
-      defaultVersesPerPage: 15,
-      
-      setTheme: (theme) => set({ theme }),
-      setRepeatMode: (repeatMode) => set({ repeatMode }),
-      setFontSizeArabic: (fontSizeArabic) => set({ fontSizeArabic }),
-      setFontSizeTransliteration: (fontSizeTransliteration) => set({ fontSizeTransliteration }),
-      setFontSizeTranslation: (fontSizeTranslation) => set({ fontSizeTranslation }),
-      setArabicFont: (arabicFont) => {
-        // Handle case where 'tajweed' might be in AsyncStorage from previous version
-        const font = (arabicFont === 'tajweed') ? 'scheherazade' : 
-                   (['default', 'uthman-taha', 'scheherazade', 'scheherazade-bold', 'indo-pak', 'amiri-quran', 'noto-naskh'].includes(arabicFont) 
-                     ? arabicFont 
-                     : 'default');
-        set({ arabicFont: font });
-      },
-      setShowTranslation: (showTranslation) => set({ showTranslation }),
-      setShowTransliteration: (showTransliteration) => set({ showTransliteration }),
-      setAutoPlayAudio: (autoPlayAudio) => set({ autoPlayAudio }),
+        theme: 'dark',
+        repeatMode: 1,
+        fontSizeArabic: 24,
+        fontSizeTranslation: 16,
+        fontSizeTransliteration: 14,
+        showTranslation: true,
+        showTransliteration: false,
+        autoPlayAudio: false,
+        notificationsEnabled: false,
+        reminderTime: '09:00',
+        userName: '',
+        userEmail: '',
+        quizVerseCount: 5,
+        translationLanguage: 'en.sahih',
+        reciterIdentifier: 'ar.alafasy',
+        arabicFont: 'default',
+        playbackSpeed: DEFAULT_PLAYBACK_SPEED,
+        infiniteLoop: false,
+        ayahDailyNotificationsEnabled: false,
+        notificationSettings: {
+          dailyAyah: false,
+          dailyVerseReminder: false,
+          weeklySurahsReminder: false,
+          hifdhPlannerReminder: false,
+          revisionReminder: false,
+        },
+        revisionReminderSettings: {
+          enabled: false, // Disabled by default as requested
+          daysThreshold: 3, // Default 3 days
+        },
+        pageReminderSettings: {
+          enabled: false, // Disabled by default
+        },
+        lastDailyAyahDate: null,
+        lastDailyAyahVerse: null,
+        // default Verses per page for Page Mode
+        defaultVersesPerPage: 15,
+
+        setTheme: (theme) => set({ theme }),
+        setRepeatMode: (repeatMode) => set({ repeatMode }),
+        setFontSizeArabic: (fontSizeArabic) => set({ fontSizeArabic }),
+        setFontSizeTransliteration: (fontSizeTransliteration) => set({ fontSizeTransliteration }),
+        setFontSizeTranslation: (fontSizeTranslation) => set({ fontSizeTranslation }),
+        setArabicFont: (arabicFont) => {
+          // Handle case where 'tajweed' might be in AsyncStorage from previous version
+          const font = (arabicFont === 'tajweed') ? 'scheherazade' :
+            (['default', 'uthman-taha', 'scheherazade', 'scheherazade-bold', 'indo-pak', 'amiri-quran', 'noto-naskh'].includes(arabicFont)
+              ? arabicFont
+              : 'default');
+          set({ arabicFont: font });
+        },
+        setShowTranslation: (showTranslation) => set({ showTranslation }),
+        setShowTransliteration: (showTransliteration) => set({ showTransliteration }),
+        setAutoPlayAudio: (autoPlayAudio) => set({ autoPlayAudio }),
         setNotificationsEnabled: (notificationsEnabled) => set({ notificationsEnabled }),
         setReminderTime: (reminderTime) => set({ reminderTime }),
-  setAyahDailyNotificationsEnabled: (enabled: boolean) => set({ ayahDailyNotificationsEnabled: enabled }),
-              setUserName: (userName) => {
-        console.log('Setting userName in store:', userName);
-        set({ userName });
-      },
-      setUserEmail: (userEmail) => {
-        // Basic email validation
-        if (userEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userEmail)) {
-          console.warn('Invalid email format');
-          return;
-        }
-        AsyncStorage.setItem('user_email', userEmail || '');
-        set({ userEmail: userEmail || '' });
-      },
-      setQuizVerseCount: (quizVerseCount) => set({ quizVerseCount }),
-      setTranslationLanguage: (translationLanguage) => set({ translationLanguage }),
-      setReciterIdentifier: (reciterIdentifier) => {
-        // Clear audio cache when changing reciter
-        clearAudioCache();
-        set({ reciterIdentifier });
-      },
-      setPlaybackSpeed: (playbackSpeed) => set({ playbackSpeed }),
-      setInfiniteLoop: (infiniteLoop) => set({ infiniteLoop }),
-      setNotificationSetting: (key, value) =>
-        set((state) => ({
-          notificationSettings: {
-            ...state.notificationSettings,
-            [key]: value,
-          },
-        })),
-      setRevisionReminderSettings: (settings) =>
-        set((state) => ({
-          revisionReminderSettings: {
-            ...state.revisionReminderSettings,
-            ...settings,
-          },
-        })),
-      setLastDailyAyah: (date, verse) =>
-        set({ lastDailyAyahDate: date, lastDailyAyahVerse: verse }),
-      setDefaultVersesPerPage: (v: number) => {
-        const clamped = Math.max(3, Math.min(20, Math.floor(v) || 3));
-        set({ defaultVersesPerPage: clamped });
-      },
+        setAyahDailyNotificationsEnabled: (enabled: boolean) => set({ ayahDailyNotificationsEnabled: enabled }),
+        setUserName: (userName) => {
+          console.log('Setting userName in store:', userName);
+          set({ userName });
+        },
+        setUserEmail: (userEmail) => {
+          // Basic email validation
+          if (userEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userEmail)) {
+            console.warn('Invalid email format');
+            return;
+          }
+          AsyncStorage.setItem('user_email', userEmail || '');
+          set({ userEmail: userEmail || '' });
+        },
+        setQuizVerseCount: (quizVerseCount) => set({ quizVerseCount }),
+        setTranslationLanguage: (translationLanguage) => set({ translationLanguage }),
+        setReciterIdentifier: (reciterIdentifier) => {
+          // Clear audio cache when changing reciter
+          clearAudioCache();
+          set({ reciterIdentifier });
+        },
+        setPlaybackSpeed: (playbackSpeed) => set({ playbackSpeed }),
+        setInfiniteLoop: (infiniteLoop) => set({ infiniteLoop }),
+        setNotificationSetting: (key, value) =>
+          set((state) => ({
+            notificationSettings: {
+              ...state.notificationSettings,
+              [key]: value,
+            },
+          })),
+        setRevisionReminderSettings: (settings) =>
+          set((state) => ({
+            revisionReminderSettings: {
+              ...state.revisionReminderSettings,
+              ...settings,
+            },
+          })),
+        setPageReminderSettings: (settings) =>
+          set((state) => ({
+            pageReminderSettings: {
+              ...state.pageReminderSettings,
+              ...settings,
+            },
+          })),
+        setLastDailyAyah: (date, verse) =>
+          set({ lastDailyAyahDate: date, lastDailyAyahVerse: verse }),
+        setDefaultVersesPerPage: (v: number) => {
+          const clamped = Math.max(3, Math.min(20, Math.floor(v) || 3));
+          set({ defaultVersesPerPage: clamped });
+        },
       };
     },
     {
@@ -216,6 +232,12 @@ export const useSettingsStore = create<SettingsState>()(
             state.revisionReminderSettings = {
               enabled: false,
               daysThreshold: 3,
+            };
+          }
+          // Ensure page reminder settings exist
+          if (!(state as any).pageReminderSettings) {
+            (state as any).pageReminderSettings = {
+              enabled: false,
             };
           }
           // @ts-ignore add new field default

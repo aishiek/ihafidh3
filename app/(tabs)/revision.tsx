@@ -1,6 +1,8 @@
 import MonthlyHifdhCalendar from '@/components/MonthlyHifdhCalendar';
 import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
+import { RevisionGoals } from '@/types/revision';
+import { getPageProgressForDate, loadRevisionGoals, saveRevisionGoals } from '@/utils/revisionTracking';
 import { useThemeColor } from '@/utils/useThemeColor';
 import { useRouter } from 'expo-router';
 import { BookOpen, Check, CheckCircle, ChevronDown, Settings, X } from 'lucide-react-native';
@@ -21,7 +23,8 @@ export default function RevisionScreen() {
     updateDailyRevisedVerses,
     updateWeeklyRevisedVerses,
     setDailyRevisionTarget,
-    setWeeklyRevisionSurahs
+    setWeeklyRevisionSurahs,
+    pageMarks
   } = useProgressStore();
 
   const [selectedGoal, setSelectedGoal] = useState(revisionSchedule.versesPerDay || 5);
@@ -37,6 +40,15 @@ export default function RevisionScreen() {
 
   // Get today's date for tracking
   const today = new Date().toISOString().split('T')[0];
+
+  // Page-vs-verse tabs
+  const [dailyGoalType, setDailyGoalType] = useState<'verses' | 'pages'>('verses');
+  const [weeklyGoalType, setWeeklyGoalType] = useState<'verses' | 'pages'>('verses');
+  const [dailyPagesGoal, setDailyPagesGoal] = useState<number>(1);
+  const [weeklyPagesGoal, setWeeklyPagesGoal] = useState<number>(7);
+
+  // Today's page progress (memoized async fetch)
+  const [todayPageProgress, setTodayPageProgress] = useState<{ memorized: number; revised: number }>({ memorized: 0, revised: 0 });
   
   // Calculate today's progress
   const todayRevisedCount = useMemo(() => {
@@ -45,6 +57,11 @@ export default function RevisionScreen() {
 
   const isGoalAchieved = todayRevisedCount >= selectedGoal;
   const progressPercentage = Math.min((todayRevisedCount / selectedGoal) * 100, 100);
+
+  // Page-based daily progress calculations
+  const dailyPagesDone = todayPageProgress.revised || 0;
+  const pagesProgressPercentage = Math.min((dailyPagesDone / Math.max(1, dailyPagesGoal)) * 100, 100);
+  const isDailyPagesGoalAchieved = dailyPagesDone >= dailyPagesGoal;
 
   // Helper function to find surah and verse number from verse ID
   const findVerseDetails = (verseId: number) => {
@@ -118,6 +135,47 @@ export default function RevisionScreen() {
 
     return { completedSurahs, totalSurahs: selectedSurahs.length, percentage, isGoalAchieved };
   }, [selectedSurahs, weeklyRevisedVerses, today]);
+
+  // Weekly pages progress (for pages goal tab)
+  const weeklyPagesDone = useMemo(() => {
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - now.getDay());
+    weekStart.setHours(0,0,0,0);
+    const weekStartStr = weekStart.toISOString().split('T')[0];
+
+    const count = pageMarks.filter(pm => pm.markedDate >= weekStartStr && pm.type === 'revised').length;
+    return count;
+  }, [pageMarks]);
+
+  const weeklyPagesPercentage = Math.min((weeklyPagesDone / Math.max(1, weeklyPagesGoal)) * 100, 100);
+  const isWeeklyPagesGoalAchieved = weeklyPagesDone >= weeklyPagesGoal;
+
+  // ✅ FIX: Save daily page goal
+  const handleDailyPageGoalChange = async (pages: number) => {
+    setDailyPagesGoal(pages);
+    try {
+      await saveRevisionGoals({
+        daily: { verses: revisionSchedule.versesPerDay, pages },
+        weekly: { verses: 35, surahs: (revisionSchedule.surahsPerWeek || []).map(String), pages: weeklyPagesGoal }
+      } as RevisionGoals);
+    } catch (err) {
+      console.error('Failed to save daily page goal', err);
+    }
+  };
+
+  // ✅ FIX: Save weekly page goal
+  const handleWeeklyPageGoalChange = async (pages: number) => {
+    setWeeklyPagesGoal(pages);
+    try {
+      await saveRevisionGoals({
+        daily: { verses: revisionSchedule.versesPerDay, pages: dailyPagesGoal },
+        weekly: { verses: 35, surahs: (revisionSchedule.surahsPerWeek || []).map(String), pages }
+      } as RevisionGoals);
+    } catch (err) {
+      console.error('Failed to save weekly page goal', err);
+    }
+  };
 
   // Generate random verse for revision from memorized verses
   const generateRandomRevisionVerse = () => {
@@ -212,6 +270,38 @@ export default function RevisionScreen() {
       setSelectedSurahs(revisionSchedule.surahsPerWeek || []);
     }
   }, [revisionSchedule.versesPerDay, revisionSchedule.surahsPerWeek]);
+
+  // Load persisted revision goals (verses/pages preferences)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const goals = await loadRevisionGoals();
+        if (!mounted) return;
+        setDailyPagesGoal(goals.daily.pages || 1);
+        setWeeklyPagesGoal(goals.weekly.pages || 7);
+        // default keep 'verses' unless caller had separate preference stored in future
+      } catch (e) {
+        // ignore
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  // Update today's page progress when today changes
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const p = await getPageProgressForDate(today);
+        if (!mounted) return;
+        setTodayPageProgress(p);
+      } catch (e) {
+        // ignore
+      }
+    })();
+    return () => { mounted = false; };
+  }, [today]);
   
   return (
     <View style={styles.container}>
@@ -231,88 +321,145 @@ export default function RevisionScreen() {
             <Settings size={20} color={primary} />
             <Text style={styles.goalTitle}>Daily Revision Goal</Text>
           </View>
-          <Text style={styles.goalDescription}>Choose how many verses to revise daily</Text>
-          <View style={styles.goalOptionsContainer}>
-            {DAILY_GOALS.map((goal) => {
-              const isSelected = goal === 'custom' ? isCustomGoalSelected : selectedGoal === goal;
-              return (
-                <Pressable
-                  key={goal}
-                  style={[
-                    styles.goalOption,
-                    isSelected && [styles.goalOptionSelected, { backgroundColor: primary, borderColor: primary }]
-                  ]}
-                  onPress={() => handleGoalChange(goal)}
-                >
-                  <Text style={[
-                    styles.goalOptionText,
-                    isSelected && styles.goalOptionTextSelected
-                  ]}>
-                    {goal === 'custom' ? 'Custom' : `${goal} verses`}
-                  </Text>
-                </Pressable>
-              );
-            })}
+          {/* Segmented control for Verses / Pages */}
+          <View style={styles.segmentedControlRow}>
+            <TouchableOpacity
+              style={[styles.segment, dailyGoalType === 'verses' && styles.segmentActive]}
+              onPress={() => setDailyGoalType('verses')}
+            >
+              <Text style={[styles.segmentText, dailyGoalType === 'verses' && styles.segmentTextActive]}>Verses</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.segment, dailyGoalType === 'pages' && styles.segmentActive]}
+              onPress={() => setDailyGoalType('pages')}
+            >
+              <Text style={[styles.segmentText, dailyGoalType === 'pages' && styles.segmentTextActive]}>Pages</Text>
+            </TouchableOpacity>
           </View>
-          
-          {/* Custom Goal Input */}
-          {isCustomGoalSelected && (
-            <View style={styles.customGoalContainer}>
-              <Text style={styles.customGoalLabel}>Enter custom verse count:</Text>
-              <View style={styles.customGoalInputContainer}>
-                <TextInput
-                  style={[styles.customGoalInput, { borderColor: primary }]}
-                  placeholder="e.g. 15"
-                  placeholderTextColor="#666666"
-                  value={customGoal}
-                  onChangeText={setCustomGoal}
-                  keyboardType="numeric"
-                  maxLength={3}
-                  autoFocus
-                />
-                <Pressable
-                  style={[styles.customGoalSubmit, { backgroundColor: primary }]}
-                  onPress={handleCustomGoalSubmit}
-                >
-                  <Check size={20} color="#ffffff" />
-                </Pressable>
+
+          {dailyGoalType === 'verses' ? (
+            <>
+              <Text style={styles.goalDescription}>Choose how many verses to revise daily</Text>
+              <View style={styles.goalOptionsContainer}>
+                {DAILY_GOALS.map((goal) => {
+                  const isSelected = goal === 'custom' ? isCustomGoalSelected : selectedGoal === goal;
+                  return (
+                    <Pressable
+                      key={String(goal)}
+                      style={[
+                        styles.goalOption,
+                        isSelected && [styles.goalOptionSelected, { backgroundColor: primary, borderColor: primary }]
+                      ]}
+                      onPress={() => handleGoalChange(goal)}
+                    >
+                      <Text style={[
+                        styles.goalOptionText,
+                        isSelected && styles.goalOptionTextSelected
+                      ]}>
+                        {goal === 'custom' ? 'Custom' : `${goal} verses`}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
-              <Text style={styles.customGoalHint}>Enter a number between 1 and 100</Text>
-            </View>
-          )}
-          
-          {/* Show current custom goal if it's not a predefined value */}
-          {!isCustomGoalSelected && !DAILY_GOALS.slice(0, -1).includes(selectedGoal) && (
-            <View style={styles.currentCustomGoal}>
-              <Text style={styles.currentCustomGoalText}>
-                Current custom goal: {selectedGoal} verses
-              </Text>
-            </View>
-          )}
+
+              {/* Custom Goal Input */}
+              {isCustomGoalSelected && (
+                <View style={styles.customGoalContainer}>
+                  <Text style={styles.customGoalLabel}>Enter custom verse count:</Text>
+                  <View style={styles.customGoalInputContainer}>
+                    <TextInput
+                      style={[styles.customGoalInput, { borderColor: primary }]}
+                      placeholder="e.g. 15"
+                      placeholderTextColor="#666666"
+                      value={customGoal}
+                      onChangeText={setCustomGoal}
+                      keyboardType="numeric"
+                      maxLength={3}
+                      autoFocus
+                    />
+                    <Pressable
+                      style={[styles.customGoalSubmit, { backgroundColor: primary }]}
+                      onPress={handleCustomGoalSubmit}
+                    >
+                      <Check size={20} color="#ffffff" />
+                    </Pressable>
+                  </View>
+                  <Text style={styles.customGoalHint}>Enter a number between 1 and 100</Text>
+                </View>
+              )}
+
+              {/* Show current custom goal if it's not a predefined value */}
+              {!isCustomGoalSelected && !DAILY_GOALS.slice(0, -1).includes(selectedGoal) && (
+                <View style={styles.currentCustomGoal}>
+                  <Text style={styles.currentCustomGoalText}>
+                    Current custom goal: {selectedGoal} verses
+                  </Text>
+                </View>
+              )}
+            </>
+          ) : (
+            <>
+              <Text style={styles.goalDescription}>Choose how many pages to revise daily</Text>
+              <View style={styles.goalOptionsContainer}>
+                {[1, 2, 3, 5].map((n) => (
+                  <Pressable
+                      key={`daily-pages-${n}`}
+                      style={[styles.goalOption, dailyPagesGoal === n && [styles.goalOptionSelected, { backgroundColor: primary, borderColor: primary }]]}
+                      onPress={() => handleDailyPageGoalChange(n)}
+                    >
+                      <Text style={[styles.goalOptionText, dailyPagesGoal === n && styles.goalOptionTextSelected]}>{n} page{n > 1 ? 's' : ''}</Text>
+                    </Pressable>
+                  ))}
+                  <Pressable style={styles.goalOption}><Text style={styles.goalOptionText}>Custom</Text></Pressable>
+                </View>
+              </>
+            )}
+            
         </View>
         
+        {/* Weekly Goal Selection */}
         {/* Weekly Goal Selection */}
         <View style={styles.goalSelectionCard}>
           <View style={styles.goalHeader}>
             <BookOpen size={20} color="#FF9800" />
             <Text style={styles.goalTitle}>Weekly Revision Goal</Text>
           </View>
-          <Text style={styles.goalDescription}>Select surahs to revise completely this week</Text>
+          {/* Weekly segmented control */}
+          <View style={styles.segmentedControlRow}>
+            <TouchableOpacity
+              style={[styles.segment, weeklyGoalType === 'verses' && styles.segmentActive]}
+              onPress={() => setWeeklyGoalType('verses')}
+            >
+              <Text style={[styles.segmentText, weeklyGoalType === 'verses' && styles.segmentTextActive]}>Verses</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.segment, weeklyGoalType === 'pages' && styles.segmentActive]}
+              onPress={() => setWeeklyGoalType('pages')}
+            >
+              <Text style={[styles.segmentText, weeklyGoalType === 'pages' && styles.segmentTextActive]}>Pages</Text>
+            </TouchableOpacity>
+          </View>
+
+          {weeklyGoalType === 'verses' ? (
+            <Text style={styles.goalDescription}>Select surahs to revise completely this week</Text>
+          ) : (
+            <Text style={styles.goalDescription}>Choose how many pages to revise this week</Text>
+          )}
           
-          <Pressable 
-            style={[styles.surahSelector, { backgroundColor: primary }]}
-            onPress={() => setShowSurahModal(true)}
-          >
-            <Text style={styles.surahSelectorText}>
-              {selectedSurahs.length === 0 
-                ? 'Select Surahs' 
-                : `${selectedSurahs.length} Surah${selectedSurahs.length !== 1 ? 's' : ''} selected`
-              }
-            </Text>
-            <ChevronDown size={20} color="#ffffff" />
-          </Pressable>
-          
-          {selectedSurahs.length > 0 && (
+          {weeklyGoalType === 'verses' && (
+            <Pressable 
+              style={[styles.surahSelector, { backgroundColor: primary }]}
+              onPress={() => setShowSurahModal(true)}
+            >
+              <Text style={styles.surahSelectorText}>
+                {selectedSurahs.length === 0 ? 'Select Surahs' : `${selectedSurahs.length} Surah${selectedSurahs.length !== 1 ? 's' : ''} selected`}
+              </Text>
+              <ChevronDown size={20} color="#ffffff" />
+            </Pressable>
+          )}
+
+            {weeklyGoalType === 'verses' && selectedSurahs.length > 0 && (
             <View style={styles.selectedSurahsContainer}>
               <Text style={styles.selectedSurahsTitle}>Selected Surahs:</Text>
               <View style={styles.selectedSurahsList}>
@@ -329,6 +476,22 @@ export default function RevisionScreen() {
               </View>
             </View>
           )}
+          {weeklyGoalType === 'pages' && (
+            <View style={{ marginTop: 12 }}>
+              <View style={styles.goalOptionsContainer}>
+                {[5, 10, 15, 20].map((n) => (
+                  <Pressable
+                    key={`weekly-pages-${n}`}
+                    style={[styles.goalOption, weeklyPagesGoal === n && [styles.goalOptionSelected, { backgroundColor: primary, borderColor: primary }]]}
+                    onPress={() => handleWeeklyPageGoalChange(n)}
+                  >
+                    <Text style={[styles.goalOptionText, weeklyPagesGoal === n && styles.goalOptionTextSelected]}>{n} pages</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          )}
+
         </View>
 
   {/* Hifdh Planner - Monthly Calendar */}
@@ -356,7 +519,11 @@ export default function RevisionScreen() {
           </View>
           
           <Text style={styles.progressText}>
-            {todayRevisedCount} / {selectedGoal} verses revised today
+            {dailyGoalType === 'verses' ? (
+              `${todayRevisedCount} / ${selectedGoal} verses revised today`
+            ) : (
+              `${dailyPagesDone} / ${dailyPagesGoal} pages revised today`
+            )}
           </Text>
           
           <View style={styles.progressBarContainer}>
@@ -364,39 +531,43 @@ export default function RevisionScreen() {
               <View style={[
                 styles.progressFill, 
                 { 
-                  width: `${progressPercentage}%`,
-                  backgroundColor: isGoalAchieved ? '#4CAF50' : primary
+                  width: `${dailyGoalType === 'verses' ? progressPercentage : pagesProgressPercentage}%`,
+                  backgroundColor: (dailyGoalType === 'verses' ? isGoalAchieved : isDailyPagesGoalAchieved) ? '#4CAF50' : primary
                 }
               ]} />
             </View>
-            <Text style={styles.progressPercentage}>{Math.round(progressPercentage)}%</Text>
+            <Text style={styles.progressPercentage}>{Math.round(dailyGoalType === 'verses' ? progressPercentage : pagesProgressPercentage)}%</Text>
           </View>
         </View>
 
         {/* Weekly Progress */}
-        {selectedSurahs.length > 0 && (
+        {(weeklyGoalType === 'verses' && selectedSurahs.length > 0) || (weeklyGoalType === 'pages') ? (
           <View style={styles.progressCard}>
             <View style={styles.progressHeader}>
               <View style={styles.progressIconContainer}>
-                {weeklyProgress.isGoalAchieved ? (
-                  <CheckCircle size={24} color="#4CAF50" />
-                ) : (
-                  <X size={24} color="#F44336" />
-                )}
+                  {(weeklyGoalType === 'verses' ? weeklyProgress.isGoalAchieved : isWeeklyPagesGoalAchieved) ? (
+                    <CheckCircle size={24} color="#4CAF50" />
+                  ) : (
+                    <X size={24} color="#F44336" />
+                  )}
               </View>
               <View style={styles.progressInfo}>
                 <Text style={styles.progressTitle}>Weekly Progress</Text>
                 <Text style={[
                   styles.progressStatus,
-                  { color: weeklyProgress.isGoalAchieved ? '#4CAF50' : '#F44336' }
+                  { color: (weeklyGoalType === 'verses' ? weeklyProgress.isGoalAchieved : isWeeklyPagesGoalAchieved) ? '#4CAF50' : '#F44336' }
                 ]}>
-                  {weeklyProgress.isGoalAchieved ? 'Goal Achieved!' : 'Goal Not Achieved'}
+                  {(weeklyGoalType === 'verses' ? weeklyProgress.isGoalAchieved : isWeeklyPagesGoalAchieved) ? 'Goal Achieved!' : 'Goal Not Achieved'}
                 </Text>
               </View>
             </View>
             
             <Text style={styles.progressText}>
-              {weeklyProgress.completedSurahs} out of {weeklyProgress.totalSurahs} selected surahs revised
+              {weeklyGoalType === 'verses' ? (
+                `${weeklyProgress.completedSurahs} out of ${weeklyProgress.totalSurahs} selected surahs revised`
+              ) : (
+                `${weeklyPagesDone} / ${weeklyPagesGoal} pages revised this week`
+              )}
             </Text>
             
             <View style={styles.progressBarContainer}>
@@ -404,15 +575,15 @@ export default function RevisionScreen() {
                 <View style={[
                   styles.progressFill, 
                   { 
-                    width: `${weeklyProgress.percentage}%`,
-                    backgroundColor: weeklyProgress.isGoalAchieved ? '#4CAF50' : '#FF9800'
+                    width: `${weeklyGoalType === 'verses' ? weeklyProgress.percentage : weeklyPagesPercentage}%`,
+                        backgroundColor: weeklyGoalType === 'verses' ? (weeklyProgress.isGoalAchieved ? '#4CAF50' : '#FF9800') : (isWeeklyPagesGoalAchieved ? '#4CAF50' : '#FF9800')
                   }
                 ]} />
               </View>
-              <Text style={styles.progressPercentage}>{Math.round(weeklyProgress.percentage)}%</Text>
+              <Text style={styles.progressPercentage}>{Math.round(weeklyGoalType === 'verses' ? weeklyProgress.percentage : weeklyPagesPercentage)}%</Text>
             </View>
           </View>
-        )}
+        ) : null}
 
         {/* Current Revision Verse */}
         {currentRevisionVerse && (
@@ -582,6 +753,30 @@ const styles = StyleSheet.create({
   goalOptionTextSelected: {
     color: '#ffffff',
     fontWeight: '600',
+  },
+  segmentedControlRow: {
+    flexDirection: 'row',
+    backgroundColor: '#374151',
+    borderRadius: 8,
+    padding: 4,
+    marginBottom: 12,
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  segmentActive: {
+    backgroundColor: '#3B82F6',
+  },
+  segmentText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#9CA3AF',
+  },
+  segmentTextActive: {
+    color: '#FFFFFF',
   },
   surahSelector: {
     borderRadius: 8,

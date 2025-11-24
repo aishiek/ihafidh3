@@ -1,6 +1,8 @@
+import { useThemeStore } from '@/store/themeStore';
+import { useCustomColors } from '@/utils/themeUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
 import * as Haptics from 'expo-haptics';
-import { ArrowLeft, Bookmark, Settings } from 'lucide-react-native';
+import { ArrowLeft, Bookmark, Moon, Settings, Sun } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -10,6 +12,8 @@ interface MushafHeaderProps {
   onClose: () => void;
   onHome: () => void;
   onChangeLayout: () => void;
+  surahName?: string | null;
+  juzNumber?: number | null;
 }
 
 export default function MushafHeader({
@@ -18,38 +22,62 @@ export default function MushafHeader({
   onClose,
   onHome,
   onChangeLayout,
+  surahName,
+  juzNumber,
 }: MushafHeaderProps) {
   const { primary } = useThemeColor();
   const [bookmarkAnimating, setBookmarkAnimating] = useState(false);
+  const { themeMode, setThemeMode } = useThemeStore();
+  const colors = useCustomColors();
+  const isDark = themeMode === 'dark';
 
   const handleBookmarkPress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
     setBookmarkAnimating(true);
     onBookmarkToggle();
     setTimeout(() => setBookmarkAnimating(false), 300);
   };
 
   return (
-    <View style={[styles.header, { backgroundColor: '#1a1a1a', borderBottomColor: '#FFD60A20' }]}> 
-      <View style={styles.headerRow}> 
-        <TouchableOpacity onPress={onClose} style={styles.headerButton} hitSlop={8}> 
-          <ArrowLeft size={24} color="#FFD60A" /> 
+    <View style={[styles.header, { backgroundColor: isDark ? '#1a1a1a' : '#ffffff', borderBottomColor: isDark ? '#FFD60A20' : '#e0e0e0' }]}>
+      <View style={styles.headerRow}>
+        <TouchableOpacity onPress={onClose} style={styles.headerButton} hitSlop={8}>
+          <ArrowLeft size={24} color={isDark ? "#FFD60A" : "#333333"} />
         </TouchableOpacity>
 
-        <View style={styles.headerCenter}> 
-          <Text 
-            style={[styles.headerTitle, { color: '#FFD60A' }]} 
-            numberOfLines={1}
-            ellipsizeMode="tail"
-          >
-            Mushaf Reader
-          </Text> 
+        <View style={styles.headerCenter}>
+          {surahName || juzNumber ? (
+            <View style={styles.infoContainer}>
+              {surahName && (
+                <Text
+                  style={[styles.surahName, { color: isDark ? '#FFD60A' : colors.primary }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {surahName}
+                </Text>
+              )}
+              {juzNumber && (
+                <Text style={[styles.juzText, { color: isDark ? '#999' : '#666' }]}>
+                  Juz {juzNumber}
+                </Text>
+              )}
+            </View>
+          ) : (
+            <Text
+              style={[styles.headerTitle, { color: isDark ? '#FFD60A' : colors.primary }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              Mushaf Reader
+            </Text>
+          )}
         </View>
 
-        <View style={styles.headerButtonsRight}> 
+        <View style={styles.headerButtonsRight}>
           <TouchableOpacity
             onPress={handleBookmarkPress}
-            style={[ 
+            style={[
               styles.headerButton,
               bookmarkAnimating && styles.bookmarkAnimating,
             ]}
@@ -57,17 +85,32 @@ export default function MushafHeader({
           >
             <Bookmark
               size={24}
-              color={isBookmarked ? '#FFD60A' : '#666'}
-              fill={isBookmarked ? '#FFD60A' : 'none'}
+              color={isBookmarked ? (isDark ? '#FFD60A' : colors.primary) : (isDark ? '#666' : '#999')}
+              fill={isBookmarked ? (isDark ? '#FFD60A' : colors.primary) : 'none'}
             />
           </TouchableOpacity>
 
           <TouchableOpacity onPress={onChangeLayout} style={styles.headerButton} hitSlop={8}>
-            <Settings size={24} color="#FFD60A" />
+            <Settings size={24} color={isDark ? "#FFD60A" : colors.primary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
+              setThemeMode(isDark ? 'light' : 'dark');
+            }}
+            style={styles.headerButton}
+            hitSlop={8}
+          >
+            {isDark ? (
+              <Sun size={24} color="#FFD60A" />
+            ) : (
+              <Moon size={24} color={colors.primary} />
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity onPress={onHome} style={styles.headerButton} hitSlop={8}>
-            <Text style={[styles.homeButtonText, { color: '#FFD60A' }]}>Home</Text>
+            <Text style={[styles.homeButtonText, { color: isDark ? '#FFD60A' : colors.primary }]}>Home</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -119,5 +162,18 @@ const styles = StyleSheet.create({
   homeButtonText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  infoContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  surahName: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  juzText: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
   },
 });

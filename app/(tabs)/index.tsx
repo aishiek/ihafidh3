@@ -19,16 +19,16 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import {
-    Award,
-    BookOpen,
-    Calendar,
-    CheckCircle,
-    Clock,
-    Info,
-    Play,
-    RotateCcw,
-    Target,
-    XCircle
+  Award,
+  BookOpen,
+  Calendar,
+  CheckCircle,
+  Clock,
+  Info,
+  Play,
+  RotateCcw,
+  Target,
+  XCircle
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
 import { AppState, Dimensions, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -115,6 +115,8 @@ export default function HomeScreen() {
     dailyRevisedVerses,
     weeklyRevisedVerses,
     revisionSchedule,
+    completedToday,
+    weeklyRevisedSurahsCompleted,
     updateDailyStreak
   } = useProgressStore();
   const { userName } = useSettingsStore();
@@ -168,8 +170,8 @@ export default function HomeScreen() {
     const now = new Date();
     const month = now.getMonth();
     const year = now.getFullYear();
-  const monthName = now.toLocaleDateString(undefined, { month: 'long' });
-  const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+    const monthName = now.toLocaleDateString(undefined, { month: 'long' });
+    const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
 
     const allPlannedVerseIds = new Set<number>();
     const plannedBySurah = new Map<number, Set<number>>();
@@ -210,7 +212,7 @@ export default function HomeScreen() {
       };
     }
 
-  const isRevised = (id: number) => revisedVerses.some((rv) => rv.verseId === id) || (plannerMode === 'verse' && !!(verseStatsByMonth[monthKey] && verseStatsByMonth[monthKey][id] && verseStatsByMonth[monthKey][id].completed));
+    const isRevised = (id: number) => revisedVerses.some((rv) => rv.verseId === id) || (plannerMode === 'verse' && !!(verseStatsByMonth[monthKey] && verseStatsByMonth[monthKey][id] && verseStatsByMonth[monthKey][id].completed));
 
     let completedPlannedVerses = 0;
     allPlannedVerseIds.forEach((id) => {
@@ -227,10 +229,10 @@ export default function HomeScreen() {
       if (done > 0 && done < total) inProgressSurahs++;
     });
 
-  const totalPlannedVerses = allPlannedVerseIds.size;
-  // Prefer deduped surah ids set (robust against malformed keys)
-  // If in surah mode with a selected surah, report 1 if that surah was planned this month, otherwise 0
-  const totalPlannedSurahs = plannerMode === 'surah' && selectedSurahId != null ? (plannedSurahIds.has(selectedSurahId) ? 1 : 0) : (plannedSurahIds.size || plannedBySurah.size);
+    const totalPlannedVerses = allPlannedVerseIds.size;
+    // Prefer deduped surah ids set (robust against malformed keys)
+    // If in surah mode with a selected surah, report 1 if that surah was planned this month, otherwise 0
+    const totalPlannedSurahs = plannerMode === 'surah' && selectedSurahId != null ? (plannedSurahIds.has(selectedSurahId) ? 1 : 0) : (plannedSurahIds.size || plannedBySurah.size);
     const percent = totalPlannedVerses > 0 ? Math.round((completedPlannedVerses / totalPlannedVerses) * 100) : 0;
     return { monthName, totalPlannedVerses, completedPlannedVerses, inProgressSurahs, totalPlannedSurahs, percent };
   }, [plansByDate, memorizedVerses, revisedVerses]);
@@ -243,14 +245,14 @@ export default function HomeScreen() {
 
     const initializeTracking = () => {
       if (!mounted) return;
-      
+
       try {
         // Initialize manager first
         const mgr = initializeActiveTimeManager();
-        
+
         // Get current state
         const currentState = AppState.currentState;
-        
+
         // Start session if not already started
         if (!sessionStartTime) {
           // On Android, be more aggressive about starting the session
@@ -275,7 +277,7 @@ export default function HomeScreen() {
             }
           }
         }
-        
+
         // Retry manager initialization if needed
         if (!mgr && mounted) {
           retryTimer = setTimeout(() => {
@@ -297,10 +299,10 @@ export default function HomeScreen() {
     // AppState listener
     const sub = AppState.addEventListener('change', (nextState) => {
       if (!mounted) return;
-      
+
       try {
         const store = useActivityStore.getState();
-        
+
         if (nextState === 'active') {
           // Start session when app becomes active
           if (!store.sessionStartTime) {
@@ -321,10 +323,10 @@ export default function HomeScreen() {
       mounted = false;
       if (retryTimer) clearTimeout(retryTimer);
       if (androidDeferred) clearTimeout(androidDeferred);
-      try { sub.remove(); } catch {}
-      
+      try { sub.remove(); } catch { }
+
       // CRITICAL: Persist time before cleanup
-      try { 
+      try {
         const store = useActivityStore.getState();
         if (store.sessionStartTime) {
           endSession();
@@ -332,15 +334,15 @@ export default function HomeScreen() {
       } catch (e) {
         console.error('[TimeTracking] Cleanup endSession error:', e);
       }
-      
-      try { activeTimeManager?.cleanup(); } catch {}
+
+      try { activeTimeManager?.cleanup(); } catch { }
     };
   }, []); // Empty deps to prevent re-initialization
 
   const getCurrentActiveTime = () => {
     const store = useActivityStore.getState();
     const baseTime = store.timeSpent?.total || 0;
-    
+
     // Primary: Use activeTimeManager if available
     if (activeTimeManager) {
       try {
@@ -351,13 +353,13 @@ export default function HomeScreen() {
         console.warn('[TimeTracking] Manager stats error:', e);
       }
     }
-    
+
     // Fallback: Calculate from session start time
     if (store.sessionStartTime) {
       const elapsed = Math.floor((Date.now() - store.sessionStartTime) / 1000);
       return baseTime + Math.max(0, elapsed);
     }
-    
+
     // Last resort: Return base time
     return baseTime;
   };
@@ -366,15 +368,15 @@ export default function HomeScreen() {
     // Initial sync
     const initialTime = getCurrentActiveTime();
     setActiveReadingTime(initialTime);
-    
+
     // Use shorter interval on Android for more responsive updates
     const intervalDuration = Platform.OS === 'android' ? 500 : 1000;
-    
+
     const interval = setInterval(() => {
       const newTime = getCurrentActiveTime();
       setActiveReadingTime(newTime);
     }, intervalDuration);
-    
+
     return () => clearInterval(interval);
   }, []); // Stable interval
 
@@ -391,7 +393,7 @@ export default function HomeScreen() {
         if (!surah) continue;
         if (verseId <= startVerseId + surah.versesCount) {
           const verseNumber = verseId - startVerseId;
-            return `${i}:${verseNumber}`;
+          return `${i}:${verseNumber}`;
         }
         startVerseId += surah.versesCount;
       }
@@ -448,9 +450,9 @@ export default function HomeScreen() {
   const getTextColor = (status: string) => '#ffffff'; // White text for all states for better readability
 
   // Juz info
-  const [juzProgressList, setJuzProgressList] = useState<{juz:number, memorized:number, total:number, progress:number}[]>([]);
-  useEffect(() => { (async () => { const list:any[] = []; for (let i=1;i<=30;i++){ const p = await getJuzProgress(i); list.push({juz:i, ...p}); } setJuzProgressList(list); })(); }, [memorizedVerses]);
-  const allJuzInfo = useMemo(() => { const arr=[] as any[]; for (let j=1;j<=30;j++){ const p=calculateJuzProgress(j, memorizedVerses); arr.push({juz:j, ...p}); } return arr; }, [memorizedVerses]); // eslint-disable-line
+  const [juzProgressList, setJuzProgressList] = useState<{ juz: number, memorized: number, total: number, progress: number }[]>([]);
+  useEffect(() => { (async () => { const list: any[] = []; for (let i = 1; i <= 30; i++) { const p = await getJuzProgress(i); list.push({ juz: i, ...p }); } setJuzProgressList(list); })(); }, [memorizedVerses]);
+  const allJuzInfo = useMemo(() => { const arr = [] as any[]; for (let j = 1; j <= 30; j++) { const p = calculateJuzProgress(j, memorizedVerses); arr.push({ juz: j, ...p }); } return arr; }, [memorizedVerses]); // eslint-disable-line
 
   const stats = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -479,7 +481,7 @@ export default function HomeScreen() {
   const getRelativeTime = (dateString: string) => {
     const date = new Date(dateString); const now = new Date();
     const diffDays = Math.ceil(Math.abs(now.getTime() - date.getTime()) / 86400000);
-    if (diffDays === 1) return 'Yesterday'; if (diffDays < 7) return `${diffDays} days ago`; return `${Math.floor(diffDays/7)} weeks ago`;
+    if (diffDays === 1) return 'Yesterday'; if (diffDays < 7) return `${diffDays} days ago`; return `${Math.floor(diffDays / 7)} weeks ago`;
   };
 
   const recentActivity = useMemo(() => {
@@ -581,8 +583,8 @@ export default function HomeScreen() {
             // Use safeNavigation.replace to avoid stacking duplicate Read entries when resuming
             safeNavigation.replace({
               pathname: '/(tabs)/read',
-              params: { 
-                surahId: surah.id.toString(), 
+              params: {
+                surahId: surah.id.toString(),
                 verseId: verseDetails.verseNumber.toString(),
                 source: 'continueReading'
               }
@@ -606,23 +608,23 @@ export default function HomeScreen() {
     return actions.filter(Boolean);
   }, [lastReadVerse, revisionSchedule, stats]);
 
-  const CircularProgress = ({ progress, size=100, strokeWidth=8, progressColor='#2196F3', inProgressColor='#FF9800', notStartedColor='#666', completed=0, inProgress=0, total=100 }:{progress:number; size?:number; strokeWidth?:number; progressColor?:string; inProgressColor?:string; notStartedColor?:string; completed?:number; inProgress?:number; total?:number;}) => {
+  const CircularProgress = ({ progress, size = 100, strokeWidth = 8, progressColor = '#2196F3', inProgressColor = '#FF9800', notStartedColor = '#666', completed = 0, inProgress = 0, total = 100 }: { progress: number; size?: number; strokeWidth?: number; progressColor?: string; inProgressColor?: string; notStartedColor?: string; completed?: number; inProgress?: number; total?: number; }) => {
     const radius = (size - strokeWidth) / 2; const circumference = radius * 2 * Math.PI;
-    const completedOffset = circumference - (completed/total) * circumference;
-    const inProgressOffset = circumference - ((completed+inProgress)/total) * circumference;
+    const completedOffset = circumference - (completed / total) * circumference;
+    const inProgressOffset = circumference - ((completed + inProgress) / total) * circumference;
     return (
-      <View style={{ width:size, height:size }}>
-        <Svg width={size} height={size} style={{ transform:[{ rotate: '-90deg'}] }}>
-          <Circle stroke={notStartedColor} fill="none" cx={size/2} cy={size/2} r={radius} strokeWidth={strokeWidth} />
-          {inProgress>0 && <Circle stroke={inProgressColor} fill="none" cx={size/2} cy={size/2} r={radius} strokeWidth={strokeWidth} strokeDasharray={`${circumference} ${circumference}`} strokeDashoffset={inProgressOffset} strokeLinecap="round" />}
-          <Circle stroke={progressColor} fill="none" cx={size/2} cy={size/2} r={radius} strokeWidth={strokeWidth} strokeDasharray={`${circumference} ${circumference}`} strokeDashoffset={completedOffset} strokeLinecap="round" />
+      <View style={{ width: size, height: size }}>
+        <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
+          <Circle stroke={notStartedColor} fill="none" cx={size / 2} cy={size / 2} r={radius} strokeWidth={strokeWidth} />
+          {inProgress > 0 && <Circle stroke={inProgressColor} fill="none" cx={size / 2} cy={size / 2} r={radius} strokeWidth={strokeWidth} strokeDasharray={`${circumference} ${circumference}`} strokeDashoffset={inProgressOffset} strokeLinecap="round" />}
+          <Circle stroke={progressColor} fill="none" cx={size / 2} cy={size / 2} r={radius} strokeWidth={strokeWidth} strokeDasharray={`${circumference} ${circumference}`} strokeDashoffset={completedOffset} strokeLinecap="round" />
         </Svg>
-        <View style={styles.progressTextContainer}><Text style={styles.progressPercentage}>{Math.round((completed/total)*100)}%</Text></View>
+        <View style={styles.progressTextContainer}><Text style={styles.progressPercentage}>{Math.round((completed / total) * 100)}%</Text></View>
       </View>
     );
   };
 
-  const ProgressCard = ({ title, data, cardWidth, minHeight, showJuzCompletedLabel }:{title:string; data:ProgressData; cardWidth: number; minHeight?: number; showJuzCompletedLabel?: boolean}) => {
+  const ProgressCard = ({ title, data, cardWidth, minHeight, showJuzCompletedLabel }: { title: string; data: ProgressData; cardWidth: number; minHeight?: number; showJuzCompletedLabel?: boolean }) => {
     const circleSize = cardWidth < 120 ? 50 : cardWidth < 150 ? 60 : 70;
     const isSmall = cardWidth < 120;
     const total = data.completed + data.inProgress + data.notStarted;
@@ -630,39 +632,39 @@ export default function HomeScreen() {
 
     return (
       <View style={[styles.progressCard, { width: cardWidth, minHeight: minHeight || 160 }]}>
-        <Text 
-          style={[styles.progressCardTitle, { fontSize: isSmall ? 12 : 14 }]} 
-          numberOfLines={1} 
+        <Text
+          style={[styles.progressCardTitle, { fontSize: isSmall ? 12 : 14 }]}
+          numberOfLines={1}
           ellipsizeMode="tail"
         >
           {title}
         </Text>
-        
+
         <View style={[styles.progressCircleContainer, { marginVertical: 8 }]}>
-          <CircularProgress 
-            progress={completedPercentage} 
-            size={circleSize} 
-            completed={data.completed} 
-            inProgress={data.inProgress} 
-            total={total} 
+          <CircularProgress
+            progress={completedPercentage}
+            size={circleSize}
+            completed={data.completed}
+            inProgress={data.inProgress}
+            total={total}
           />
         </View>
 
         <View style={styles.progressLegend}>
           <View style={styles.legendItem}>
             <Icon name="check-circle" size={16} color="#3B82F6" />
-            <Text 
-              style={[styles.legendText, isSmall && { fontSize: 10 }]} 
-              numberOfLines={1} 
+            <Text
+              style={[styles.legendText, isSmall && { fontSize: 10 }]}
+              numberOfLines={1}
               ellipsizeMode="tail"
             >
               {data.completed} {showJuzCompletedLabel ? 'of 30' : ''}
             </Text>
           </View>
-          
+
           <View style={styles.legendItem}>
             <Icon name="refresh" size={16} color="#F59E0B" />
-            <Text 
+            <Text
               style={[styles.legendText, isSmall && { fontSize: 10 }]}
               numberOfLines={1}
               ellipsizeMode="tail"
@@ -670,10 +672,10 @@ export default function HomeScreen() {
               {data.inProgress} in progress
             </Text>
           </View>
-          
+
           <View style={styles.legendItem}>
             <Icon name="circle" size={16} color="#6B7280" />
-            <Text 
+            <Text
               style={[styles.legendText, isSmall && { fontSize: 10 }]}
               numberOfLines={1}
               ellipsizeMode="tail"
@@ -686,11 +688,15 @@ export default function HomeScreen() {
     );
   };
 
-  const StatCard = ({ title, value, subtitle, icon:Icon, color='#2196F3' }:{title:string; value:string|number; subtitle?:string; icon:any; color?:string;}) => (
+  const StatCard = ({ title, value, subtitle, icon: Icon, color = '#2196F3' }: { title: string; value: string | number | React.ReactNode; subtitle?: string; icon: any; color?: string; }) => (
     <View style={styles.statCard}>
-      <Icon size={28} color={color} style={{ marginBottom:4 }} />
+      <Icon size={28} color={color} style={{ marginBottom: 4 }} />
       <Text style={styles.statTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{title}</Text>
-      <Text style={[styles.statValue, { color }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{value}</Text>
+      {typeof value === 'string' || typeof value === 'number' ? (
+        <Text style={[styles.statValue, { color }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{value}</Text>
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center' }}>{value}</View>
+      )}
       {subtitle ? <Text style={styles.statSubtitle}>{subtitle}</Text> : null}
     </View>
   );
@@ -700,7 +706,7 @@ export default function HomeScreen() {
     if (streak >= 500) {
       return '#FFD700'; // Golden color for 500+
     }
-    
+
     // Fluorescent colors for every 100 up to 500
     const milestone = Math.floor(streak / 100);
     const fluorescents = [
@@ -710,17 +716,17 @@ export default function HomeScreen() {
       '#ADFF2F', // Green Yellow (300-399)
       '#FF4500', // Orange Red (400-499)
     ];
-    
+
     return fluorescents[milestone] || '#FF6B35'; // Default to first color
   };
 
-  const StreakCard = ({ title, value, subtitle, icon:Icon, color='#2196F3' }:{title:string; value:string|number; subtitle?:string; icon:any; color?:string;}) => (
+  const StreakCard = ({ title, value, subtitle, icon: Icon, color = '#2196F3' }: { title: string; value: string | number; subtitle?: string; icon: any; color?: string; }) => (
     <View style={styles.statCard}>
-      <Icon size={28} color={color} style={{ marginBottom:4 }} />
+      <Icon size={28} color={color} style={{ marginBottom: 4 }} />
       <Text style={styles.statTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{title}</Text>
       <Text style={[styles.statValue, { color }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{value}</Text>
       {subtitle ? <Text style={styles.statSubtitle}>{subtitle}</Text> : null}
-      <Pressable 
+      <Pressable
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           setShowStreakTooltip(true);
@@ -733,14 +739,14 @@ export default function HomeScreen() {
     </View>
   );
 
-  const ActionCard = ({ title, subtitle, icon:Icon, color, action }:{title:string; subtitle:string; icon:any; color:string; action:()=>void;}) => (
+  const ActionCard = ({ title, subtitle, icon: Icon, color, action }: { title: string; subtitle: string; icon: any; color: string; action: () => void; }) => (
     <Pressable
       onPress={action}
-      style={[styles.actionCard,{ borderColor:color }]}
+      style={[styles.actionCard, { borderColor: color }]}
       android_ripple={{ color: '#00000022' }}
     >
       <View style={styles.actionIconWrap}><Icon size={24} color={color} /></View>
-      <View style={styles.actionCardText}> 
+      <View style={styles.actionCardText}>
         <Text style={styles.actionCardTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{title}</Text>
         <Text style={styles.actionCardSubtitle} numberOfLines={2}>{subtitle}</Text>
       </View>
@@ -749,12 +755,12 @@ export default function HomeScreen() {
 
   const MustahabbahCard = (
     { item, onPress, wrapperStyle }:
-    { item: { label: string; status: 'memorized'|'in-progress'|'not-started' }, onPress?: (it: any) => void, wrapperStyle?: any }
+      { item: { label: string; status: 'memorized' | 'in-progress' | 'not-started' }, onPress?: (it: any) => void, wrapperStyle?: any }
   ) => {
     const backgroundColors = getBackgroundColors(item.status);
     const textColor = getTextColor(item.status);
-    const icon = item.status === 'memorized' 
-      ? { symbol: '✓', color: '#ffffff' } 
+    const icon = item.status === 'memorized'
+      ? { symbol: '✓', color: '#ffffff' }
       : { symbol: '○', color: '#d64545' };
 
     // Smart text formatting for hyphenated names
@@ -782,7 +788,7 @@ export default function HomeScreen() {
 
     // Use Pressable instead of TouchableOpacity for better response
     return (
-      <Pressable 
+      <Pressable
         style={[styles.cardWrapper, wrapperStyle]}
         onPress={() => onPress?.(item)}
       >
@@ -800,10 +806,10 @@ export default function HomeScreen() {
             <View style={styles.cardContent}>
               {textFormat.isMultiLine ? (
                 <>
-                  <Text 
+                  <Text
                     style={[
-                      styles.cardTitle, 
-                      { 
+                      styles.cardTitle,
+                      {
                         color: textColor,
                         fontSize: baseFontSize,
                         lineHeight: baseFontSize + 1,
@@ -816,10 +822,10 @@ export default function HomeScreen() {
                   >
                     {textFormat.firstLine}
                   </Text>
-                  <Text 
+                  <Text
                     style={[
-                      styles.cardTitle, 
-                      { 
+                      styles.cardTitle,
+                      {
                         color: textColor,
                         fontSize: baseFontSize,
                         lineHeight: baseFontSize + 1
@@ -833,10 +839,10 @@ export default function HomeScreen() {
                   </Text>
                 </>
               ) : (
-                <Text 
+                <Text
                   style={[
-                    styles.cardTitle, 
-                    { 
+                    styles.cardTitle,
+                    {
                       color: textColor,
                       fontSize: baseFontSize,
                       lineHeight: baseFontSize + 2
@@ -851,11 +857,11 @@ export default function HomeScreen() {
                 </Text>
               )}
             </View>
-            
+
             <View style={[
               styles.iconContainer,
               {
-                backgroundColor: item.status === 'memorized' 
+                backgroundColor: item.status === 'memorized'
                   ? 'rgba(255, 255, 255, 0.25)'
                   : 'rgba(214, 69, 69, 0.25)',
                 borderColor: item.status === 'memorized' ? 'transparent' : '#d64545',
@@ -870,13 +876,13 @@ export default function HomeScreen() {
     );
   };
 
-  const MustahabbahGrid = ({ items, onItemPress }:{ items:any[]; onItemPress:(item:any)=>void; }) => {
+  const MustahabbahGrid = ({ items, onItemPress }: { items: any[]; onItemPress: (item: any) => void; }) => {
     // maintain 3 columns; responsive sizing handled in card
     const rows: any[][] = [];
-    for (let i=0;i<items.length;i+=3) rows.push(items.slice(i,i+3));
+    for (let i = 0; i < items.length; i += 3) rows.push(items.slice(i, i + 3));
     return (
       <View style={styles.mustahabbahGrid}>
-        {rows.map((row,ri) => (
+        {rows.map((row, ri) => (
           <View key={ri} style={styles.mustahabbahRow}>
             {row.map((it, idx) => <MustahabbahCard key={it.key} item={it} onPress={onItemPress} />)}
           </View>
@@ -885,327 +891,483 @@ export default function HomeScreen() {
     );
   };
 
-  function formatTotalTime(totalSeconds:number){ if(!totalSeconds||totalSeconds<0) return '0m'; const d=Math.floor(totalSeconds/86400); const h=Math.floor((totalSeconds%86400)/3600); const m=Math.floor((totalSeconds%3600)/60); return `${d>0?d+'d ':''}${(h>0||d>0)?h+'h ':''}${m}m`.trim(); }
+  // existing simple formatter kept for backward compatibility
+  function formatTotalTime(totalSeconds: number) { if (!totalSeconds || totalSeconds < 0) return '0m'; const d = Math.floor(totalSeconds / 86400); const h = Math.floor((totalSeconds % 86400) / 3600); const m = Math.floor((totalSeconds % 3600) / 60); return `${d > 0 ? d + 'd ' : ''}${(h > 0 || d > 0) ? h + 'h ' : ''}${m}m`.trim(); }
+
+  // Smart adaptive formatter based on total minutes
+  function formatQuranTimeAdaptive(totalMinutes: number): string {
+    const minutes = totalMinutes % 60;
+    const hours = Math.floor(totalMinutes / 60) % 24;
+    const days = Math.floor(totalMinutes / 1440);
+    const weeks = Math.floor(days / 7);
+    const months = Math.floor(days / 30);
+    const years = Math.floor(days / 365);
+
+    // Years (365+ days)
+    if (years >= 1) {
+      const remainingMonths = Math.floor((days % 365) / 30);
+      if (remainingMonths > 0) {
+        return `${years}y ${remainingMonths}mo`;
+      }
+      return `${years}y`;
+    }
+
+    // Months (30+ days)
+    if (months >= 1) {
+      const remainingDays = days % 30;
+      if (remainingDays > 0) {
+        return `${months}mo ${remainingDays}d`;
+      }
+      return `${months}mo`;
+    }
+
+    // Weeks (7+ days)
+    if (weeks >= 1) {
+      const remainingDays = days % 7;
+      if (remainingDays > 0) {
+        return `${weeks}w ${remainingDays}d`;
+      }
+      return `${weeks}w`;
+    }
+
+    // Days (1+ day)
+    if (days >= 1) {
+      let result = `${days}d`;
+      if (hours > 0) result += ` ${hours}h`;
+      if (minutes > 0) result += ` ${minutes}m`;
+      return result;
+    }
+
+    // Hours (1+ hour)
+    if (hours >= 1) {
+      if (minutes > 0) {
+        return `${hours}h ${minutes}m`;
+      }
+      return `${hours}h`;
+    }
+
+    // Minutes only
+    return `${minutes}m`;
+  }
+
+  function formatQuranTimeStyledParts(totalMinutes: number): { primary: string; secondary: string } {
+    const formatted = formatQuranTimeAdaptive(totalMinutes);
+    const parts = formatted.split(' ');
+    const primary = parts[0] || '';
+
+    const secondary = parts.slice(1).join(' ');
+    return { primary, secondary };
+  }
+
+  // Revision Goals
+  // revisionSchedule, dailyRevisedVerses, etc. are already destructured at the top of the component
+  const [revisionGoalType, setRevisionGoalType] = useState<'verses' | 'pages'>('verses');
+
+  const dailyVersesTarget = revisionSchedule?.versesPerDay || 5;
+  const weeklySurahsTarget = revisionSchedule?.surahsPerWeek?.length || 0;
+
+  const dailyPagesTarget = revisionSchedule?.pagesPerDay || 1;
+  const weeklyPagesTarget = revisionSchedule?.pagesPerWeek || 5;
+
+  const dailyVersesProgress = completedToday?.length || 0;
+  const weeklySurahsProgress = weeklyRevisedSurahsCompleted?.length || 0;
+
+  const dailyPagesProgress = revisionSchedule?.completedPagesToday?.length || 0;
+  const weeklyPagesProgress = revisionSchedule?.completedPagesThisWeek?.length || 0;
+
+  const dailyVersesPercentage = Math.min(100, (dailyVersesProgress / dailyVersesTarget) * 100);
+  const weeklySurahsPercentage = weeklySurahsTarget > 0 ? Math.min(100, (weeklySurahsProgress / weeklySurahsTarget) * 100) : 0;
+
+  const dailyPagesPercentage = Math.min(100, (dailyPagesProgress / dailyPagesTarget) * 100);
+  const weeklyPagesPercentage = Math.min(100, (weeklyPagesProgress / weeklyPagesTarget) * 100);
 
   return (
     <>
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      <View style={styles.header}>
-        <MinimalTopStrip style={{}} />
-        <Text style={styles.greeting}>Assalamu Alaikkum{userName ? `, ${userName}` : ''}</Text>
-        <Text style={styles.welcomeText}>Welcome back to your Quran journey</Text>
-      </View>
+        <View style={styles.header}>
+          <MinimalTopStrip style={{}} />
+          <Text style={styles.greeting}>Assalamu Alaikkum{userName ? `, ${userName} ` : ''}</Text>
+          <Text style={styles.welcomeText}>Welcome back to your Quran journey</Text>
+        </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Overall Progress</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Overall Progress</Text>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <ProgressCard title="Verses" data={stats.verses} cardWidth={cardWidth} minHeight={computedMinHeight} />
-          <ProgressCard title="Surahs" data={stats.surahs} cardWidth={cardWidth} minHeight={computedMinHeight} />
-          <ProgressCard title="Juz" data={stats.juz as any} cardWidth={cardWidth} minHeight={computedMinHeight} showJuzCompletedLabel={true} />
-        </View>
-      </View>
-
-      {/* Ayah of the Day */}
-      <View style={styles.section}>
-        <AyahOfTheDayCard />
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Revision Goals</Text>
-        <View style={styles.revisionItem}>
-          <View style={styles.revisionHeader}>
-            <Text style={styles.revisionTitle}>Daily Verses</Text>
-            {stats.dailyRevisionCompleted >= stats.dailyRevisionTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
+            <ProgressCard title="Verses" data={stats.verses} cardWidth={cardWidth} minHeight={computedMinHeight} />
+            <ProgressCard title="Surahs" data={stats.surahs} cardWidth={cardWidth} minHeight={computedMinHeight} />
+            <ProgressCard title="Juz" data={stats.juz as any} cardWidth={cardWidth} minHeight={computedMinHeight} showJuzCompletedLabel={true} />
           </View>
-          <Text style={styles.revisionProgress}>{stats.dailyRevisionCompleted} / {stats.dailyRevisionTarget} verses</Text>
-          <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${Math.min((stats.dailyRevisionCompleted / stats.dailyRevisionTarget)*100,100)}%`, backgroundColor: stats.dailyRevisionCompleted >= stats.dailyRevisionTarget ? '#4CAF50' : '#2196F3' }]} /></View>
         </View>
-        <View style={styles.revisionItem}>
-          <View style={styles.revisionHeader}>
-            <Text style={styles.revisionTitle}>Weekly Surahs</Text>
-            {stats.weeklyRevisionCompleted >= stats.weeklyRevisionTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
-          </View>
-          <Text style={styles.revisionProgress}>{stats.weeklyRevisionCompleted} / {stats.weeklyRevisionTarget} surahs</Text>
-          <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${Math.min((stats.weeklyRevisionCompleted / stats.weeklyRevisionTarget)*100,100)}%`, backgroundColor: stats.weeklyRevisionCompleted >= stats.weeklyRevisionTarget ? '#4CAF50' : '#2196F3' }]} /></View>
-        </View>
-      </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <View style={styles.actionsContainer}>
-          {/* Hifdh Planner monthly summary - moved here as first quick action */}
-          <Pressable onPress={() => router.push('/(tabs)/revision')} style={({ pressed }) => [styles.plannerCard, pressed && { opacity: 0.9 }]}>
-            <View style={styles.plannerHeader}>
-              <View style={styles.plannerTitleRow}>
-                <View style={styles.plannerIconWrap}><Calendar size={16} color="#a855f7" /></View>
-                <Text style={styles.plannerTitle}>Hifdh Planner for {plannerSummary.monthName}</Text>
-              </View>
-              <Pressable onPress={() => setShowPlannerInfo(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Info size={18} color="#a855f7" />
+        {/* Ayah of the Day */}
+        <View style={styles.section}>
+          <AyahOfTheDayCard />
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Revision Goals</Text>
+            <View style={styles.toggleContainer}>
+              <Pressable
+                onPress={() => setRevisionGoalType('verses')}
+                style={[
+                  styles.toggleButton,
+                  revisionGoalType === 'verses' && styles.toggleButtonActive
+                ]}
+              >
+                <Text style={[
+                  styles.toggleText,
+                  revisionGoalType === 'verses' ? styles.toggleTextActive : styles.toggleTextInactive
+                ]}>Verses</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setRevisionGoalType('pages')}
+                style={[
+                  styles.toggleButton,
+                  revisionGoalType === 'pages' && styles.toggleButtonActive
+                ]}
+              >
+                <Text style={[
+                  styles.toggleText,
+                  revisionGoalType === 'pages' ? styles.toggleTextActive : styles.toggleTextInactive
+                ]}>Pages</Text>
               </Pressable>
             </View>
-            <>
-              <Text style={styles.plannerSubtitle}>{plannerSummary.completedPlannedVerses} of {plannerSummary.totalPlannedVerses} verses completed</Text>
-              <View style={styles.plannerProgressBar}>
-                <View style={[styles.plannerProgressFill, { width: `${plannerSummary.percent}%` }]} />
-              </View>
-              <View style={styles.plannerStatsRow}>
-                <Text style={styles.plannerStatText}>{plannerSummary.inProgressSurahs} surahs in progress</Text>
-                <Text style={styles.plannerStatText}>{plannerSummary.totalPlannedSurahs} planned</Text>
-              </View>
-              {plannerSummary.totalPlannedVerses === 0 && (
-                <Text style={styles.plannerEmptyText}>No plans yet for {plannerSummary.monthName}. Add your Hifdh plans in Revision.</Text>
-              )}
-            </>
-          </Pressable>
-
-          {/* Mushaf Card - added below Hifdh Planner */}
-          <View style={styles.quickActionItem}>
-            <MushafDownloadCard />
           </View>
 
-          {quickActions.map((a,i) => <ActionCard key={i} {...a} />)}
-          
-          {/* Badges Card */}
-          <Pressable
-            style={styles.badgeCard}
-            onPress={() => router.push('/(tabs)/badges')}
-          >
-            <View style={styles.badgeIcon}>
-              <Award size={24} color="#fff" />
-            </View>
-            <View style={styles.badgeContent}>
-              <Text style={styles.badgeTitle}>Badges</Text>
-              <Text style={styles.badgeSubtitle}>{currentBadge.name}</Text>
-            </View>
-          </Pressable>
+          {revisionGoalType === 'verses' ? (
+            <>
+              <View style={styles.revisionItem}>
+                <View style={styles.revisionHeader}>
+                  <Text style={styles.revisionTitle}>Daily Verses</Text>
+                  {dailyVersesProgress >= dailyVersesTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
+                </View>
+                <Text style={styles.revisionProgress}>{dailyVersesProgress} / {dailyVersesTarget} verses</Text>
+                <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${dailyVersesPercentage}%`, backgroundColor: dailyVersesProgress >= dailyVersesTarget ? '#4CAF50' : '#2196F3' }]} /></View>
+              </View>
+              <View style={styles.revisionItem}>
+                <View style={styles.revisionHeader}>
+                  <Text style={styles.revisionTitle}>Weekly Surahs</Text>
+                  {weeklySurahsProgress >= weeklySurahsTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
+                </View>
+                <Text style={styles.revisionProgress}>{weeklySurahsProgress} / {weeklySurahsTarget} surahs</Text>
+                <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${weeklySurahsPercentage}%`, backgroundColor: weeklySurahsProgress >= weeklySurahsTarget ? '#4CAF50' : '#2196F3' }]} /></View>
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.revisionItem}>
+                <View style={styles.revisionHeader}>
+                  <Text style={styles.revisionTitle}>Daily Pages</Text>
+                  {dailyPagesProgress >= dailyPagesTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
+                </View>
+                <Text style={styles.revisionProgress}>{dailyPagesProgress} / {dailyPagesTarget} pages</Text>
+                <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${dailyPagesPercentage}%`, backgroundColor: dailyPagesProgress >= dailyPagesTarget ? '#4CAF50' : '#2196F3' }]} /></View>
+              </View>
+              <View style={styles.revisionItem}>
+                <View style={styles.revisionHeader}>
+                  <Text style={styles.revisionTitle}>Weekly Pages</Text>
+                  {weeklyPagesProgress >= weeklyPagesTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
+                </View>
+                <Text style={styles.revisionProgress}>{weeklyPagesProgress} / {weeklyPagesTarget} pages</Text>
+                <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${weeklyPagesPercentage}%`, backgroundColor: weeklyPagesProgress >= weeklyPagesTarget ? '#4CAF50' : '#2196F3' }]} /></View>
+              </View>
+            </>
+          )}
+        </View>
 
-          {/* Quiz Card */}
-          <Pressable
-            style={styles.quizCard}
-            onPress={() => router.push('/quiz')}
-            disabled={memorizedVerses.length === 0}
-          >
-            <View style={styles.quizIcon}>
-              <Target size={24} color="#fff" />
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <View style={styles.actionsContainer}>
+            {/* Hifdh Planner monthly summary - moved here as first quick action */}
+            <Pressable onPress={() => router.push('/(tabs)/revision')} style={({ pressed }) => [styles.plannerCard, pressed && { opacity: 0.9 }]}>
+              <View style={styles.plannerHeader}>
+                <View style={styles.plannerTitleRow}>
+                  <View style={styles.plannerIconWrap}><Calendar size={16} color="#a855f7" /></View>
+                  <Text style={styles.plannerTitle}>Hifdh Planner for {plannerSummary.monthName}</Text>
+                </View>
+                <Pressable onPress={() => setShowPlannerInfo(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Info size={18} color="#a855f7" />
+                </Pressable>
+              </View>
+              <>
+                <Text style={styles.plannerSubtitle}>{plannerSummary.completedPlannedVerses} of {plannerSummary.totalPlannedVerses} verses completed</Text>
+                <View style={styles.plannerProgressBar}>
+                  <View style={[styles.plannerProgressFill, { width: `${plannerSummary.percent}%` }]} />
+                </View>
+                <View style={styles.plannerStatsRow}>
+                  <Text style={styles.plannerStatText}>{plannerSummary.inProgressSurahs} surahs in progress</Text>
+                  <Text style={styles.plannerStatText}>{plannerSummary.totalPlannedSurahs} planned</Text>
+                </View>
+                {plannerSummary.totalPlannedVerses === 0 && (
+                  <Text style={styles.plannerEmptyText}>No plans yet for {plannerSummary.monthName}. Add your Hifdh plans in Revision.</Text>
+                )}
+              </>
+            </Pressable>
+
+            {/* Mushaf Card - added below Hifdh Planner */}
+            <View style={styles.quickActionItem}>
+              <MushafDownloadCard />
             </View>
-            <View style={styles.quizContent}>
-              <Text style={styles.quizTitle}>Take Quiz</Text>
-              <Text style={styles.quizSubtitle}>
-                {memorizedVerses.length > 0 ? "Test your knowledge" : "Memorize verses first"}
+
+            {quickActions.map((a, i) => <ActionCard key={i} {...a} />)}
+
+            {/* Badges Card */}
+            <Pressable
+              style={styles.badgeCard}
+              onPress={() => router.push('/(tabs)/badges')}
+            >
+              <View style={styles.badgeIcon}>
+                <Award size={24} color="#fff" />
+              </View>
+              <View style={styles.badgeContent}>
+                <Text style={styles.badgeTitle}>Badges</Text>
+                <Text style={styles.badgeSubtitle}>{currentBadge.name}</Text>
+              </View>
+            </Pressable>
+
+            {/* Quiz Card */}
+            <Pressable
+              style={styles.quizCard}
+              onPress={() => router.push('/quiz')}
+              disabled={memorizedVerses.length === 0}
+            >
+              <View style={styles.quizIcon}>
+                <Target size={24} color="#fff" />
+              </View>
+              <View style={styles.quizContent}>
+                <Text style={styles.quizTitle}>Take Quiz</Text>
+                <Text style={styles.quizSubtitle}>
+                  {memorizedVerses.length > 0 ? "Test your knowledge" : "Memorize verses first"}
+                </Text>
+              </View>
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Usage Overview</Text>
+          <View style={styles.statsGrid}>
+            {/* Show smart adaptive time with styled primary/secondary parts - activeReadingTime is seconds */}
+            {(() => {
+              const minutes = Math.floor((activeReadingTime || 0) / 60);
+              const parts = formatQuranTimeStyledParts(minutes);
+              const qcolor = '#4CAF50';
+              // slightly lighter secondary color derived from primary for visual hierarchy
+              const secondaryColor = '#b2dfbb';
+              const timeValue = (
+                <>
+                  <Text style={[styles.timePrimary, { color: qcolor }]}>{parts.primary}</Text>
+                  {parts.secondary ? <Text style={[styles.timeSecondary, { color: secondaryColor }]}>{' ' + parts.secondary}</Text> : null}
+                </>
+              );
+              return <StatCard title="Quran Time" value={timeValue} subtitle="Active time spent" icon={Clock} color={qcolor} />;
+            })()}
+            <StreakCard title="Streak" value={stats.currentStreak} subtitle="Day streak" icon={FireStreakIcon} color={getStreakColor(stats.currentStreak)} />
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>As-Suwar Al Mustahabbah</Text>
+          <LinearGradient colors={['#2a2a2a', '#1f1f1f']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.mustahabbahCard}>
+            <MustahabbahGrid
+              items={mustahabbahItems.map(it => ({ key: it.key, label: it.label, status: getSurahStatus(it) }))}
+              onItemPress={(item) => {
+                try {
+                  const surahId = parseInt(item.key, 10);
+                  if (isNaN(surahId) || surahId < 1 || surahId > 114) {
+                    console.warn('[Mustahabbah] Invalid surahId:', surahId);
+                    return;
+                  }
+
+                  // light haptic feedback
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
+
+                  useQuranStore.getState().setLastViewedSurahId(surahId);
+
+                  // persist last read (best-effort)
+                  saveLastRead(surahId, 1).catch(err => {
+                    console.warn('[Mustahabbah] Failed to save last read:', err);
+                  });
+
+                  // Use replace for clean navigation
+                  safeNavigation.replace({
+                    pathname: '/(tabs)/read',
+                    params: {
+                      surahId: surahId.toString(),
+                      verseItem: '1',
+                      source: 'mustahabbah',
+                    },
+                  });
+                } catch (error) {
+                  console.error('[Mustahabbah] Navigation error:', error);
+                }
+              }}
+            />
+            <View style={styles.progressSummary}>
+              <View style={styles.progressItem}><View style={styles.memorizedDot} /><Text style={styles.progressText}>{mustahabbahMemorized} Memorized</Text></View>
+              <View style={styles.progressItem}><View style={styles.remainingDot} /><Text style={styles.progressText}>{mustahabbahRemaining} Remaining</Text></View>
+            </View>
+          </LinearGradient>
+        </View>
+
+        {/* Hifdh Planner monthly summary moved above into Quick Actions */}
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Recent Activity</Text>
+          <View style={styles.activityContainer}>
+            {recentActivity.map(act => (
+              <View key={act.id} style={styles.activityItem}>
+                <View style={styles.activityIcon}>
+                  {act.type === 'memorized' && <BookOpen size={16} color={primary} />}
+                  {act.type === 'revised' && <RotateCcw size={16} color={primary} />}
+                  {act.type === 'quiz' && <Award size={16} color={primary} />}
+                </View>
+                <View style={styles.activityContent}>
+                  <Text style={styles.activityText}>
+                    {act.type === 'memorized' && 'surah' in act && `Memorized ${act.surah.englishName} (${act.surah.arabicName})`}
+                    {act.type === 'revised' && 'surah' in act && `Revised ${act.surah.englishName} (${act.surah.arabicName})`}
+                    {act.type === 'quiz' && 'score' in act && `Quiz completed with ${act.score}% score`}
+                  </Text>
+                  <Text style={styles.activityTime}>{act.time}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Streak Tooltip Modal */}
+      <Modal
+        visible={showStreakTooltip}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowStreakTooltip(false)}
+      >
+        <Pressable
+          style={styles.tooltipOverlay}
+          onPress={() => setShowStreakTooltip(false)}
+        >
+          <View style={styles.tooltipContainer}>
+            <View style={styles.tooltipHeader}>
+              <FireStreakIcon size={24} />
+              <Text style={styles.tooltipTitle}>Daily Streak</Text>
+            </View>
+            <Text style={styles.tooltipText}>
+              Your streak counts consecutive days of opening iHafidh.
+            </Text>
+            <Text style={styles.tooltipText}>
+              📅 <Text style={styles.tooltipBold}>Day 1:</Text> Open app → Streak = 1{"\n"}
+              📅 <Text style={styles.tooltipBold}>Day 2:</Text> Open app → Streak = 2{"\n"}
+              📅 <Text style={styles.tooltipBold}>Day 3:</Text> Skip day{"\n"}
+              📅 <Text style={styles.tooltipBold}>Day 4:</Text> Open app → Streak = 1 (resets)
+            </Text>
+            <View style={styles.tooltipNote}>
+              <Info size={16} color="#FFD700" />
+              <Text style={styles.tooltipNoteText}>
+                Streak resets to 1 when you miss a day to open iHafidh
               </Text>
             </View>
-          </Pressable>
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Usage Overview</Text>
-        <View style={styles.statsGrid}>
-          <StatCard title="Quran Time" value={formatTotalTime(activeReadingTime)} subtitle="Active time spent" icon={Clock} color="#4CAF50" />
-          <StreakCard title="Streak" value={stats.currentStreak} subtitle="Day streak" icon={FireStreakIcon} color={getStreakColor(stats.currentStreak)} />
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>As-Suwar Al Mustahabbah</Text>
-        <LinearGradient colors={['#2a2a2a','#1f1f1f']} start={{x:0,y:0}} end={{x:1,y:1}} style={styles.mustahabbahCard}>
-          <MustahabbahGrid
-            items={mustahabbahItems.map(it => ({ key: it.key, label: it.label, status: getSurahStatus(it) }))}
-            onItemPress={(item) => {
-              try {
-                const surahId = parseInt(item.key, 10);
-                if (isNaN(surahId) || surahId < 1 || surahId > 114) {
-                  console.warn('[Mustahabbah] Invalid surahId:', surahId);
-                  return;
-                }
-
-                // light haptic feedback
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-
-                useQuranStore.getState().setLastViewedSurahId(surahId);
-
-                // persist last read (best-effort)
-                saveLastRead(surahId, 1).catch(err => {
-                  console.warn('[Mustahabbah] Failed to save last read:', err);
-                });
-
-                // Use replace for clean navigation
-                safeNavigation.replace({
-                  pathname: '/(tabs)/read',
-                  params: {
-                    surahId: surahId.toString(),
-                    verseItem: '1',
-                    source: 'mustahabbah',
-                  },
-                });
-              } catch (error) {
-                console.error('[Mustahabbah] Navigation error:', error);
-              }
-            }}
-          />
-          <View style={styles.progressSummary}>
-            <View style={styles.progressItem}><View style={styles.memorizedDot} /><Text style={styles.progressText}>{mustahabbahMemorized} Memorized</Text></View>
-            <View style={styles.progressItem}><View style={styles.remainingDot} /><Text style={styles.progressText}>{mustahabbahRemaining} Remaining</Text></View>
+            <Pressable
+              style={styles.tooltipCloseButton}
+              onPress={() => setShowStreakTooltip(false)}
+            >
+              <Text style={styles.tooltipCloseText}>Got it!</Text>
+            </Pressable>
           </View>
-        </LinearGradient>
-      </View>
+        </Pressable>
+      </Modal>
 
-      {/* Hifdh Planner monthly summary moved above into Quick Actions */}
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Recent Activity</Text>
-        <View style={styles.activityContainer}>
-          {recentActivity.map(act => (
-            <View key={act.id} style={styles.activityItem}>
-              <View style={styles.activityIcon}>
-                {act.type === 'memorized' && <BookOpen size={16} color={primary} />}
-                {act.type === 'revised' && <RotateCcw size={16} color={primary} />}
-                {act.type === 'quiz' && <Award size={16} color={primary} />}
-              </View>
-              <View style={styles.activityContent}>
-                <Text style={styles.activityText}>
-                  {act.type === 'memorized' && 'surah' in act && `Memorized ${act.surah.englishName} (${act.surah.arabicName})`}
-                  {act.type === 'revised' && 'surah' in act && `Revised ${act.surah.englishName} (${act.surah.arabicName})`}
-                  {act.type === 'quiz' && 'score' in act && `Quiz completed with ${act.score}% score`}
-                </Text>
-                <Text style={styles.activityTime}>{act.time}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      </View>
-    </ScrollView>
-
-    {/* Streak Tooltip Modal */}
-    <Modal
-      visible={showStreakTooltip}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={() => setShowStreakTooltip(false)}
-    >
-      <Pressable 
-        style={styles.tooltipOverlay} 
-        onPress={() => setShowStreakTooltip(false)}
+      {/* Planner Info Modal */}
+      <Modal
+        visible={showPlannerInfo}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowPlannerInfo(false)}
       >
-        <View style={styles.tooltipContainer}>
-          <View style={styles.tooltipHeader}>
-            <FireStreakIcon size={24} />
-            <Text style={styles.tooltipTitle}>Daily Streak</Text>
-          </View>
-          <Text style={styles.tooltipText}>
-            Your streak counts consecutive days of opening iHafidh.
-          </Text>
-          <Text style={styles.tooltipText}>
-            📅 <Text style={styles.tooltipBold}>Day 1:</Text> Open app → Streak = 1{"\n"}
-            📅 <Text style={styles.tooltipBold}>Day 2:</Text> Open app → Streak = 2{"\n"}
-            📅 <Text style={styles.tooltipBold}>Day 3:</Text> Skip day{"\n"}
-            📅 <Text style={styles.tooltipBold}>Day 4:</Text> Open app → Streak = 1 (resets)
-          </Text>
-          <View style={styles.tooltipNote}>
-            <Info size={16} color="#FFD700" />
-            <Text style={styles.tooltipNoteText}>
-              Streak resets to 1 when you miss a day to open iHafidh
+        <Pressable style={styles.tooltipOverlay} onPress={() => setShowPlannerInfo(false)}>
+          <View style={styles.tooltipContainer}>
+            <View style={styles.tooltipHeader}>
+              <Calendar size={24} color="#a855f7" />
+              <Text style={styles.tooltipTitle}>Hifdh Planner</Text>
+            </View>
+            <Text style={styles.tooltipText}>
+              Plan your Hifdh by adding surahs or verse ranges to any day of the month. Your progress updates automatically when you memorize or revise. Overlapping plans are de-duplicated—no double counting.
             </Text>
+            <View style={styles.tooltipNote}>
+              <Info size={16} color="#a855f7" />
+              <Text style={styles.tooltipNoteText}>
+                Use the Hifdh Planner in the Revision tab to add or edit your plans.
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+              <Pressable style={[styles.tooltipCloseButton, { backgroundColor: '#111827', borderWidth: 1, borderColor: '#a855f7' }]} onPress={() => setShowPlannerInfo(false)}>
+                <Text style={styles.tooltipCloseText}>Close</Text>
+              </Pressable>
+              <Pressable style={[styles.tooltipCloseButton, { backgroundColor: '#a855f7' }]} onPress={() => { setShowPlannerInfo(false); router.push('/(tabs)/revision'); }}>
+                <Text style={styles.tooltipCloseText}>Open Planner</Text>
+              </Pressable>
+            </View>
           </View>
-          <Pressable 
-            style={styles.tooltipCloseButton}
-            onPress={() => setShowStreakTooltip(false)}
-          >
-            <Text style={styles.tooltipCloseText}>Got it!</Text>
-          </Pressable>
-        </View>
-      </Pressable>
-    </Modal>
-
-    {/* Planner Info Modal */}
-    <Modal
-      visible={showPlannerInfo}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={() => setShowPlannerInfo(false)}
-    >
-      <Pressable style={styles.tooltipOverlay} onPress={() => setShowPlannerInfo(false)}>
-        <View style={styles.tooltipContainer}>
-          <View style={styles.tooltipHeader}>
-            <Calendar size={24} color="#a855f7" />
-            <Text style={styles.tooltipTitle}>Hifdh Planner</Text>
-          </View>
-          <Text style={styles.tooltipText}>
-            Plan your Hifdh by adding surahs or verse ranges to any day of the month. Your progress updates automatically when you memorize or revise. Overlapping plans are de-duplicated—no double counting.
-          </Text>
-          <View style={styles.tooltipNote}>
-            <Info size={16} color="#a855f7" />
-            <Text style={styles.tooltipNoteText}>
-              Use the Hifdh Planner in the Revision tab to add or edit your plans.
-            </Text>
-          </View>
-          <View style={{ flexDirection:'row', gap:8, marginTop:8 }}>
-            <Pressable style={[styles.tooltipCloseButton, { backgroundColor: '#111827', borderWidth:1, borderColor:'#a855f7' }]} onPress={() => setShowPlannerInfo(false)}>
-              <Text style={styles.tooltipCloseText}>Close</Text>
-            </Pressable>
-            <Pressable style={[styles.tooltipCloseButton, { backgroundColor: '#a855f7' }]} onPress={() => { setShowPlannerInfo(false); router.push('/(tabs)/revision'); }}>
-              <Text style={styles.tooltipCloseText}>Open Planner</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Pressable>
-    </Modal>
+        </Pressable>
+      </Modal>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex:1, backgroundColor:'#1a1a1a' },
-  header: { paddingTop:16, paddingBottom:16, paddingHorizontal:20, backgroundColor:'#1a1a1a', borderBottomWidth:1, borderBottomColor:'#333' },
-  greeting: { fontSize:18, fontWeight:'600', color:'#fff', marginTop:8 },
-  welcomeText: { fontSize:14, color:'#ccc', marginTop:4 },
-  section: { paddingHorizontal:20, paddingVertical:16 },
-  sectionTitle: { color:'#fff', fontSize:16, fontWeight:'600', marginBottom:12 },
-  progressCard: { 
-    backgroundColor:'#222', 
-    borderRadius:12, 
-    padding:12, 
-    marginRight:12,
+  container: { flex: 1, backgroundColor: '#1a1a1a' },
+  header: { paddingTop: 16, paddingBottom: 16, paddingHorizontal: 20, backgroundColor: '#1a1a1a', borderBottomWidth: 1, borderBottomColor: '#333' },
+  greeting: { fontSize: 18, fontWeight: '600', color: '#fff', marginTop: 8 },
+  welcomeText: { fontSize: 14, color: '#ccc', marginTop: 4 },
+  section: { paddingHorizontal: 20, paddingVertical: 16 },
+  sectionTitle: { color: '#fff', fontSize: 16, fontWeight: '600', marginBottom: 12 },
+  progressCard: {
+    backgroundColor: '#222',
+    borderRadius: 12,
+    padding: 12,
+    marginRight: 12,
     justifyContent: 'space-between', // distribute circle and legend evenly
   },
-  progressCardTitle: { color:'#fff', fontSize:14, marginBottom:8 },
-  progressCircleContainer: { alignItems:'center', justifyContent:'center', marginBottom:8 },
-  progressLegend: { flexDirection:'column', alignItems:'flex-start', marginTop:8 },
-  legendItem: { flexDirection:'row', alignItems:'center', marginBottom:4, gap: 6 },
-  legendDot: { width:8, height:8, borderRadius:4, marginRight:8 },
-  legendText: { color:'#888', fontSize:13 },
-  revisionItem: { backgroundColor:'#222', borderRadius:12, padding:12, marginBottom:12 },
-  revisionHeader: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:8 },
-  revisionTitle: { textAlign:'center', fontSize:16, fontWeight:'600', color:'#fff' },
-  revisionProgress: { fontSize:14, color:'#888' },
-  progressBar: { height:6, backgroundColor:'#555', borderRadius:3, overflow:'hidden', marginTop:8 },
-  progressFill: { height:'100%', backgroundColor:'#2196F3' },
-  actionsContainer: { gap:12, marginVertical:8 },
-  actionCard: { flexDirection:'row', alignItems:'center', backgroundColor:'#333', borderRadius:12, padding:16, borderWidth:2 },
-  actionIconWrap: { width:40, height:40, borderRadius:8, alignItems:'center', justifyContent:'center', backgroundColor:'rgba(255,255,255,0.06)', marginRight:12 },
-  actionCardText: { flex:1 },
-  actionCardTitle: { fontSize:16, fontWeight:'600', color:'#fff', marginBottom:2 },
-  actionCardSubtitle: { fontSize:14, color:'#888' },
-  statsGrid: { flexDirection:'row', flexWrap:'wrap', justifyContent:'space-between' },
-  statCard: { width:(width-50)/2, backgroundColor:'#333', borderRadius:12, padding:16, marginBottom:12, alignItems:'center', justifyContent:'center' },
-  statTitle: { fontSize:14, fontWeight:'600', color:'#fff', textAlign:'center', marginBottom:2 },
-  statValue: { fontSize:28, fontWeight:'bold', marginBottom:2 },
-  statSubtitle: { fontSize:13, color:'#aaa', textAlign:'center' },
-  mustahabbahCard: { backgroundColor:'#2a2a2a', borderRadius:12, padding:12 },
-  mustahabbahGrid: { marginTop:8 },
-  mustahabbahRow: { flexDirection:'row', justifyContent:'space-between', alignItems: 'stretch', marginBottom:10 },
-  cardWrapper: { 
+  progressCardTitle: { color: '#fff', fontSize: 14, marginBottom: 8 },
+  progressCircleContainer: { alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  progressLegend: { flexDirection: 'column', alignItems: 'flex-start', marginTop: 8 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 4, gap: 6 },
+  legendDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
+  legendText: { color: '#888', fontSize: 13 },
+  revisionItem: { backgroundColor: '#222', borderRadius: 12, padding: 12, marginBottom: 12 },
+  revisionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  revisionTitle: { textAlign: 'center', fontSize: 16, fontWeight: '600', color: '#fff' },
+  revisionProgress: { fontSize: 14, color: '#888' },
+  progressBar: { height: 6, backgroundColor: '#555', borderRadius: 3, overflow: 'hidden', marginTop: 8 },
+  progressFill: { height: '100%', backgroundColor: '#2196F3' },
+  actionsContainer: { gap: 12, marginVertical: 8 },
+  actionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#333', borderRadius: 12, padding: 16, borderWidth: 2 },
+  actionIconWrap: { width: 40, height: 40, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.06)', marginRight: 12 },
+  actionCardText: { flex: 1 },
+  actionCardTitle: { fontSize: 16, fontWeight: '600', color: '#fff', marginBottom: 2 },
+  actionCardSubtitle: { fontSize: 14, color: '#888' },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  statCard: { width: (width - 50) / 2, backgroundColor: '#333', borderRadius: 12, padding: 16, marginBottom: 12, alignItems: 'center', justifyContent: 'center' },
+  statTitle: { fontSize: 14, fontWeight: '600', color: '#fff', textAlign: 'center', marginBottom: 2 },
+  statValue: { fontSize: 28, fontWeight: 'bold', marginBottom: 2 },
+  timePrimary: { fontSize: 28, fontWeight: '700' },
+  timeSecondary: { fontSize: 20, fontWeight: '600' },
+  statSubtitle: { fontSize: 13, color: '#aaa', textAlign: 'center' },
+  mustahabbahCard: { backgroundColor: '#2a2a2a', borderRadius: 12, padding: 12 },
+  mustahabbahGrid: { marginTop: 8 },
+  mustahabbahRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'stretch', marginBottom: 10 },
+  cardWrapper: {
     flexBasis: '30%',
     maxWidth: '32%',
     marginHorizontal: '1%',
   },
-  cardWrapperSmall: { },
-  card: { 
-    backgroundColor:'#2b2b2b', 
-    borderRadius:12, 
-    padding:12, 
-    position:'relative',
+  cardWrapperSmall: {},
+  card: {
+    backgroundColor: '#2b2b2b',
+    borderRadius: 12,
+    padding: 12,
+    position: 'relative',
     minHeight: 85,
     justifyContent: 'space-between',
     borderWidth: 0.5,
@@ -1218,46 +1380,46 @@ const styles = StyleSheet.create({
     paddingRight: 8, // Space for icon
     paddingTop: 8, // Space for top icon
   },
-  compactCard: { paddingVertical:8, paddingHorizontal:8 },
-  cardTitle: { 
-    color:'#fff', 
-    fontSize:14, 
-    fontWeight:'600',
+  compactCard: { paddingVertical: 8, paddingHorizontal: 8 },
+  cardTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
     textAlign: 'center',
     lineHeight: 16,
   },
-  compactCardTitle: { fontSize:13, fontWeight:'600' },
-  cardTitleSmall: { fontSize:12 },
-  iconContainer: { 
-    width:18, 
-    height:18, 
-    borderRadius:9, 
-    justifyContent:'center', 
-    alignItems:'center', 
-    position:'absolute', 
-    top:8, 
-    right:8 
+  compactCardTitle: { fontSize: 13, fontWeight: '600' },
+  cardTitleSmall: { fontSize: 12 },
+  iconContainer: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'absolute',
+    top: 8,
+    right: 8
   },
-  progressTextContainer: { position:'absolute', top:0, left:0, right:0, bottom:0, alignItems:'center', justifyContent:'center' },
-  progressPercentage: { color:'#fff', fontSize:12, fontWeight:'700' },
-  notStartedBorder: { borderWidth:1, borderColor:'#d64545' },
-  compactIconContainer: { width:18, height:18, borderRadius:9 },
-  iconContainerSmall: { width:16, height:16, borderRadius:8 },
-  iconText: { color:'#fff', fontSize:11, fontWeight:'700', lineHeight:11 },
-  compactIconText: { fontSize:9, lineHeight:11 },
-  iconTextSmall: { fontSize:8, lineHeight:10 },
-  progressSummary: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingTop:16, borderTopWidth:1, borderTopColor:'#3a3a3a', marginTop:8 },
-  progressItem: { flexDirection:'row', alignItems:'center' },
-  memorizedDot: { width:12, height:12, borderRadius:6, marginRight:8, backgroundColor:'#2D5A27' },
-  remainingDot: { width:12, height:12, borderRadius:6, backgroundColor:'#4a4a4a', borderWidth:2, borderColor:'#6a6a6a', marginRight:8 },
-  progressText: { fontSize:14, fontWeight:'500', color:'#fff' },
-  activityContainer: { gap:12, marginTop:12 },
-  activityItem: { flexDirection:'row', alignItems:'center', backgroundColor:'#333', borderRadius:12, padding:16, marginBottom:12 },
-  activityIcon: { width:40, height:40, borderRadius:20, backgroundColor:'rgba(33,150,243,0.08)', justifyContent:'center', alignItems:'center', marginRight:12 },
-  activityContent: { flex:1 },
-  activityText: { color:'#fff', fontSize:14, marginBottom:4 },
-  activityTime: { color:'#888', fontSize:12 },
-  badgesContainer: { gap:12 },
+  progressTextContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+  progressPercentage: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  notStartedBorder: { borderWidth: 1, borderColor: '#d64545' },
+  compactIconContainer: { width: 18, height: 18, borderRadius: 9 },
+  iconContainerSmall: { width: 16, height: 16, borderRadius: 8 },
+  iconText: { color: '#fff', fontSize: 11, fontWeight: '700', lineHeight: 11 },
+  compactIconText: { fontSize: 9, lineHeight: 11 },
+  iconTextSmall: { fontSize: 8, lineHeight: 10 },
+  progressSummary: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, borderTopWidth: 1, borderTopColor: '#3a3a3a', marginTop: 8 },
+  progressItem: { flexDirection: 'row', alignItems: 'center' },
+  memorizedDot: { width: 12, height: 12, borderRadius: 6, marginRight: 8, backgroundColor: '#2D5A27' },
+  remainingDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#4a4a4a', borderWidth: 2, borderColor: '#6a6a6a', marginRight: 8 },
+  progressText: { fontSize: 14, fontWeight: '500', color: '#fff' },
+  activityContainer: { gap: 12, marginTop: 12 },
+  activityItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#333', borderRadius: 12, padding: 16, marginBottom: 12 },
+  activityIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(33,150,243,0.08)', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  activityContent: { flex: 1 },
+  activityText: { color: '#fff', fontSize: 14, marginBottom: 4 },
+  activityTime: { color: '#888', fontSize: 12 },
+  badgesContainer: { gap: 12 },
   badgeCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1395,17 +1557,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   // Planner styles
-  plannerCard: { backgroundColor:'#2a2a2a', borderRadius:12, padding:12, borderWidth:2, borderColor:'#a855f7' },
-  plannerHeader: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:6 },
-  plannerTitleRow: { flexDirection:'row', alignItems:'center', gap:6 },
-  plannerIconWrap: { width:24, height:24, borderRadius:6, backgroundColor:'rgba(168,85,247,0.12)', alignItems:'center', justifyContent:'center' },
-  plannerTitle: { fontSize:15, fontWeight:'700', color:'#fff' },
-  plannerSubtitle: { fontSize:13, color:'#ccc', marginBottom:6 },
-  plannerProgressBar: { height:6, backgroundColor:'#4b5563', borderRadius:999, overflow:'hidden' },
-  plannerProgressFill: { height:'100%', backgroundColor:'#a855f7' },
-  plannerStatsRow: { flexDirection:'row', justifyContent:'space-between', marginTop:6 },
-  plannerStatText: { color:'#94a3b8', fontSize:12, fontWeight:'600' },
-  plannerEmptyText: { color:'#94a3b8', fontSize:12 },
+  plannerCard: { backgroundColor: '#2a2a2a', borderRadius: 12, padding: 12, borderWidth: 2, borderColor: '#a855f7' },
+  plannerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  plannerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  plannerIconWrap: { width: 24, height: 24, borderRadius: 6, backgroundColor: 'rgba(168,85,247,0.12)', alignItems: 'center', justifyContent: 'center' },
+  plannerTitle: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  plannerSubtitle: { fontSize: 13, color: '#ccc', marginBottom: 6 },
+  plannerProgressBar: { height: 6, backgroundColor: '#4b5563', borderRadius: 999, overflow: 'hidden' },
+  plannerProgressFill: { height: '100%', backgroundColor: '#a855f7' },
+  plannerStatsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  plannerStatText: { color: '#94a3b8', fontSize: 12, fontWeight: '600' },
+  plannerEmptyText: { color: '#94a3b8', fontSize: 12 },
   quickActionItem: {
     marginHorizontal: 0,
     paddingHorizontal: 0,
@@ -1413,4 +1575,34 @@ const styles = StyleSheet.create({
   },
   // Mushaf card styles
   // removed old mushaf styles - replaced by MushafDownloadCard component
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#333',
+    borderRadius: 8,
+    padding: 2,
+  },
+  toggleButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  toggleButtonActive: {
+    backgroundColor: '#4ECDC4',
+  },
+  toggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  toggleTextActive: {
+    color: '#1a1a1a',
+  },
+  toggleTextInactive: {
+    color: '#888',
+  },
 });

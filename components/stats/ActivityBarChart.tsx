@@ -1,5 +1,5 @@
 import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface ActivityData {
@@ -7,14 +7,22 @@ interface ActivityData {
   revisedVerses: Array<{ date: string; count: number }>;
 }
 
+interface PageActivityData {
+  memorizedPages: Array<{ date: string; count: number }>;
+  revisedPages: Array<{ date: string; count: number }>;
+}
+
 interface ActivityBarChartProps {
   data: ActivityData;
+  pageData?: PageActivityData;
 }
 
 type Timeframe = 'daily' | 'weekly' | 'monthly' | 'yearly';
+type DataType = 'verses' | 'pages';
 
-const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data }) => {
+const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) => {
   const [timeframe, setTimeframe] = useState<Timeframe>('weekly');
+  const [dataType, setDataType] = useState<DataType>('verses');
   const { theme: colors } = useUnifiedTheme();
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -22,16 +30,24 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data }) => {
     const memMap: Record<string, number> = {};
     const revMap: Record<string, number> = {};
 
-    data.memorizedVerses.forEach((item) => {
-      memMap[item.date] = (memMap[item.date] || 0) + item.count;
-    });
-
-    data.revisedVerses.forEach((item) => {
-      revMap[item.date] = (revMap[item.date] || 0) + item.count;
-    });
+    if (dataType === 'pages' && pageData) {
+      pageData.memorizedPages.forEach((item) => {
+        memMap[item.date] = (memMap[item.date] || 0) + item.count;
+      });
+      pageData.revisedPages.forEach((item) => {
+        revMap[item.date] = (revMap[item.date] || 0) + item.count;
+      });
+    } else {
+      data.memorizedVerses.forEach((item) => {
+        memMap[item.date] = (memMap[item.date] || 0) + item.count;
+      });
+      data.revisedVerses.forEach((item) => {
+        revMap[item.date] = (revMap[item.date] || 0) + item.count;
+      });
+    }
 
     const today = new Date();
-    
+
     // Helper function to get local date string (YYYY-MM-DD) without timezone conversion
     const getLocalDateString = (date: Date): string => {
       const year = date.getFullYear();
@@ -39,7 +55,7 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data }) => {
       const day = String(date.getDate()).padStart(2, '0');
       return `${year}-${month}-${day}`;
     };
-    
+
     let labels: string[] = [];
     let memorized: number[] = [];
     let revised: number[] = [];
@@ -50,7 +66,7 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data }) => {
       const currentYear = today.getFullYear();
       const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
       const lastDay = today.getDate(); // Only go up to today
-      
+
       for (let day = 1; day <= lastDay; day++) {
         const date = new Date(currentYear, currentMonth, day);
         const dateStr = getLocalDateString(date);
@@ -61,17 +77,17 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data }) => {
     } else if (timeframe === 'weekly') {
       // Last 12 weeks in chronological order
       const weeks: Array<{ start: Date; end: Date; label: string }> = [];
-      
+
       for (let i = 11; i >= 0; i--) {
         const endDate = new Date(today);
         endDate.setDate(endDate.getDate() - (i * 7));
         const startDate = new Date(endDate);
         startDate.setDate(startDate.getDate() - 6);
-        
+
         const weekLabel = `${startDate.getDate()}/${startDate.getMonth() + 1}`;
         weeks.push({ start: startDate, end: endDate, label: weekLabel });
       }
-      
+
       weeks.forEach(week => {
         let memSum = 0;
         let revSum = 0;
@@ -90,21 +106,28 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data }) => {
       // Current year: Jan to current month (in sequence)
       const currentYear = today.getFullYear();
       const currentMonth = today.getMonth(); // 0-11
-      
+
       for (let month = 0; month <= currentMonth; month++) {
         let memSum = 0;
         let revSum = 0;
 
         Object.keys(memMap).forEach((dateStr) => {
-          const d = new Date(dateStr);
-          if (d.getFullYear() === currentYear && d.getMonth() === month) {
+          // Parse YYYY-MM-DD manually to avoid UTC conversion issues
+          const [yStr, mStr] = dateStr.split('-');
+          const year = parseInt(yStr, 10);
+          const m = parseInt(mStr, 10) - 1; // 0-indexed
+
+          if (year === currentYear && m === month) {
             memSum += memMap[dateStr];
           }
         });
 
         Object.keys(revMap).forEach((dateStr) => {
-          const d = new Date(dateStr);
-          if (d.getFullYear() === currentYear && d.getMonth() === month) {
+          const [yStr, mStr] = dateStr.split('-');
+          const year = parseInt(yStr, 10);
+          const m = parseInt(mStr, 10) - 1;
+
+          if (year === currentYear && m === month) {
             revSum += revMap[dateStr];
           }
         });
@@ -122,15 +145,19 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data }) => {
         let revSum = 0;
 
         Object.keys(memMap).forEach((dateStr) => {
-          const d = new Date(dateStr);
-          if (d.getFullYear() === year) {
+          const [yStr] = dateStr.split('-');
+          const dYear = parseInt(yStr, 10);
+
+          if (dYear === year) {
             memSum += memMap[dateStr];
           }
         });
 
         Object.keys(revMap).forEach((dateStr) => {
-          const d = new Date(dateStr);
-          if (d.getFullYear() === year) {
+          const [yStr] = dateStr.split('-');
+          const dYear = parseInt(yStr, 10);
+
+          if (dYear === year) {
             revSum += revMap[dateStr];
           }
         });
@@ -142,14 +169,14 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data }) => {
     }
 
     return { labels, memorized, revised };
-  }, [data, timeframe]);
+  }, [data, pageData, timeframe, dataType]);
 
   const maxValue = Math.max(...chartData.memorized, ...chartData.revised, 1);
   const totalMemorized = chartData.memorized.reduce((a, b) => a + b, 0);
   const totalRevised = chartData.revised.reduce((a, b) => a + b, 0);
 
   const screenWidth = Dimensions.get('window').width;
-  
+
   // Calculate bar width based on number of items
   const getBarWidth = () => {
     switch (timeframe) {
@@ -167,20 +194,48 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data }) => {
     chartData.labels.length * (barWidth + 8) // Dynamic width based on bars
   );
 
-  // Auto-scroll to end (most recent data) when timeframe changes
-  useEffect(() => {
-    if (scrollViewRef.current && chartContentWidth > screenWidth - 80) {
-      // Small delay to ensure layout is complete
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }
-  }, [timeframe, chartContentWidth, screenWidth]);
+  // Auto-scroll to end when data or timeframe changes
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: false });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [timeframe, chartData.labels.length]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.card }]}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>📊 Activity Overview</Text>
+        <View>
+          <Text style={[styles.title, { color: colors.text }]}>📊 Activity Overview</Text>
+          {pageData && (
+            <View style={styles.toggleContainer}>
+              <TouchableOpacity
+                onPress={() => setDataType('verses')}
+                style={[
+                  styles.toggleButton,
+                  dataType === 'verses' && { backgroundColor: colors.primary }
+                ]}
+              >
+                <Text style={[
+                  styles.toggleText,
+                  { color: dataType === 'verses' ? '#1a1a1a' : colors.textSecondary }
+                ]}>Verses</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setDataType('pages')}
+                style={[
+                  styles.toggleButton,
+                  dataType === 'pages' && { backgroundColor: colors.primary }
+                ]}
+              >
+                <Text style={[
+                  styles.toggleText,
+                  { color: dataType === 'pages' ? '#1a1a1a' : colors.textSecondary }
+                ]}>Pages</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
 
         <View style={[styles.timeframeSelector, { backgroundColor: colors.background }]}>
           {(['daily', 'weekly', 'monthly', 'yearly'] as Timeframe[]).map((tf) => {
@@ -194,7 +249,7 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data }) => {
                 default: return timeframe;
               }
             };
-            
+
             return (
               <TouchableOpacity
                 key={tf}
@@ -239,11 +294,14 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data }) => {
       </View>
 
       {/* Bar Chart */}
-      <ScrollView 
+      <ScrollView
         ref={scrollViewRef}
-        horizontal 
-        showsHorizontalScrollIndicator={false} 
+        horizontal
+        showsHorizontalScrollIndicator={false}
         style={styles.scrollView}
+        onContentSizeChange={() => {
+          scrollViewRef.current?.scrollToEnd({ animated: false });
+        }}
       >
         <View style={{ width: chartContentWidth }}>
           {/* Y-axis labels */}
@@ -306,7 +364,7 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data }) => {
                         />
                       </View>
                     </View>
-                    <Text 
+                    <Text
                       style={[styles.barLabel, { color: colors.textSecondary }]}
                       numberOfLines={1}
                     >
@@ -343,11 +401,31 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 12,
+    marginBottom: 8,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 8,
+    padding: 2,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  toggleButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  toggleText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   timeframeSelector: {
     flexDirection: 'row',

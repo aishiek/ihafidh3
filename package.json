@@ -65,6 +65,7 @@
     "react-native-auto-size-text": "^1.1.1",
     "react-native-confetti-cannon": "^1.5.2",
     "react-native-fs": "^2.20.0",
+    "react-native-gesture-handler": "~2.28.0",
     "react-native-reanimated": "~4.1.0",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",

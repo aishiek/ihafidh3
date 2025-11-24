@@ -1,3 +1,5 @@
+import { useThemeStore } from '@/store/themeStore';
+import { useCustomColors } from '@/utils/themeUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -11,6 +13,7 @@ import MushafHeader from '../components/MushafHeader';
 import MushafPage from '../components/MushafPage';
 import SurahList from '../components/SurahList';
 import { useMushafBookmarks } from '../hooks/useMushafBookmarks';
+import { PageMetadata, getPageMetadata, initMushafDB } from '../services/mushafMetadataService';
 import { getAllSurahs, isMushafDatabaseReady } from '../services/mushafSurahService';
 
 // ...existing imports...
@@ -32,7 +35,7 @@ export default function MushafViewerScreen() {
   const navigation = useNavigation();
   const router = useRouter();
   const params = useLocalSearchParams();
-  
+
   // Safely parse page number
   // Always use the latest pageNumber from params, fallback to last read only if param is missing
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -65,8 +68,16 @@ export default function MushafViewerScreen() {
   const { bookmarks: mushafBookmarks, toggleBookmark: toggleMushafBookmark, saveLastRead, getLastRead } = useMushafBookmarks();
 
   // Surah list for navigation
-  const [surahList, setSurahList] = useState<{id:number; name:string; page:number}[] | null>(null);
+  const [surahList, setSurahList] = useState<{ id: number; name: string; page: number }[] | null>(null);
   const [dbReady, setDbReady] = useState<boolean>(isMushafDatabaseReady());
+
+  // Page metadata (Surah/Juz info)
+  const [pageMetadata, setPageMetadata] = useState<PageMetadata | null>(null);
+
+  // Theme support
+  const { themeMode } = useThemeStore();
+  const colors = useCustomColors();
+  const isDark = themeMode === 'dark';
 
   // Load surah list on mount
   useEffect(() => {
@@ -87,7 +98,7 @@ export default function MushafViewerScreen() {
 
   // Check bookmarked status when page changes
   useEffect(() => {
-  setIsBookmarked(mushafBookmarks.has(currentPage));
+    setIsBookmarked(mushafBookmarks.has(currentPage));
   }, [currentPage, mushafBookmarks]);
 
   // (last read logic now handled in param effect above)
@@ -96,6 +107,26 @@ export default function MushafViewerScreen() {
   useEffect(() => {
     saveLastRead(currentPage);
   }, [currentPage, saveLastRead]);
+
+  // Fetch page metadata when page changes
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const db = await initMushafDB();
+        const metadata = await getPageMetadata(db, currentPage);
+        if (mounted) {
+          setPageMetadata(metadata);
+        }
+      } catch (error) {
+        console.error('[MushafViewerScreen] Error fetching metadata:', error);
+        if (mounted) {
+          setPageMetadata(null);
+        }
+      }
+    })();
+    return () => { mounted = false; };
+  }, [currentPage]);
 
   // Show airplane prompt when mushaf is downloaded
   useEffect(() => {
@@ -150,7 +181,7 @@ export default function MushafViewerScreen() {
 
   const handleHome = () => {
     try { router.replace('/'); } catch (e) {
-      try { navigation.goBack(); } catch {} 
+      try { navigation.goBack(); } catch { }
     }
   };
 
@@ -181,140 +212,143 @@ export default function MushafViewerScreen() {
 
   return (
     <>
-  <StatusBar style="dark" backgroundColor="#f5f5f5" />
-      <SafeAreaView style={[styles.container, { paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}> 
-      {/* Airplane mode prompt modal */}
-      <Modal visible={showAirplanePrompt && !dontAskAgain} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Heart size={20} color="#ec4899" fill="#ec4899" style={{ marginRight: 8 }} />
-              <Text style={styles.modalTitle}>Airplane Mode Recommended</Text>
-            </View>
-            <View style={styles.modalBody}>
-              <Text style={styles.modalText}>
-                Recite Allah's words without Notification distractions.
-              </Text>
-              <View style={styles.checkboxRow}>
-                <Switch
-                  value={dontAskAgain}
-                  onValueChange={async (value) => {
-                    setDontAskAgain(value);
-                    await AsyncStorage.setItem('@mushaf:airplanePromptDisabled', value ? '1' : '0');
-                  }}
-                  trackColor={{ false: '#e0e0e0', true: '#0ea5a4' }}
-                  thumbColor={dontAskAgain ? '#f5f5f5' : '#f4f3f4'}
-                />
-                <Text style={styles.checkboxLabel}>Don't show again</Text>
+      <StatusBar style={isDark ? "light" : "dark"} backgroundColor={isDark ? "#000000" : "#f5f5f5"} />
+      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#000000' : '#f5f5f5', paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}>
+        {/* Airplane mode prompt modal */}
+        <Modal visible={showAirplanePrompt && !dontAskAgain} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContainer}>
+              <View style={styles.modalHeader}>
+                <Heart size={20} color="#ec4899" fill="#ec4899" style={{ marginRight: 8 }} />
+                <Text style={styles.modalTitle}>Airplane Mode Recommended</Text>
+              </View>
+              <View style={styles.modalBody}>
+                <Text style={styles.modalText}>
+                  Recite Allah's words without Notification distractions.
+                </Text>
+                <View style={styles.checkboxRow}>
+                  <Switch
+                    value={dontAskAgain}
+                    onValueChange={async (value) => {
+                      setDontAskAgain(value);
+                      await AsyncStorage.setItem('@mushaf:airplanePromptDisabled', value ? '1' : '0');
+                    }}
+                    trackColor={{ false: '#e0e0e0', true: '#0ea5a4' }}
+                    thumbColor={dontAskAgain ? '#f5f5f5' : '#f4f3f4'}
+                  />
+                  <Text style={styles.checkboxLabel}>Don't show again</Text>
+                </View>
+              </View>
+              <View style={styles.modalFooter}>
+                <TouchableOpacity
+                  style={styles.okButton}
+                  onPress={() => setShowAirplanePrompt(false)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.okButtonText}>OK</Text>
+                </TouchableOpacity>
               </View>
             </View>
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.okButton}
-                onPress={() => setShowAirplanePrompt(false)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.okButtonText}>OK</Text>
-              </TouchableOpacity>
-            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
 
-      {/* Surah picker modal */}
-      <Modal visible={showSurahPicker} animationType="slide">
-        <SafeAreaView style={[{ flex: 1, backgroundColor: '#111',
+        {/* Surah picker modal */}
+        <Modal visible={showSurahPicker} animationType="slide">
+          <SafeAreaView style={[{
+            flex: 1, backgroundColor: '#111',
             paddingTop: Platform.OS === 'android' ? insets.top : 0,
             paddingLeft: insets.left,
             paddingRight: insets.right,
             paddingBottom: insets.bottom
-        }]}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', padding: 12, paddingTop: 12 }}>
-            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 18 }}>Pick a Surah</Text>
-            <TouchableOpacity onPress={() => setShowSurahPicker(false)}>
-              <Text style={{ color: '#FFD166', fontSize: 16 }}>Close</Text>
-            </TouchableOpacity>
-          </View>
-          <SurahList
-            onClose={() => setShowSurahPicker(false)}
-            onSelect={(page) => {
-              setShowSurahPicker(false);
-              handleJumpToPage(page);
-            }}
-            extraBottomPadding={32}
-          />
-        </SafeAreaView>
-      </Modal>
-
-      {/* Page input modal */}
-      <Modal visible={showPageInput} transparent animationType="fade">
-        <SafeAreaView style={modalStyles.overlay}>
-          <View style={modalStyles.card}>
-            <Text style={modalStyles.title}>Jump to page</Text>
-            <TextInput
-              value={pageInputValue}
-              onChangeText={setPageInputValue}
-              keyboardType="numeric"
-              style={modalStyles.jumpInput}
-              placeholder="Enter page number"
-              placeholderTextColor="#666"
-            />
-            <View style={{ flexDirection: 'row', marginTop: 12, gap: 12 }}>
-              <TouchableOpacity
-                style={[modalStyles.button, modalStyles.noButton]}
-                onPress={() => setShowPageInput(false)}
-              >
-                <Text style={modalStyles.noText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[modalStyles.button, modalStyles.yesButton]}
-                onPress={() => {
-                  const n = Number(pageInputValue);
-                  if (!isNaN(n) && n >= 1 && n <= TOTAL_PAGES) setCurrentPage(n);
-                  setShowPageInput(false);
-                }}
-              >
-                <Text style={modalStyles.yesText}>Go</Text>
+          }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', padding: 12, paddingTop: 12 }}>
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 18 }}>Pick a Surah</Text>
+              <TouchableOpacity onPress={() => setShowSurahPicker(false)}>
+                <Text style={{ color: '#FFD166', fontSize: 16 }}>Close</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </SafeAreaView>
-      </Modal>
+            <SurahList
+              onClose={() => setShowSurahPicker(false)}
+              onSelect={(page) => {
+                setShowSurahPicker(false);
+                handleJumpToPage(page);
+              }}
+              extraBottomPadding={32}
+            />
+          </SafeAreaView>
+        </Modal>
+
+        {/* Page input modal */}
+        <Modal visible={showPageInput} transparent animationType="fade">
+          <SafeAreaView style={modalStyles.overlay}>
+            <View style={modalStyles.card}>
+              <Text style={modalStyles.title}>Jump to page</Text>
+              <TextInput
+                value={pageInputValue}
+                onChangeText={setPageInputValue}
+                keyboardType="numeric"
+                style={modalStyles.jumpInput}
+                placeholder="Enter page number"
+                placeholderTextColor="#666"
+              />
+              <View style={{ flexDirection: 'row', marginTop: 12, gap: 12 }}>
+                <TouchableOpacity
+                  style={[modalStyles.button, modalStyles.noButton]}
+                  onPress={() => setShowPageInput(false)}
+                >
+                  <Text style={modalStyles.noText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[modalStyles.button, modalStyles.yesButton]}
+                  onPress={() => {
+                    const n = Number(pageInputValue);
+                    if (!isNaN(n) && n >= 1 && n <= TOTAL_PAGES) setCurrentPage(n);
+                    setShowPageInput(false);
+                  }}
+                >
+                  <Text style={modalStyles.yesText}>Go</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </SafeAreaView>
+        </Modal>
 
 
-      {/* Header with bookmark button */}
-      <MushafHeader
-        isBookmarked={isBookmarked}
-        onBookmarkToggle={handleBookmarkToggle}
-        onClose={handleClose}
-        onHome={handleHome}
-  onChangeLayout={() => router.push('/mushaf/settings')}
-      />
+        {/* Header with bookmark button */}
+        <MushafHeader
+          isBookmarked={isBookmarked}
+          onBookmarkToggle={handleBookmarkToggle}
+          onClose={handleClose}
+          onHome={handleHome}
+          onChangeLayout={() => router.push('/mushaf/settings')}
+          surahName={pageMetadata?.surahName}
+          juzNumber={pageMetadata?.juzNumber}
+        />
 
-      {/* Main content - Mushaf page with key to force remount */}
-      <View style={styles.content}>
-        <MushafPage key={`page-${currentPage}`} pageNumber={currentPage} />
-      </View>
+        {/* Main content - Mushaf page with key to force remount */}
+        <View style={styles.content}>
+          <MushafPage key={`page-${currentPage}`} pageNumber={currentPage} />
+        </View>
 
-      {/* Footer with navigation controls */}
-      <MushafFooter
-        pageNumber={currentPage}
-        totalPages={TOTAL_PAGES}
-        onPrevious={handlePrev}
-        onNext={handleNext}
-        onPrevSurah={handlePrevSurah}
-        onNextSurah={handleNextSurah}
-        onGoToSurah={handleGoToSurah}
-        isDbReady={dbReady}
-      />
-    </SafeAreaView>
+        {/* Footer with navigation controls */}
+        <MushafFooter
+          pageNumber={currentPage}
+          totalPages={TOTAL_PAGES}
+          onPrevious={handlePrev}
+          onNext={handleNext}
+          onPrevSurah={handlePrevSurah}
+          onNextSurah={handleNextSurah}
+          onGoToSurah={handleGoToSurah}
+          isDbReady={dbReady}
+        />
+      </SafeAreaView>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
+  container: {
+    flex: 1,
     backgroundColor: '#f5f5f5',
   },
   content: {
@@ -399,55 +433,55 @@ const styles = StyleSheet.create({
 });
 
 const modalStyles = StyleSheet.create({
-  overlay: { 
-    flex: 1, 
-    backgroundColor: 'rgba(0,0,0,0.6)', 
-    justifyContent: 'center', 
-    alignItems: 'center' 
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center'
   },
-  card: { 
-    width: '86%', 
-    backgroundColor: '#0b1220', 
-    borderRadius: 12, 
-    padding: 18, 
-    alignItems: 'center' 
+  card: {
+    width: '86%',
+    backgroundColor: '#0b1220',
+    borderRadius: 12,
+    padding: 18,
+    alignItems: 'center'
   },
-  title: { 
-    color: '#fff', 
-    fontSize: 18, 
-    fontWeight: '700', 
-    marginBottom: 8, 
-    textAlign: 'center' 
+  title: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center'
   },
-  button: { 
-    flex: 1, 
-    paddingVertical: 10, 
-    borderRadius: 8, 
-    alignItems: 'center' 
+  button: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center'
   },
-  noButton: { 
-    backgroundColor: 'transparent', 
-    borderWidth: 1, 
-    borderColor: '#334155' 
+  noButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#334155'
   },
-  yesButton: { 
-    backgroundColor: '#0ea5a4' 
+  yesButton: {
+    backgroundColor: '#0ea5a4'
   },
-  noText: { 
-    color: '#e2e8f0', 
-    fontWeight: '600' 
+  noText: {
+    color: '#e2e8f0',
+    fontWeight: '600'
   },
-  yesText: { 
-    color: '#042f2e', 
-    fontWeight: '700' 
+  yesText: {
+    color: '#042f2e',
+    fontWeight: '700'
   },
-  jumpInput: { 
-    width: '100%', 
-    height: 44, 
-    backgroundColor: '#071427', 
-    color: '#fff', 
-    paddingHorizontal: 12, 
-    borderRadius: 8, 
-    marginTop: 8 
+  jumpInput: {
+    width: '100%',
+    height: 44,
+    backgroundColor: '#071427',
+    color: '#fff',
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginTop: 8
   },
 });

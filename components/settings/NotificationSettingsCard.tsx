@@ -39,6 +39,25 @@ export default function NotificationSettingsCard() {
     }
   ] as const;
 
+  // Local input state lets the user edit freely (including clearing while typing),
+  // then we validate & persist on blur/submit.
+  const [daysInput, setDaysInput] = React.useState(
+    revisionReminderSettings.daysThreshold.toString()
+  );
+
+  React.useEffect(() => {
+    setDaysInput(revisionReminderSettings.daysThreshold.toString());
+  }, [revisionReminderSettings.daysThreshold]);
+
+  const commitDaysInput = (text?: string) => {
+    const value = text ?? daysInput;
+    const parsed = parseInt(value, 10);
+    const defaultDays = 3;
+    const clamped = Number.isNaN(parsed) ? defaultDays : Math.min(30, Math.max(1, parsed));
+    setRevisionReminderSettings({ ...revisionReminderSettings, daysThreshold: clamped });
+    setDaysInput(clamped.toString());
+  };
+
   return (
     <View style={[styles.card, { backgroundColor: colors.card }]}>
       <Text style={[styles.title, { color: colors.text }]}>
@@ -116,16 +135,15 @@ export default function NotificationSettingsCard() {
                 backgroundColor: colors.background,
                 borderColor: colors.text
               }]}
-              value={revisionReminderSettings.daysThreshold.toString()}
-              onChangeText={(text) => {
-                const days = parseInt(text) || 3;
-                if (days >= 1 && days <= 30) {
-                  setRevisionReminderSettings({ 
-                    ...revisionReminderSettings, 
-                    daysThreshold: days 
-                  });
-                }
-              }}
+                value={daysInput}
+                onChangeText={(text) => {
+                  // Allow user to type freely (including empty string) — handle persist on blur/submit
+                  // Keep only digits to avoid non-numeric input.
+                  const digitsOnly = text.replace(/[^0-9]/g, '');
+                  setDaysInput(digitsOnly);
+                }}
+                onBlur={() => commitDaysInput()}
+                onSubmitEditing={() => commitDaysInput()}
               keyboardType="number-pad"
               maxLength={2}
             />

@@ -33,15 +33,15 @@ interface Props {
 }
 
 // Safe AnimatedRect component
-const SafeAnimatedRect = memo(({ 
-  x, y, width, height, fill, opacity, barKey, index 
-}: { 
-  x: number; 
-  y: number; 
-  width: number; 
-  height: number; 
-  fill: string; 
-  opacity: number; 
+const SafeAnimatedRect = memo(({
+  x, y, width, height, fill, opacity, barKey, index
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fill: string;
+  opacity: number;
   barKey: string;
   index: number;
 }) => {
@@ -59,7 +59,7 @@ const SafeAnimatedRect = memo(({
         />
       );
     }
-    
+
     const AnimatedRect = Animated.createAnimatedComponent(Rect);
     return (
       <AnimatedRect
@@ -92,12 +92,12 @@ const SafeAnimatedRect = memo(({
 
 SafeAnimatedRect.displayName = 'SafeAnimatedRect';
 
-export default function VerseProgressGraph({ 
-  timeRange, 
-  data, 
-  totalVerses = TOTAL_VERSES, 
-  colors, 
-  onBarPress 
+export default function VerseProgressGraph({
+  timeRange,
+  data,
+  totalVerses = TOTAL_VERSES,
+  colors,
+  onBarPress
 }: Props) {
   // Validate props
   if (!data || data.length === 0 || !colors || !timeRange) {
@@ -113,29 +113,29 @@ export default function VerseProgressGraph({
   // Filter and deduplicate data
   const processedData = useMemo(() => {
     const dataMap = new Map<string, VerseProgressData>();
-    
+
     data.forEach(item => {
       if (
-        !item || 
+        !item ||
         typeof item.cumulativeMemorized !== 'number' ||
         typeof item.cumulativeRevised !== 'number' ||
-        !(item.date instanceof Date) || 
+        !(item.date instanceof Date) ||
         typeof item.label !== 'string'
       ) {
         return;
       }
 
       const dateStr = item.date.toISOString().split('T')[0];
-      const dateKey = timeRange === 'week' 
-        ? `${dateStr}-${item.label}` 
+      const dateKey = timeRange === 'week'
+        ? `${dateStr}-${item.label}`
         : `${item.date.getTime()}-${item.label}`;
-      
+
       if (!dataMap.has(dateKey) || (timeRange === 'week' && item.isCurrentPeriod)) {
         dataMap.set(dateKey, item);
       }
     });
 
-    return Array.from(dataMap.values()).sort((a, b) => 
+    return Array.from(dataMap.values()).sort((a, b) =>
       a.date.getTime() - b.date.getTime()
     );
   }, [data, timeRange]);
@@ -157,9 +157,10 @@ export default function VerseProgressGraph({
   const graphHeight = 240;
   const yAxisWidth = 40; // Space for Y-axis labels
   const chartPadding = { top: 24, bottom: 48, left: 12 + yAxisWidth, right: 12 };
-  
+
   const denominator = totalVerses || TOTAL_VERSES;
   const minBarHeight = 2;
+  const availableHeight = graphHeight - chartPadding.top - chartPadding.bottom;
 
   // Process stacked bar data
   const stackedData = useMemo(() => {
@@ -172,8 +173,8 @@ export default function VerseProgressGraph({
   }, [processedData, denominator]);
 
   // Calculate global progress
-  const globalProgress = stackedData.length > 0 
-    ? stackedData[stackedData.length - 1]._total 
+  const globalProgress = stackedData.length > 0
+    ? stackedData[stackedData.length - 1]._total
     : 0;
 
   // Dynamic gridline interval - More aggressive spacing for clarity
@@ -189,30 +190,50 @@ export default function VerseProgressGraph({
   // Generate gridlines - max 4 lines total (including 0)
   const gridlines = useMemo(() => {
     const lines: number[] = [0]; // Always show 0
-    
-    // Add only 2 intermediate points
+
+    // Calculate minimum value spacing to avoid visual overlap
+    // Assuming approx 20px height for labels and availableHeight pixels total
+    const minPixelSpacing = 25;
+    const minValueSpacing = (minPixelSpacing / availableHeight) * denominator;
+
+    // Add intermediate points
     const mid1 = gridInterval;
     const mid2 = gridInterval * 2;
-    
-    if (mid1 < denominator) lines.push(mid1);
-    if (mid2 < denominator) lines.push(mid2);
-    
+
+    // Check mid1
+    if (mid1 < denominator) {
+      // Only add if far enough from 0 (which is always true for reasonable intervals)
+      // AND far enough from denominator
+      if (denominator - mid1 > minValueSpacing) {
+        lines.push(mid1);
+      }
+    }
+
+    // Check mid2
+    if (mid2 < denominator) {
+      // Only add if far enough from mid1 (if it exists) or 0
+      const prevLine = lines[lines.length - 1];
+      if (mid2 - prevLine > minValueSpacing && denominator - mid2 > minValueSpacing) {
+        lines.push(mid2);
+      }
+    }
+
     // Always add the max (6236) if not already there
     if (lines[lines.length - 1] !== denominator) {
       lines.push(denominator);
     }
-    
+
     return lines;
-  }, [gridInterval, denominator]);
-  
+  }, [gridInterval, denominator, availableHeight]);
+
   // Determine if scrolling is needed
   const needsScrolling = timeRange === 'month' || timeRange === 'year';
-  
+
   // Calculate bar dimensions - Clean rectangular bars
   let barSpacing: number;
   let barWidth: number;
   let graphWidth: number;
-  
+
   if (needsScrolling) {
     barWidth = timeRange === 'month' ? 12 : 16;
     barSpacing = timeRange === 'month' ? 10 : 14;
@@ -221,7 +242,7 @@ export default function VerseProgressGraph({
   } else {
     graphWidth = availableScreenWidth;
     const availableWidth = graphWidth - chartPadding.left - chartPadding.right;
-    
+
     if (timeRange === 'day') {
       barWidth = 32;
       barSpacing = 0;
@@ -231,8 +252,8 @@ export default function VerseProgressGraph({
       barWidth = Math.max(8, Math.min(24, (availableWidth - totalSpacing) / stackedData.length));
     }
   }
-  
-  const availableHeight = graphHeight - chartPadding.top - chartPadding.bottom;
+
+
 
   // Graph content component
   const GraphContent = () => (
@@ -242,7 +263,7 @@ export default function VerseProgressGraph({
         {gridlines.map((val) => {
           const ratio = val / denominator;
           const y = graphHeight - chartPadding.bottom - ratio * availableHeight;
-          
+
           return (
             <View
               key={`ylabel-${val}`}
@@ -255,7 +276,7 @@ export default function VerseProgressGraph({
           );
         })}
       </View>
-      
+
       <Svg width={graphWidth} height={graphHeight}>
         {/* Baseline */}
         <Line
@@ -267,13 +288,13 @@ export default function VerseProgressGraph({
           strokeWidth={1.5}
           opacity={0.4}
         />
-        
+
         {/* Gridlines */}
         {gridlines.map((val) => {
           const ratio = val / denominator;
           const y = graphHeight - chartPadding.bottom - ratio * availableHeight;
           const isTop = val === denominator;
-          
+
           return (
             <Line
               key={`grid-${val}`}
@@ -291,19 +312,19 @@ export default function VerseProgressGraph({
 
         {/* Clean rectangular stacked bars */}
         {stackedData.map((item, index) => {
-          const totalHeight = item._total > 0 
-            ? Math.max(minBarHeight, (item._total / denominator) * availableHeight) 
+          const totalHeight = item._total > 0
+            ? Math.max(minBarHeight, (item._total / denominator) * availableHeight)
             : 0;
-          const memHeight = item._mem > 0 
-            ? Math.max(minBarHeight, (item._mem / denominator) * availableHeight) 
+          const memHeight = item._mem > 0
+            ? Math.max(minBarHeight, (item._mem / denominator) * availableHeight)
             : 0;
-          const revHeight = item._rev > 0 
-            ? Math.max(minBarHeight, (item._rev / denominator) * availableHeight) 
+          const revHeight = item._rev > 0
+            ? Math.max(minBarHeight, (item._rev / denominator) * availableHeight)
             : 0;
 
           // Adjust heights to prevent overflow
-          const adjustedMemHeight = item._rev > 0 && memHeight + revHeight > totalHeight 
-            ? Math.max(minBarHeight, totalHeight - revHeight) 
+          const adjustedMemHeight = item._rev > 0 && memHeight + revHeight > totalHeight
+            ? Math.max(minBarHeight, totalHeight - revHeight)
             : memHeight;
           const adjustedRevHeight = revHeight;
 
@@ -322,7 +343,7 @@ export default function VerseProgressGraph({
           // Clean color scheme
           const memColor = colors.primaryLight;
           const revColor = colors.primary;
-          
+
           const opacityMem = item._mem === 0 ? 0.1 : (item.isCurrentPeriod ? 0.85 : 0.6);
           const opacityRev = item._rev === 0 ? 0.1 : (item.isCurrentPeriod ? 1 : 0.7);
 
@@ -341,7 +362,7 @@ export default function VerseProgressGraph({
                   index={index}
                 />
               )}
-              
+
               {/* Revised segment - rectangular */}
               {adjustedRevHeight > 0 && (
                 <SafeAnimatedRect
@@ -355,7 +376,7 @@ export default function VerseProgressGraph({
                   index={index}
                 />
               )}
-              
+
               {/* Subtle border for current period */}
               {item.isCurrentPeriod && (adjustedMemHeight > 0 || adjustedRevHeight > 0) && (
                 <Rect
@@ -379,7 +400,7 @@ export default function VerseProgressGraph({
         {stackedData.map((item, index) => {
           let x: number;
           let marginLeft: number;
-          
+
           if (timeRange === 'day') {
             x = (graphWidth - barWidth) / 2;
             marginLeft = x;
@@ -387,7 +408,7 @@ export default function VerseProgressGraph({
             x = chartPadding.left + index * (barWidth + barSpacing);
             marginLeft = index === 0 ? x : barSpacing;
           }
-          
+
           return (
             <Pressable
               key={`label-${index}-${item.date.getTime()}`}
@@ -405,7 +426,7 @@ export default function VerseProgressGraph({
               <Text
                 style={[
                   styles.label,
-                  { 
+                  {
                     color: item.isCurrentPeriod ? colors.primary : colors.textSecondary,
                     fontWeight: item.isCurrentPeriod ? '700' : '500'
                   }
@@ -426,8 +447,8 @@ export default function VerseProgressGraph({
   return (
     <View style={styles.container}>
       {needsScrolling ? (
-        <ScrollView 
-          horizontal 
+        <ScrollView
+          horizontal
           showsHorizontalScrollIndicator={false}
           bounces={false}
           contentContainerStyle={{ paddingRight: 16 }}

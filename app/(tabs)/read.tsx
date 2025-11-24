@@ -9,16 +9,16 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import PageAudioManager, { AudioState, getPageAudioManager } from '../audio/PageAudioManager';
 
 import {
-  ActivityIndicator,
-  Alert,
-  Animated,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Modal,
+    Pressable,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 import JuzMemorization from '@/components/JuzMemorization';
@@ -30,13 +30,13 @@ import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import type { Surah, Verse } from '@/types';
 import {
-  getAudioUrl,
-  pauseAudio,
-  pauseSurahAudio,
-  playAudio,
-  playSurahAudioWithFallback,
-  resumeSurahAudio,
-  stopSurahAudio,
+    getAudioUrl,
+    pauseAudio,
+    pauseSurahAudio,
+    playAudio,
+    playSurahAudioWithFallback,
+    resumeSurahAudio,
+    stopSurahAudio,
 } from '@/utils/audioUtils';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
@@ -2017,9 +2017,9 @@ export default function ReadScreen() {
               </>
             ) : selectedSurah ? (
               <>
-                <Pressable 
+                <Pressable
                   style={({ pressed }) => [
-                    styles.actionButton, 
+                    styles.actionButton,
                     {
                       backgroundColor: surahStatus.isMemorized ? '#4CAF50' : '#1a1a1a',
                       borderColor: surahStatus.isMemorized ? '#4CAF50' : '#444444',
@@ -2030,8 +2030,10 @@ export default function ReadScreen() {
                       shadowOpacity: 0.3,
                       shadowRadius: 4,
                       elevation: surahStatus.isMemorized ? 3 : 0,
-                    }
-                  ]} 
+                      paddingLeft: 16,
+                      paddingRight: 10,
+                    },
+                  ]}
                   onPress={handleMarkAllMemorized}
                 >
                   <Check size={16} color="#ffffff" />
@@ -2052,9 +2054,9 @@ export default function ReadScreen() {
                   </View>
                 </Pressable>
                 
-                <Pressable 
+                <Pressable
                   style={({ pressed }) => [
-                    styles.actionButton, 
+                    styles.actionButton,
                     {
                       backgroundColor: surahStatus.isRevised ? '#FF9800' : '#1a1a1a',
                       borderColor: surahStatus.isRevised ? '#FF9800' : '#444444',
@@ -2065,8 +2067,10 @@ export default function ReadScreen() {
                       shadowOpacity: 0.3,
                       shadowRadius: 4,
                       elevation: surahStatus.isRevised ? 3 : 0,
-                    }
-                  ]} 
+                      paddingLeft: 16,
+                      paddingRight: 10,
+                    },
+                  ]}
                   onPress={handleMarkAllRevised}
                 >
                   <RefreshCw size={16} color="#ffffff" />

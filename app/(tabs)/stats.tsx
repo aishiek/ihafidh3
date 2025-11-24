@@ -102,7 +102,7 @@ export default function StatsScreen() {
   const colors = useCustomColors();
   const { primary } = useThemeColor();
   const { userName } = useSettingsStore();
-  
+
   const [viewMode, setViewMode] = useState('surah');
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [juzProgressData, setJuzProgressData] = useState<JuzProgressData>({});
@@ -111,18 +111,23 @@ export default function StatsScreen() {
     memorizedVerses: Array<{ date: string; count: number }>;
     revisedVerses: Array<{ date: string; count: number }>;
   }>({ memorizedVerses: [], revisedVerses: [] });
-  
-  const { memorizedVerses, revisedVerses, getActivityData } = useProgressStore();
-  
+
+  const [pageActivityData, setPageActivityData] = useState<{
+    memorizedPages: Array<{ date: string; count: number }>;
+    revisedPages: Array<{ date: string; count: number }>;
+  }>({ memorizedPages: [], revisedPages: [] });
+
+  const { memorizedVerses, revisedVerses, getActivityData, getPageActivityData } = useProgressStore();
+
   // Load activity data from database
   useEffect(() => {
     let mounted = true;
-    
+
     const loadActivityData = async () => {
       try {
         console.log('[stats] Loading activity data from database...');
         const data = await getActivityData();
-        
+
         if (mounted) {
           console.log('[stats] Activity Data loaded:', {
             memorizedCount: data.memorizedVerses.length,
@@ -133,47 +138,23 @@ export default function StatsScreen() {
             totalRevised: data.revisedVerses.reduce((sum, d) => sum + d.count, 0),
           });
           setActivityData(data);
+
+          const pageData = getPageActivityData();
+          setPageActivityData(pageData);
         }
       } catch (error) {
         console.error('[stats] Error loading activity data:', error);
       }
     };
-    
+
     loadActivityData();
-    
+
     return () => {
       mounted = false;
     };
   }, [getActivityData, memorizedVerses, revisedVerses]); // Reload when memorizedVerses OR revisedVerses changes
-  
-  // Load juz progress data using the same calculation as Juz Memorization page
-  useEffect(() => {
-    const loadJuzProgress = () => {
-      const juzData: JuzProgressData = {};
-      try {
-        for (let i = 1; i <= 30; i++) {
-          // Use the same calculation function as Juz Memorization page
-          const progress = calculateJuzProgress(i, memorizedVerses);
-          juzData[i] = {
-            memorized: progress.memorized,
-            total: progress.total,
-            progress: progress.progress
-          };
-        }
-        setJuzProgressData(juzData);
-      } catch (error) {
-        console.error('Error loading juz progress:', error);
-        // Set default values on error for all juz
-        for (let i = 1; i <= 30; i++) {
-          juzData[i] = { memorized: 0, total: 0, progress: 0 };
-        }
-        setJuzProgressData(juzData);
-      }
-    };
 
-    loadJuzProgress();
-  }, [memorizedVerses]);
-  
+
   // Initialize progress tracker with current memorized verses
   const progressTracker = useMemo(() => {
     return new QuranProgressTracker({
@@ -183,7 +164,7 @@ export default function StatsScreen() {
         for (let i = 1; i <= 114; i++) {
           const surah = surahsData.find(s => s.id === i);
           if (!surah) continue;
-          
+
           if (verseId <= startVerseId + surah.versesCount) {
             const verseNumber = verseId - startVerseId;
             return `${i}:${verseNumber}`;
@@ -194,9 +175,9 @@ export default function StatsScreen() {
       }).filter(Boolean)
     });
   }, [memorizedVerses]);
-  
+
   const progress = progressTracker.calculateProgress();
-  
+
   // Use proper Juz calculation (sync with Home page)
   const calculateOverallJuzProgress = () => {
     const stats = calculateOverallJuzStats(memorizedVerses);
@@ -207,13 +188,13 @@ export default function StatsScreen() {
       percentage: stats.percentage
     };
   };
-  
+
   // Update progress with actual juz data
   const actualProgress = {
     ...progress,
     juz: calculateOverallJuzProgress()
   };
-  
+
   // Calculate memorization for each surah
   const calculateSurahProgress = (surahId: number) => {
     let startVerseId = 0;
@@ -221,19 +202,19 @@ export default function StatsScreen() {
       const prevSurah = surahsData.find(s => s.id === i);
       if (prevSurah) startVerseId += prevSurah.versesCount;
     }
-    
+
     const surah = surahsData.find(s => s.id === surahId);
     if (!surah) return { memorized: 0, progress: 0 };
-    
+
     const startVerse = startVerseId + 1;
     const endVerse = startVerseId + surah.versesCount;
-    
+
     const memorizedInSurah = memorizedVerses.filter(id => id >= startVerse && id <= endVerse).length;
     const progressPercentage = (memorizedInSurah / surah.versesCount) * 100;
-    
+
     return { memorized: memorizedInSurah, progress: progressPercentage };
   };
-  
+
   // Get juz progress (now synchronous)
   const getJuzProgressSync = (juzNumber: number) => {
     const juzData = juzProgressData[juzNumber];
@@ -242,7 +223,7 @@ export default function StatsScreen() {
       const memorized = juzData.memorized || 0;
       const total = juzData.total || 0;
       const progress = total > 0 ? (memorized / total) * 100 : 0;
-      
+
       return {
         memorized,
         total,
@@ -252,39 +233,39 @@ export default function StatsScreen() {
     // Return default values if data not loaded yet
     return { memorized: 0, total: 0, progress: 0 };
   };
-  
+
   const getProgressColor = (progress: number) => {
     // Handle NaN and invalid values
     if (isNaN(progress) || progress === 0) return '#666666'; // Grey for not started
     if (progress >= 100) return '#4CAF50'; // Green for completed
     return '#FF9800'; // Amber for in progress (even 1 verse)
   };
-  
+
   const renderGreeting = () => {
     const name = userName?.trim();
-    
+
     if (!name) {
       return 'Ahlan Wa Sahlan!';
     }
-    
+
     return `Ahlan Wa Sahlan! Yaa, ${name}`;
   };
-  
+
   return (
-    <ScrollView 
+    <ScrollView
       style={[styles.container, { backgroundColor: '#1a1a1a' }]}
       contentContainerStyle={styles.contentContainer}
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.header}>
-        <Text 
+        <Text
           style={[
-            styles.greeting, 
-            { 
+            styles.greeting,
+            {
               color: '#ffffff',
               fontSize: userName && userName.length > 15 ? 20 : 24
             }
-          ]} 
+          ]}
           numberOfLines={2}
         >
           {renderGreeting()}
@@ -293,13 +274,13 @@ export default function StatsScreen() {
           Your memorization progress
         </Text>
       </View>
-      
+
       {/* Progress Overview with Circular Indicators */}
       <View style={[styles.progressCard, { backgroundColor: '#333333', borderColor: '#555555' }]}>
         <Text style={[styles.progressTitle, { color: '#ffffff' }]}>
           Memorization Progress
         </Text>
-        
+
         <View style={styles.circularProgressContainer}>
           <CircularProgress
             size={100}
@@ -330,13 +311,13 @@ export default function StatsScreen() {
           />
         </View>
       </View>
-      
+
       {/* 114 Surahs and 30 Juz Grid */}
       <View style={[styles.progressCard, { backgroundColor: '#333333', borderColor: '#555555' }]}>
         <Text style={[styles.progressTitle, { color: '#ffffff' }]}>
           Your Progress
         </Text>
-        
+
         <View style={styles.toggleContainer}>
           <View style={styles.toggleRow}>
             <TouchableOpacity
@@ -376,7 +357,7 @@ export default function StatsScreen() {
             {surahsData.map((surah) => {
               const surahProgress = calculateSurahProgress(surah.id);
               const backgroundColor = getProgressColor(surahProgress.progress);
-              
+
               return (
                 <TouchableOpacity
                   key={surah.id}
@@ -428,7 +409,7 @@ export default function StatsScreen() {
         animationType="fade"
         onRequestClose={() => setSelectedItem(null)}
       >
-        <Pressable 
+        <Pressable
           style={styles.modalOverlay}
           onPress={() => setSelectedItem(null)}
         >
@@ -441,7 +422,7 @@ export default function StatsScreen() {
                 <X size={24} color="#ffffff" />
               </TouchableOpacity>
             </View>
-            
+
             {selectedItem && (
               <>
                 <View style={styles.modalStats}>
@@ -453,7 +434,7 @@ export default function StatsScreen() {
                       {selectedItem.versesCount}
                     </Text>
                   </View>
-                  
+
                   <View style={styles.modalStatItem}>
                     <Text style={[styles.modalStatLabel, { color: '#ffffff' }]}>
                       Memorized
@@ -462,7 +443,7 @@ export default function StatsScreen() {
                       {selectedItem.memorizedCount}
                     </Text>
                   </View>
-                  
+
                   <View style={styles.modalStatItem}>
                     <Text style={[styles.modalStatLabel, { color: '#ffffff' }]}>
                       Progress
@@ -472,41 +453,41 @@ export default function StatsScreen() {
                     </Text>
                   </View>
                 </View>
-                
+
                 <View style={[styles.modalProgressBar, { backgroundColor: '#555555' }]}>
-                  <View 
+                  <View
                     style={[
                       styles.modalProgressFill,
-                      { 
+                      {
                         width: `${(selectedItem.memorizedCount / selectedItem.versesCount) * 100}%`,
                         backgroundColor: getProgressColor((selectedItem.memorizedCount / selectedItem.versesCount) * 100)
                       }
                     ]}
                   />
                 </View>
-                
+
                 {selectedItem.type === 'surah' && (
                   <TouchableOpacity
                     style={[styles.modalButton, { backgroundColor: '#2196F3' }]}
                     onPress={() => {
                       setSelectedItem(null);
                       useQuranStore.getState().setLastViewedSurahId(selectedItem.id);
-                      try { 
+                      try {
                         router.replace({
                           pathname: '/(tabs)/read',
                           params: {
                             surahId: selectedItem.id.toString(),
                             source: 'stats'
                           }
-                        }); 
-                      } catch { 
+                        });
+                      } catch {
                         router.push({
                           pathname: '/(tabs)/read',
                           params: {
                             surahId: selectedItem.id.toString(),
                             source: 'stats'
                           }
-                        }); 
+                        });
                       }
                     }}
                   >
@@ -518,12 +499,13 @@ export default function StatsScreen() {
           </View>
         </Pressable>
       </Modal>
-      
+
       {/* Activity Bar Chart with Timeframe Selector */}
-      <ActivityBarChart data={activityData} />
+      {/* Activity Bar Chart with Timeframe Selector */}
+      <ActivityBarChart data={activityData} pageData={pageActivityData} />
 
       {/* Time Series Graph - Google Play Console Style */}
-      <ActivityTimeSeriesGraph data={activityData} />
+      <ActivityTimeSeriesGraph data={activityData} pageData={pageActivityData} />
 
       {/* Tab Selector for Heatmap */}
       <View style={[styles.progressCard, { backgroundColor: '#333333', borderColor: '#555555', padding: 0, overflow: 'hidden' }]}>
@@ -542,7 +524,7 @@ export default function StatsScreen() {
               Memorization
             </Text>
           </TouchableOpacity>
-          
+
           <TouchableOpacity
             style={[
               styles.heatmapTab,
@@ -562,7 +544,7 @@ export default function StatsScreen() {
 
       {/* Heatmap Calendar */}
       <HeatmapCalendar data={activityData} type={heatmapType} />
-      
+
       {/* Verse Activity Graph - Mobile pattern: positioned at bottom */}
       <VerseProgressCard />
 

@@ -63,7 +63,7 @@ export async function initializeNotifications(): Promise<void> {
     // Setup notification received listener for foreground handling
     Notifications.addNotificationReceivedListener(async (notification) => {
       const data = notification.request.content.data as any;
-      
+
       // Handle weekly Friday check
       if (data.type === 'weekly-surah-check') {
         const today = new Date().getDay();
@@ -79,7 +79,7 @@ export async function initializeNotifications(): Promise<void> {
           });
         }
       }
-      
+
       // Handle daily revision check
       if (data.type === 'revision-check-trigger') {
         await RevisionReminderService.checkAndNotifyRevisionNeeded(3);
@@ -453,6 +453,80 @@ export class RevisionNotificationService {
     await cancelNotification(this.DAILY_REVISION_ID);
     await cancelNotification(this.WEEKLY_REVISION_ID);
   }
+
+  /**
+   * Schedule intelligent page revision reminder
+   * Combines daily and weekly page goals into a single notification
+   * Only sends if targets are missed
+   */
+  static async schedulePageReminder(
+    dailyIncomplete: boolean,
+    weeklyIncomplete: boolean,
+    dailyProgress: number,
+    dailyTarget: number,
+    weeklyProgress: number,
+    weeklyTarget: number
+  ): Promise<void> {
+    try {
+      const PAGE_REMINDER_ID = 'page-revision-reminder';
+
+      // If both goals are complete, cancel any existing notification
+      if (!dailyIncomplete && !weeklyIncomplete) {
+        await cancelNotification(PAGE_REMINDER_ID);
+        return;
+      }
+
+      // Determine when to send the notification
+      const now = new Date();
+      let notificationDate: Date;
+      let title: string;
+      let body: string;
+
+      if (dailyIncomplete && weeklyIncomplete) {
+        // Both incomplete - send at end of day
+        notificationDate = new Date();
+        notificationDate.setHours(23, 59, 0, 0);
+
+        title = '📄 Page Revision Goals';
+        body = `Daily: ${dailyProgress}/${dailyTarget} pages • Weekly: ${weeklyProgress}/${weeklyTarget} pages. Keep going!`;
+      } else if (dailyIncomplete) {
+        // Only daily incomplete - send at end of day
+        notificationDate = new Date();
+        notificationDate.setHours(23, 59, 0, 0);
+
+        title = '📄 Daily Page Goal';
+        body = `You've revised ${dailyProgress}/${dailyTarget} pages today. Almost there!`;
+      } else {
+        // Only weekly incomplete - send at end of week (Sunday)
+        notificationDate = new Date(now);
+        const daysUntilSunday = (7 - now.getDay()) % 7 || 7;
+        notificationDate.setDate(now.getDate() + daysUntilSunday);
+        notificationDate.setHours(23, 59, 0, 0);
+
+        title = '📄 Weekly Page Goal';
+        body = `Weekly progress: ${weeklyProgress}/${weeklyTarget} pages. Review your progress!`;
+      }
+
+      if (!isDateInFuture(notificationDate)) {
+        return;
+      }
+
+      await scheduleNotificationAtDate({
+        id: PAGE_REMINDER_ID,
+        title,
+        body,
+        date: notificationDate,
+        channelId: 'revision',
+        data: {
+          type: 'page_revision',
+          dailyIncomplete,
+          weeklyIncomplete,
+        },
+      });
+    } catch (error) {
+      console.error('[RevisionNotificationService] Page reminder failed:', error);
+    }
+  }
 }
 
 // ============================================================================
@@ -494,7 +568,7 @@ export class EnhancedNotificationService {
         },
         silent: true,
       });
-      
+
       console.log('[EnhancedNotificationService] Weekly Friday check scheduled');
     } catch (error) {
       console.error('[EnhancedNotificationService] Weekly surah failed:', error);
@@ -572,7 +646,7 @@ export class EnhancedNotificationService {
 
 export class RevisionReminderService {
   private static REVISION_CHECK_TRIGGER_ID = 'revision-check-trigger';
-  
+
   /**
    * Schedule daily silent notification at 9 PM that triggers revision check
    * The actual check happens in the notification received listener
@@ -580,9 +654,9 @@ export class RevisionReminderService {
   static async scheduleDailyRevisionCheck(): Promise<void> {
     try {
       console.log('[RevisionReminder] Scheduling daily revision check trigger at 9 PM');
-      
+
       await cancelNotification(this.REVISION_CHECK_TRIGGER_ID);
-      
+
       // Schedule SILENT daily notification that triggers the check
       await scheduleDailyNotification({
         id: this.REVISION_CHECK_TRIGGER_ID,
@@ -591,18 +665,18 @@ export class RevisionReminderService {
         hour: 21,
         minute: 0,
         channelId: 'revision',
-        data: { 
+        data: {
           type: 'revision-check-trigger',
         },
         silent: true,
       });
-      
+
       console.log('[RevisionReminder] Daily check trigger scheduled');
     } catch (error) {
       console.error('[RevisionReminder] Scheduling failed:', error);
     }
   }
-  
+
   /**
    * Check for surahs needing revision and send notification if found
    * Called by notification received listener
@@ -610,10 +684,10 @@ export class RevisionReminderService {
   static async checkAndNotifyRevisionNeeded(daysThreshold: number = 3): Promise<void> {
     try {
       console.log(`[RevisionReminder] Checking surahs (${daysThreshold} days threshold)`);
-      
+
       const { getSurahsNeedingRevision } = await import('@/assets/database/QuranDatabase');
       const surahsNeedingRevision = await getSurahsNeedingRevision(daysThreshold);
-      
+
       if (surahsNeedingRevision.length === 0) {
         console.log('[RevisionReminder] No surahs need revision');
         return;
@@ -621,21 +695,21 @@ export class RevisionReminderService {
 
       const oldestSurah = surahsNeedingRevision[0];
       const count = surahsNeedingRevision.length;
-      
-      const title = count === 1 
-        ? '🔄 Time to Revise!' 
+
+      const title = count === 1
+        ? '🔄 Time to Revise!'
         : `🔄 ${count} Surahs Need Revision`;
-      
+
       const body = count === 1
         ? `${oldestSurah.surahName} hasn't been revised in ${oldestSurah.daysSince} days. 💪`
         : `${count} surahs need revision. ${oldestSurah.surahName} hasn't been reviewed in ${oldestSurah.daysSince} days! 💪`;
-      
+
       // Send ACTUAL notification with results
       await Notifications.scheduleNotificationAsync({
         content: {
           title,
           body,
-          data: { 
+          data: {
             type: 'revision-needed',
             count,
             oldestDays: oldestSurah.daysSince,
@@ -645,13 +719,13 @@ export class RevisionReminderService {
         },
         trigger: Platform.OS === 'android' ? { channelId: 'revision' } : null,
       });
-      
+
       console.log('[RevisionReminder] Sent notification for', count, 'surahs');
     } catch (error) {
       console.error('[RevisionReminder] Check failed:', error);
     }
   }
-  
+
   static async cancelRevisionReminders(): Promise<void> {
     await cancelNotification(this.REVISION_CHECK_TRIGGER_ID);
   }

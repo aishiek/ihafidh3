@@ -8,11 +8,18 @@ interface ActivityData {
   revisedVerses: Array<{ date: string; count: number }>;
 }
 
+interface PageActivityData {
+  memorizedPages: Array<{ date: string; count: number }>;
+  revisedPages: Array<{ date: string; count: number }>;
+}
+
 interface Props {
   data: ActivityData;
+  pageData?: PageActivityData;
 }
 
 type TimeRange = 'week' | 'month' | 'year';
+type DataType = 'verses' | 'pages';
 
 interface DataPoint {
   date: Date;
@@ -22,8 +29,9 @@ interface DataPoint {
   label: string;
 }
 
-const ActivityTimeSeriesGraph: React.FC<Props> = ({ data }) => {
+const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
   const [timeRange, setTimeRange] = useState<TimeRange>('month');
+  const [dataType, setDataType] = useState<DataType>('verses');
   const [selectedPoint, setSelectedPoint] = useState<DataPoint | null>(null);
   const { theme: colors } = useUnifiedTheme();
 
@@ -32,13 +40,21 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data }) => {
     const memMap: Record<string, number> = {};
     const revMap: Record<string, number> = {};
 
-    data.memorizedVerses.forEach((item) => {
-      memMap[item.date] = (memMap[item.date] || 0) + item.count;
-    });
-
-    data.revisedVerses.forEach((item) => {
-      revMap[item.date] = (revMap[item.date] || 0) + item.count;
-    });
+    if (dataType === 'pages' && pageData) {
+      pageData.memorizedPages.forEach((item) => {
+        memMap[item.date] = (memMap[item.date] || 0) + item.count;
+      });
+      pageData.revisedPages.forEach((item) => {
+        revMap[item.date] = (revMap[item.date] || 0) + item.count;
+      });
+    } else {
+      data.memorizedVerses.forEach((item) => {
+        memMap[item.date] = (memMap[item.date] || 0) + item.count;
+      });
+      data.revisedVerses.forEach((item) => {
+        revMap[item.date] = (revMap[item.date] || 0) + item.count;
+      });
+    }
 
     const today = new Date();
     const points: DataPoint[] = [];
@@ -57,7 +73,7 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data }) => {
         const date = new Date(today);
         date.setDate(date.getDate() - i);
         const dateStr = getDateStr(date);
-        
+
         points.push({
           date,
           dateStr,
@@ -72,7 +88,7 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data }) => {
         const date = new Date(today);
         date.setDate(date.getDate() - i);
         const dateStr = getDateStr(date);
-        
+
         points.push({
           date,
           dateStr,
@@ -94,15 +110,21 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data }) => {
 
         // Aggregate all days in this month
         Object.keys(memMap).forEach((dateStr) => {
-          const d = new Date(dateStr);
-          if (d.getFullYear() === year && d.getMonth() === month) {
+          const [yStr, mStr] = dateStr.split('-');
+          const dYear = parseInt(yStr, 10);
+          const dMonth = parseInt(mStr, 10) - 1;
+
+          if (dYear === year && dMonth === month) {
             memSum += memMap[dateStr];
           }
         });
 
         Object.keys(revMap).forEach((dateStr) => {
-          const d = new Date(dateStr);
-          if (d.getFullYear() === year && d.getMonth() === month) {
+          const [yStr, mStr] = dateStr.split('-');
+          const dYear = parseInt(yStr, 10);
+          const dMonth = parseInt(mStr, 10) - 1;
+
+          if (dYear === year && dMonth === month) {
             revSum += revMap[dateStr];
           }
         });
@@ -118,7 +140,7 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data }) => {
     }
 
     return points;
-  }, [data, timeRange]);
+  }, [data, pageData, timeRange, dataType]);
 
   // Calculate max value for Y-axis scaling
   const maxValue = useMemo(() => {
@@ -133,12 +155,18 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data }) => {
   const chartWidth = screenWidth - 80;
   const chartHeight = 200;
   const padding = { top: 20, right: 20, bottom: 30, left: 45 };
-  
-  const graphWidth = chartWidth - padding.left - padding.right;
+
+  // Calculate actual content width (for scrolling)
+  const contentWidth = Math.max(chartWidth, chartData.length * 40);
+  const graphWidth = contentWidth - padding.left - padding.right;
   const graphHeight = chartHeight - padding.top - padding.bottom;
 
   // Scale functions
   const xScale = (index: number) => {
+    // Handle single data point case to avoid division by zero
+    if (chartData.length <= 1) {
+      return padding.left + graphWidth / 2; // Center the single point
+    }
     return padding.left + (index / (chartData.length - 1)) * graphWidth;
   };
 
@@ -155,12 +183,12 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data }) => {
   // Create SVG path for line
   const createLinePath = (points: DataPoint[], getValue: (p: DataPoint) => number): string => {
     if (points.length === 0) return '';
-    
+
     let path = '';
     points.forEach((point, index) => {
       const x = xScale(index);
       const y = yScale(getValue(point));
-      
+
       if (index === 0) {
         path += `M ${x} ${y}`;
       } else {
@@ -168,23 +196,63 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data }) => {
         const prevX = xScale(index - 1);
         const prevY = yScale(getValue(points[index - 1]));
         const cpX = (prevX + x) / 2;
-        
+
         path += ` Q ${cpX} ${prevY}, ${x} ${y}`;
       }
     });
-    
+
     return path;
   };
 
   const memPath = createLinePath(chartData, p => p.memorized);
   const revPath = createLinePath(chartData, p => p.revised);
 
+  const scrollViewRef = React.useRef<ScrollView>(null);
+
+  // Auto-scroll to end when data or timeRange changes
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: false });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [timeRange, chartData.length]);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.card }]}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>📈 Activity Trends</Text>
-        
+        <View>
+          <Text style={[styles.title, { color: colors.text }]}>📈 Activity Trends</Text>
+          {pageData && (
+            <View style={styles.toggleContainer}>
+              <Pressable
+                onPress={() => setDataType('verses')}
+                style={[
+                  styles.toggleButton,
+                  dataType === 'verses' && { backgroundColor: colors.primary }
+                ]}
+              >
+                <Text style={[
+                  styles.toggleText,
+                  { color: dataType === 'verses' ? '#1a1a1a' : colors.textSecondary }
+                ]}>Verses</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setDataType('pages')}
+                style={[
+                  styles.toggleButton,
+                  dataType === 'pages' && { backgroundColor: colors.primary }
+                ]}
+              >
+                <Text style={[
+                  styles.toggleText,
+                  { color: dataType === 'pages' ? '#1a1a1a' : colors.textSecondary }
+                ]}>Pages</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+
         {/* Time Range Selector */}
         <View style={[styles.rangeSelector, { backgroundColor: colors.background }]}>
           {(['week', 'month', 'year'] as TimeRange[]).map((range) => (
@@ -234,13 +302,17 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data }) => {
       )}
 
       {/* Chart */}
-      <ScrollView 
-        horizontal 
+      <ScrollView
+        ref={scrollViewRef}
+        horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingRight: 20 }}
+        onContentSizeChange={() => {
+          scrollViewRef.current?.scrollToEnd({ animated: false });
+        }}
       >
-        <View style={{ width: Math.max(chartWidth, chartData.length * 40) }}>
-          <Svg width={chartWidth} height={chartHeight}>
+        <View style={{ width: contentWidth }}>
+          <Svg width={contentWidth} height={chartHeight}>
             {/* Y-axis gridlines */}
             {yAxisLabels.map((value) => {
               const y = yScale(value);
@@ -249,7 +321,7 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data }) => {
                   <Line
                     x1={padding.left}
                     y1={y}
-                    x2={chartWidth - padding.right}
+                    x2={contentWidth - padding.right}
                     y2={y}
                     stroke={colors.border}
                     strokeWidth={value === 0 ? 1.5 : 0.5}
@@ -338,8 +410,8 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data }) => {
           {/* X-axis labels with touch areas */}
           <View style={[styles.xAxisLabels, { marginLeft: padding.left }]}>
             {chartData.map((point, index) => {
-              const showLabel = timeRange === 'week' 
-                ? true 
+              const showLabel = timeRange === 'week'
+                ? true
                 : timeRange === 'month'
                   ? index % 5 === 0 || index === chartData.length - 1
                   : true;
@@ -350,7 +422,7 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data }) => {
                   onPress={() => setSelectedPoint(point)}
                   style={[
                     styles.xLabel,
-                    { 
+                    {
                       width: graphWidth / (chartData.length - 1),
                       marginLeft: index === 0 ? 0 : 0
                     }
@@ -398,12 +470,30 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 16,
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 8,
+    padding: 2,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  toggleButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  toggleText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   rangeSelector: {
     flexDirection: 'row',

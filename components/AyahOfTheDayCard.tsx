@@ -1,8 +1,10 @@
 import { surahsData } from '@/data/surahs';
+import { useDayKey } from '@/hooks/useDayKey';
 import { fetchSingleVerse } from '@/services/quranApi';
 import { useBookmarkStore } from '@/store/bookmarkStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { getTodayCardVerse } from '@/utils/ayahOfTheDay';
+import { useIsFocused } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -220,6 +222,8 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style }) => 
     translation: string 
   } | null>(null);
   const dayKeyRef = useRef<string>('');
+  const dayKey = useDayKey();
+  const isFocused = useIsFocused();
   const mountedRef = useRef(true);
   const { addBookmark } = useBookmarkStore();
   const viewShotRef = useRef<ViewShot>(null);
@@ -316,6 +320,25 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style }) => 
       } catch {} 
     };
   }, [loadAyah]);
+
+  // When dayKey changes (midnight rollover) reload ayah.
+  useEffect(() => {
+    if (!dayKey) return;
+    if (dayKeyRef.current && dayKeyRef.current !== dayKey) {
+      loadAyah();
+    }
+  }, [dayKey, loadAyah]);
+
+  // Also reload when screen becomes focused (cover case when navigation focus gained)
+  useEffect(() => {
+    if (isFocused) {
+      // Only reload if the stored dayKey differs from today or ayah is missing
+      const keyNow = computeKey();
+      if (!dayKeyRef.current || dayKeyRef.current !== keyNow || !ayah) {
+        loadAyah();
+      }
+    }
+  }, [isFocused, loadAyah]);
 
   // Get today's pattern and colors
   const today = new Date();

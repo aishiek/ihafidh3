@@ -1,9 +1,11 @@
 import { TajweedService } from '@/app/mushaf/services/tajweedService';
 import { PageLayout } from '@/types/layout';
 import { TajweedConfig, TajweedRule, WordWithTajweed } from '@/types/tajweed';
+import * as Haptics from 'expo-haptics';
 import { BookOpen, Settings } from 'lucide-react-native';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { TajweedSettings } from '../../components/Settings/TajweedSettings';
 import LayoutService from '../services/layoutService';
 import { TajweedRenderer } from './TajweedRenderer';
@@ -82,6 +84,47 @@ export const MushafLayout: React.FC = () => {
     else if (direction === 'prev' && currentPage > 1) setCurrentPage(currentPage - 1);
   };
 
+  // Swipe detection: horizontal swipes change pages while vertical scroll keeps working.
+  // We debounce swipes (brief lock) to avoid multiple rapid changes.
+  const swipeLockRef = useRef(false);
+  const SWIPE_THRESHOLD = 80; // px translation
+  const VELOCITY_THRESHOLD = 500; // px/s
+
+  const onPanHandlerStateChange = ({ nativeEvent }: any) => {
+    // Only handle when the gesture ends
+    if (nativeEvent.state !== State.END) return;
+
+    // Ignore if we're locked (recent swipe) or still loading
+    if (swipeLockRef.current || loading) return;
+
+    const x = nativeEvent.translationX || 0;
+    const y = nativeEvent.translationY || 0;
+    const vX = nativeEvent.velocityX || 0;
+
+    // If vertical travel dominates, ignore to avoid interfering with vertical scrolling
+    if (Math.abs(y) > Math.abs(x) && Math.abs(y) > 40) return;
+
+    // Swipe left (next page)
+    if ((x < -SWIPE_THRESHOLD) || (vX < -VELOCITY_THRESHOLD)) {
+      swipeLockRef.current = true;
+      handlePageChange('next');
+      // light haptic on forward swipe
+      try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); } catch (_) {}
+      setTimeout(() => { swipeLockRef.current = false; }, 260);
+      return;
+    }
+
+    // Swipe right (previous page)
+    if ((x > SWIPE_THRESHOLD) || (vX > VELOCITY_THRESHOLD)) {
+      swipeLockRef.current = true;
+      handlePageChange('prev');
+      // light haptic on backward swipe
+      try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); } catch (_) {}
+      setTimeout(() => { swipeLockRef.current = false; }, 260);
+      return;
+    }
+  };
+
   const renderLine = (line: PageLayout, index: number) => {
     switch (line.line_type) {
       case 'surah_name':
@@ -137,9 +180,11 @@ export const MushafLayout: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.pageContent}>
-        <View style={styles.page}>{pageLayout.map((line, index) => renderLine(line, index))}</View>
-      </ScrollView>
+      <PanGestureHandler onHandlerStateChange={onPanHandlerStateChange} activeOffsetX={[-10, 10]} failOffsetY={[-10, 10]}>
+        <ScrollView style={styles.pageContent}>
+          <View style={styles.page}>{pageLayout.map((line, index) => renderLine(line, index))}</View>
+        </ScrollView>
+      </PanGestureHandler>
 
       <View style={styles.navigation}>
         <TouchableOpacity onPress={() => handlePageChange('prev')} disabled={currentPage === 1} style={[styles.navButton, currentPage === 1 && styles.navButtonDisabled]}>

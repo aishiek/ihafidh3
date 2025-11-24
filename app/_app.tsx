@@ -1,8 +1,10 @@
 // Legacy _app.tsx stub (fonts now loaded once in _layout.tsx)
 // Kept to avoid accidental re-creation; perform optional warmup tasks here if needed.
 import { getAllMemorizedVerseIds, getAllRevisedVerseIds } from '@/assets/database/QuranDatabase';
+import { useProgressStore } from '@/store/progressStore';
+import { useSettingsStore } from '@/store/settingsStore';
 import MemorizationCache from '@/utils/MemorizationCache';
-import { requestNotificationPermissions, scheduleRevisionReminders } from '@/utils/notificationUtils';
+import { requestNotificationPermissions, schedulePageRevisionReminders, scheduleRevisionReminders } from '@/utils/notificationUtils';
 import { isDailyRevisionGoalMet, isWeeklyRevisionGoalMet } from '@/utils/revisionGoalUtils';
 import { useEffect } from 'react';
 import { Alert, Platform, View } from 'react-native';
@@ -33,7 +35,7 @@ function registerGlobalErrorHandlers() {
   // Handle unhandled promise rejections
   const tracking = (e: any) => {
     console.error('[Unhandled Rejection]', e);
-    try { Alert.alert('Unhandled Promise Rejection', String(e?.message || e)); } catch (er) {}
+    try { Alert.alert('Unhandled Promise Rejection', String(e?.message || e)); } catch (er) { }
   };
   // @ts-ignore
   if (Platform.OS !== 'web') {
@@ -44,6 +46,9 @@ function registerGlobalErrorHandlers() {
 }
 
 export default function App() {
+  const { revisionSchedule } = useProgressStore();
+  const { pageReminderSettings } = useSettingsStore();
+
   useEffect(() => {
     registerGlobalErrorHandlers();
     (async () => {
@@ -55,17 +60,34 @@ export default function App() {
         const memorizedIds = await getAllMemorizedVerseIds();
         const revisedIds = await getAllRevisedVerseIds();
         MemorizationCache.warmUp(memorizedIds, revisedIds);
-        
+
         await requestNotificationPermissions();
         await scheduleRevisionReminders({
           dailyIncomplete: !isDailyRevisionGoalMet(),
-            weeklyIncomplete: !isWeeklyRevisionGoalMet(),
+          weeklyIncomplete: !isWeeklyRevisionGoalMet(),
         });
+
+        // Schedule page revision reminders if enabled
+        if (pageReminderSettings?.enabled && revisionSchedule) {
+          const dailyPagesTarget = revisionSchedule.pagesPerDay || 1;
+          const weeklyPagesTarget = revisionSchedule.pagesPerWeek || 5;
+          const dailyPagesProgress = revisionSchedule.completedPagesToday?.length || 0;
+          const weeklyPagesProgress = revisionSchedule.completedPagesThisWeek?.length || 0;
+
+          await schedulePageRevisionReminders({
+            dailyIncomplete: dailyPagesProgress < dailyPagesTarget,
+            weeklyIncomplete: weeklyPagesProgress < weeklyPagesTarget,
+            dailyProgress: dailyPagesProgress,
+            dailyTarget: dailyPagesTarget,
+            weeklyProgress: weeklyPagesProgress,
+            weeklyTarget: weeklyPagesTarget,
+          });
+        }
       } catch (e) {
         console.warn('[app/_app] Warmup failed:', e);
       }
     })();
-  }, []);
+  }, [pageReminderSettings?.enabled, revisionSchedule]);
 
   // Return an empty view (router uses _layout.tsx for UI)
   return <View style={{ display: 'none' }} />;
