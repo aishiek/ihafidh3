@@ -359,7 +359,8 @@ export class AyahNotificationService {
         return;
       }
 
-      // Try to include today's Ayah content in the notification payload
+      // Schedule a one-time notification for the next occurrence so content is fresh.
+      // The app will reschedule when it becomes active to update the following day's content.
       try {
         const { getTodayCardVerse } = await import('@/utils/ayahOfTheDay');
         const { fetchSingleVerse } = await import('@/services/quranApi');
@@ -374,12 +375,20 @@ export class AyahNotificationService {
         if (verse?.translation) bodyText = (verse.translation || '').replace(/<[^>]+>/g, '').slice(0, 120);
         else if (verse?.arabicText) bodyText = (verse.arabicText || '').slice(0, 80);
 
-        await scheduleDailyNotification({
+        // Cancel any previous notification to avoid duplication
+        await cancelNotification(this.DAILY_AYAH_ID);
+
+        // Compute next occurrence for the provided hour/minute
+        const now = new Date();
+        const nextDate = new Date(now);
+        nextDate.setHours(hour, minute, 0, 0);
+        if (nextDate <= now) nextDate.setDate(nextDate.getDate() + 1);
+
+        await scheduleNotificationAtDate({
           id: this.DAILY_AYAH_ID,
           title,
           body: bodyText || 'Your daily verse is ready. Tap to read and reflect.',
-          hour,
-          minute,
+          date: nextDate,
           channelId: 'ayah',
           data: {
             type: 'daily_ayah',
@@ -389,14 +398,21 @@ export class AyahNotificationService {
             verseNumber: todayVerse.verseNumber,
           },
         });
+        
       } catch (innerErr) {
         // Fallback — schedule a simple daily ayah reminder if fetching fails
-        await scheduleDailyNotification({
+        await cancelNotification(this.DAILY_AYAH_ID);
+
+        const now2 = new Date();
+        const next = new Date(now2);
+        next.setHours(hour, minute, 0, 0);
+        if (next <= now2) next.setDate(next.getDate() + 1);
+
+        await scheduleNotificationAtDate({
           id: this.DAILY_AYAH_ID,
           title: '📖 Daily Ayah',
           body: 'Your daily verse is ready. Tap to read and reflect.',
-          hour,
-          minute,
+          date: next,
           channelId: 'ayah',
           data: {
             type: 'daily_ayah',

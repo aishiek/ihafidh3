@@ -17,21 +17,20 @@ import { safeNavigation } from '@/utils/navigationUtils';
 import { findVerseById } from '@/utils/verseUtils';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import {
-  Award,
-  BookOpen,
-  Calendar,
-  CheckCircle,
-  Clock,
-  Info,
-  Play,
-  RotateCcw,
-  Target,
-  XCircle
+    Award,
+    BookOpen,
+    Calendar,
+    CheckCircle,
+    Clock,
+    Info,
+    Play,
+    RotateCcw,
+    Target,
+    XCircle
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocalSearchParams } from 'expo-router';
 import { AppState, Dimensions, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';

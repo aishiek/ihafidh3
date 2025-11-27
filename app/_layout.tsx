@@ -195,10 +195,13 @@ function RootLayoutContent() {
 
   // Sync daily Ayah notification schedule with settings
   React.useEffect(() => {
-    let active = true;
-    (async () => {
+    let mounted = true;
+
+    const doSchedule = async () => {
       try {
+        if (!mounted) return;
         if (ayahEnabled) {
+          // Schedule fresh content for the next occurrence
           await AyahNotificationService.scheduleDailyReminder(reminderTime || '09:00');
         } else {
           await AyahNotificationService.cancelDailyReminder();
@@ -206,8 +209,17 @@ function RootLayoutContent() {
       } catch (e) {
         console.log('[AyahNotif] sync error', e);
       }
-    })();
-    return () => { active = false; };
+    };
+
+    // Initial scheduling
+    void doSchedule();
+
+    // Reschedule fresh content whenever app becomes active
+    const stateSub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') void doSchedule();
+    });
+
+    return () => { mounted = false; try { stateSub.remove(); } catch { } };
   }, [ayahEnabled, reminderTime]);
 
   // Sync enhanced notification settings
@@ -385,7 +397,6 @@ function RootLayoutContent() {
             }
             break;
           }
-            break;
           case 'daily-verse-reminder':
             try { router.replace('/(tabs)/read'); } catch { router.push('/(tabs)/read'); }
             break;

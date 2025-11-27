@@ -10,7 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Share2, Sparkles } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, AppStateStatus, Image, Linking, PixelRatio, Platform, Pressable, Animated, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, AppState, AppStateStatus, Image, Linking, PixelRatio, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Share from 'react-native-share';
 import Svg, { Circle, Defs, Stop, RadialGradient as SvgRadialGradient } from 'react-native-svg';
 import ViewShot from 'react-native-view-shot';
