@@ -406,6 +406,50 @@ function RootLayoutContent() {
         console.log('[NotificationDeepLink] deep link failed', e);
       }
     });
+    // Also handle the case where the app was cold-started by a notification tap.
+    // Expo stores the last notification response which we can retrieve on startup.
+    (async () => {
+      try {
+        const last = await Notifications.getLastNotificationResponseAsync();
+        if (last) {
+          // If a notification launched the app, process it the same way as the listener
+          const data: any = last?.notification?.request?.content?.data || {};
+          // Reuse same deep link handling logic
+          switch (data?.type) {
+            case 'daily_ayah':
+            case 'daily-ayah': {
+              if (data?.target === 'index' || data?.highlightAyah) {
+                const surahId = data?.surahId || getTodayCardVerse(new Date()).surahId;
+                const verseId = data?.verseNumber || getTodayCardVerse(new Date()).verseNumber;
+                const qs = `?highlightAyah=1&surahId=${surahId}&verseId=${verseId}`;
+                try { router.replace(`/${qs}`); } catch { router.push(`/${qs}`); }
+              } else {
+                const today = getTodayCardVerse(new Date());
+                try { router.replace(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); } catch { router.push(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); }
+              }
+              break;
+            }
+            case 'daily-verse-reminder':
+              try { router.replace('/(tabs)/read'); } catch { router.push('/(tabs)/read'); }
+              break;
+            case 'weekly-surah-reminder':
+              try { router.replace('/(tabs)/stats'); } catch { router.push('/(tabs)/stats'); }
+              break;
+            case 'hifdh-overdue':
+              try { router.replace('/'); } catch { router.push('/'); }
+              break;
+            case 'revision-needed':
+              try { router.replace('/(tabs)/stats'); } catch { router.push('/(tabs)/stats'); }
+              break;
+            default:
+              break;
+          }
+        }
+      } catch (e) {
+        console.log('[NotificationColdStart] getLastNotificationResponseAsync failed', e);
+      }
+    })();
+
     return () => { try { sub.remove(); } catch { } };
   }, []);
 
