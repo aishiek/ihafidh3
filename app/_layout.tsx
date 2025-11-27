@@ -54,7 +54,7 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
 }
 
 // Persist font load state across Fast Refresh using global flag
-declare global {  
+declare global {
   var __IHAFIDH_FONTS_LOADED: boolean | undefined;
 }
 
@@ -133,17 +133,17 @@ function RootLayoutContent() {
   const reminderTime = useSettingsStore(s => s.reminderTime);
   const notificationSettings = useSettingsStore(s => s.notificationSettings);
   const revisionReminderSettings = useSettingsStore(s => s.revisionReminderSettings);
-  
+
   // Global celebration hook - available on all screens
-  const { 
-    celebrationVisible, 
-    celebrationType, 
-    customMessage, 
+  const {
+    celebrationVisible,
+    celebrationType,
+    customMessage,
     badgeName,
-    showCelebration, 
-    hideCelebration 
+    showCelebration,
+    hideCelebration
   } = useCelebration();
-  
+
   const setBadgeCelebrationCallback = useProgressStore((s) => s.setBadgeCelebrationCallback);
 
   React.useEffect(() => {
@@ -175,7 +175,7 @@ function RootLayoutContent() {
         if (!granted) {
           console.log('[App] Notification permissions not granted');
         }
-        
+
         // Initialize fasting notification service early
         // This ensures it's ready even if user enables notifications without opening calendar
         await FastingNotificationService.initialize();
@@ -272,17 +272,17 @@ function RootLayoutContent() {
   React.useEffect(() => {
     const handleBadgeCelebration = (badge: Badge, isHafidh: boolean) => {
       console.log('[RootLayout] Badge unlocked globally:', badge.name, 'isHafidh:', isHafidh);
-      
+
       const celebType = isHafidh ? 'hafidh-badge' : 'badge-unlocked';
-      
+
       // Use setTimeout to ensure it triggers after any state updates
       setTimeout(() => {
         showCelebration(celebType, undefined, badge.name);
       }, 100);
     };
-    
+
     setBadgeCelebrationCallback(handleBadgeCelebration);
-    
+
     return () => {
       setBadgeCelebrationCallback(null);
     };
@@ -294,13 +294,13 @@ function RootLayoutContent() {
       const { version } = getCurrentVersion();
       setCurrentVersion(version);
       console.log('[version] Current version:', version, 'MIN:', MIN_SUPPORTED_VERSION, 'LATEST:', LATEST_VERSION);
-      
+
       // Initial local check (fast fallback before remote arrives)
       const mustUpdateLocal = isVersionLower(version, MIN_SUPPORTED_VERSION);
       const softUpdateLocal = !mustUpdateLocal && isVersionLower(version, LATEST_VERSION);
-      
+
       console.log('[version] Local check - mustUpdate:', mustUpdateLocal, 'softUpdate:', softUpdateLocal);
-      
+
       if (mustUpdateLocal || softUpdateLocal) {
         setForcedUpdate(mustUpdateLocal);
         setLatestVersion(LATEST_VERSION);
@@ -332,23 +332,23 @@ function RootLayoutContent() {
         }
       }
     });
-    return () => { try { sub.remove(); } catch {} };
+    return () => { try { sub.remove(); } catch { } };
   }, []);
 
   const applyRemoteVersion = React.useCallback((remote: RemoteVersionConfig, version: string) => {
     try {
       console.log('[version] Applying remote - current:', version, 'min:', remote.min_supported, 'latest:', remote.latest, 'force:', remote.force);
-      
+
       setLatestVersion(remote.latest || LATEST_VERSION);
       setReleaseNotes(remote.release_notes);
       setIosAppIdOverride(remote.ios_app_id_override ?? null);
       setAndroidPkgOverride(remote.android_package_id_override ?? null);
-      
+
       const mustUpdate = isVersionLower(version, remote.min_supported || MIN_SUPPORTED_VERSION) || !!remote.force;
       const softUpdate = !mustUpdate && isVersionLower(version, remote.latest || LATEST_VERSION);
-      
+
       console.log('[version] Remote check - mustUpdate:', mustUpdate, 'softUpdate:', softUpdate);
-      
+
       // Only show modal if there's actually an update needed
       if (mustUpdate || softUpdate) {
         setForcedUpdate(mustUpdate);
@@ -367,13 +367,23 @@ function RootLayoutContent() {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       try {
         const data: any = response?.notification?.request?.content?.data || {};
-        
+
         // Handle all notification types
         switch (data?.type) {
           case 'daily_ayah':
-          case 'daily-ayah':
-            const today = getTodayCardVerse(new Date());
-            try { router.replace(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); } catch { router.push(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); }
+          case 'daily-ayah': {
+            // If notification payload requested highlighting on the homepage, send user to index
+            if (data?.target === 'index' || data?.highlightAyah) {
+              const surahId = data?.surahId || getTodayCardVerse(new Date()).surahId;
+              const verseId = data?.verseNumber || getTodayCardVerse(new Date()).verseNumber;
+              const qs = `?highlightAyah=1&surahId=${surahId}&verseId=${verseId}`;
+              try { router.replace(`/(tabs)/index${qs}`); } catch { router.push(`/(tabs)/index${qs}`); }
+            } else {
+              const today = getTodayCardVerse(new Date());
+              try { router.replace(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); } catch { router.push(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); }
+            }
+            break;
+          }
             break;
           case 'daily-verse-reminder':
             try { router.replace('/(tabs)/read'); } catch { router.push('/(tabs)/read'); }
@@ -395,7 +405,7 @@ function RootLayoutContent() {
         console.log('[NotificationDeepLink] deep link failed', e);
       }
     });
-    return () => { try { sub.remove(); } catch {} };
+    return () => { try { sub.remove(); } catch { } };
   }, []);
 
   // Background notification handler - executes when notifications fire (even if app is backgrounded)
@@ -403,15 +413,15 @@ function RootLayoutContent() {
     const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
       try {
         const data: any = notification?.request?.content?.data || {};
-        
+
         // Handle revision check notification
         if (data?.type === 'revision-check' && data?.action === 'check-and-notify') {
           console.log('[RevisionReminder] Daily check triggered at 9 PM');
-          
+
           // Get current threshold from settings
           const settings = useSettingsStore.getState();
           const daysThreshold = settings.revisionReminderSettings?.daysThreshold || 3;
-          
+
           // Execute the actual check and send notification if needed
           await RevisionReminderService.checkAndNotifyRevisionNeeded(daysThreshold);
         }
@@ -419,8 +429,8 @@ function RootLayoutContent() {
         console.error('[NotificationReceived] Handler failed:', e);
       }
     });
-    
-    return () => { try { subscription.remove(); } catch {} };
+
+    return () => { try { subscription.remove(); } catch { } };
   }, []);
 
   // Persistence guard and DB lifecycle management
@@ -446,7 +456,7 @@ function RootLayoutContent() {
       }
     };
     const sub = AppState.addEventListener('change', onStateChange);
-    return () => { try { sub.remove(); } catch {} };
+    return () => { try { sub.remove(); } catch { } };
   }, []);
 
   try {
@@ -499,11 +509,15 @@ function RootLayoutContent() {
   );
 }
 
-// Main export wraps everything in the CelebrationProvider
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
+// Main export wraps everything in the CelebrationProvider and GestureHandlerRootView
 export default function RootLayout() {
   return (
-    <CelebrationProvider>
-      <RootLayoutContent />
-    </CelebrationProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <CelebrationProvider>
+        <RootLayoutContent />
+      </CelebrationProvider>
+    </GestureHandlerRootView>
   );
 }

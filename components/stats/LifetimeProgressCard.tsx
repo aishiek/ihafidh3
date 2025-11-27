@@ -507,9 +507,9 @@ export default function LifetimeProgressCard() {
                   ECG Timeline {needsHorizontalScroll ? '(Scroll →)' : ''}
                 </Text>
               </View>
-              <View style={{ flex: 1, alignItems: 'flex-end' }}>
+              <View style={{ flex: 1, alignItems: 'flex-end', paddingRight: 4 }}>
                 <Text style={[styles.axisLabel, { color: colors.textSecondary, fontSize: 10, fontWeight: '600' }]}>
-                  {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  Now
                 </Text>
               </View>
             </View>

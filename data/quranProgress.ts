@@ -1,5 +1,8 @@
 import { getAllJuzDetails, getCompletedJuzList, getJuzDetail } from '@/utils/juzCalculations';
+import getLogger from '@/utils/logger';
 import { surahsData } from './surahs';
+
+const logger = getLogger('QuranProgressTracker');
 
 // Juz mapping for each surah
 const surahJuzMap: { [key: number]: number | number[] } = {
@@ -158,7 +161,7 @@ export class QuranProgressTracker {
         const [surahIdStr, verseNumStr] = verseRef.split(':');
         const surahId = parseInt(surahIdStr, 10);
         const verseNum = parseInt(verseNumStr, 10);
-        
+
         // Calculate cumulative verse ID
         let cumulativeId = 0;
         for (let i = 1; i < surahId; i++) {
@@ -187,12 +190,12 @@ export class QuranProgressTracker {
     // Use the new Juz calculation logic based on verse ranges
     const completedJuzList = getCompletedJuzList(this.userProgress.memorizedVerseIds);
     this.userProgress.memorizedJuz = new Set(completedJuzList);
-    
-    console.log('[QuranProgressTracker] Juz completion calculated:', {
-      completedJuz: completedJuzList.length,
-      juzNumbers: completedJuzList,
-      totalVerses: this.userProgress.memorizedVerseIds.length
-    });
+
+    // logger.debug('Juz completion calculated:', {
+    //   completedJuz: completedJuzList.length,
+    //   juzNumbers: completedJuzList,
+    //   totalVerses: this.userProgress.memorizedVerseIds.length
+    // });
   }
 
   // Get total verse count (6,236 verses)
@@ -205,9 +208,18 @@ export class QuranProgressTracker {
     const totalSurahs = 114;
     const totalJuz = 30;
     const totalVerses = this.getTotalVerses();
-    
+
     // Get detailed Juz information
     const juzDetails = getAllJuzDetails(this.userProgress.memorizedVerseIds);
+
+    // Add detailed debug logging for Juz progress to aid troubleshooting
+    // logger.debug('calculateProgress summary:', {
+    //   memorizedVersesCount: this.userProgress.memorizedVerses.size,
+    //   memorizedVerseIdsCount: this.userProgress.memorizedVerseIds.length,
+    //   completedJuzCount: this.userProgress.memorizedJuz.size,
+    //   sampleCompletedJuz: Array.from(this.userProgress.memorizedJuz).slice(0, 8),
+    //   firstJuzDetails: juzDetails.slice(0, 4),
+    // });
 
     return {
       surahs: {
@@ -254,19 +266,19 @@ export class QuranProgressTracker {
     const verseNumber = verseId - startVerseId + 1;
 
     this.userProgress.memorizedVerses.add(`${surah.id}:${verseNumber}`);
-    
+
     // Add to cumulative verse IDs array
     if (!this.userProgress.memorizedVerseIds.includes(verseId)) {
       this.userProgress.memorizedVerseIds.push(verseId);
     }
-    
+
     // Check if surah is now complete
     this.checkSurahCompletion(surah.id);
-    
+
     // Recalculate Juz completion using the new logic
     const completedJuzList = getCompletedJuzList(this.userProgress.memorizedVerseIds);
     this.userProgress.memorizedJuz = new Set(completedJuzList);
-    
+
     return true;
   }
 

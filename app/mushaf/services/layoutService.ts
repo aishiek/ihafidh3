@@ -1,136 +1,237 @@
 import { AVAILABLE_LAYOUTS, LayoutMetadata, PageLayout } from '@/types/layout';
+import getLogger from '@/utils/logger';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as SQLite from 'expo-sqlite';
+import { Platform } from 'react-native';
 import { MUSHAF_CACHE_DIR } from '../utils/mushafConstants';
 import { checkLayoutStatus } from './mushafDownloadService';
+
 // Statically require packaged DB assets so Metro can resolve them at bundle time.
-// These literal requires must match files under `assets/database/`.
 const ASSET_DB_MODULES: Record<string, any> = {
   'qpc-hafs-15-lines.db': require('../../../assets/database/qpc-hafs-15-lines.db'),
-  'qpc-v1-15-lines.db': require('../../../assets/database/qpc-v1-15-lines.db'),
   'qpc-nastaleeq-15-lines.db': require('../../../assets/database/qpc-nastaleeq-15-lines.db'),
+  'qudratullah-indopak-nastaleeq.db': require('../../../assets/database/qudratullah-indopak-nastaleeq.db'),
+  'indopak-nastaleeq.db': require('../../../assets/database/indopak-nastaleeq.db'),
 };
 
-// No static asset map here; if you ship packaged DBs, place them under
-// `assets/databases/` and add literal requires here. For now, we only support
-// copying from the cache directory and surface a clear error when the DB is
-// not available.
-
 const STORAGE_KEY_ACTIVE_LAYOUT = 'ACTIVE_MUSHAF_LAYOUT';
-const SQLITE_DIR = (FileSystem as any).documentDirectory + 'SQLite';
+const SQLITE_DIR = `${FileSystem.documentDirectory}SQLite/`;
+const FALLBACK_DB_NAME = 'qudratullah-indopak-nastaleeq.db';
 
-const TAG = 'LayoutService';
-const DEV = typeof __DEV__ !== 'undefined' && __DEV__;
-const log = (msg: string, ...args: any[]) => { if (DEV) console.log(`[${TAG}] ${msg}`, ...args); };
-const logErr = (msg: string, err?: any) => { console.error(`[${TAG}] ${msg}`, err); };
+const logger = getLogger('LayoutService');
 
 export class LayoutService {
   private static activeDb: any = null;
   private static activeLayoutId: string | null = null;
+  private static activeDbName: string | null = null;
+
+  private static separateWordsDb: any = null;
+  private static separateWordsDbName: string | null = null;
+
+  private static dbChangeListeners: Array<() => void> = [];
+
+  // --- CRITICAL FIX: The Lock ---
+  // If true, NO ONE is allowed to open/read databases.
+  private static isSwappingLayout: boolean = false;
 
   private static async ensureSqliteDir() {
-    const dirInfo = await FileSystem.getInfoAsync(SQLITE_DIR);
-    if (!dirInfo.exists) {
-      await FileSystem.makeDirectoryAsync(SQLITE_DIR, { intermediates: true });
-      log('Created SQLite dir', SQLITE_DIR);
+    try {
+      const dirInfo = await FileSystem.getInfoAsync(SQLITE_DIR);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(SQLITE_DIR, { intermediates: true });
+        // Android propagation delay
+        if (Platform.OS === 'android') await new Promise(r => setTimeout(r, 100));
+      }
+    } catch (error) {
+      logger.error('Failed to create SQLite directory', error);
     }
   }
 
   private static async copyDbToSqliteIfNeeded(dbFileName: string): Promise<void> {
-    // Source candidates: MUSHAF_CACHE_DIR/<dbFileName> or bundled asset under assets/database/
-    const cachePath = `${MUSHAF_CACHE_DIR}/${dbFileName}`;
-    const cacheUri = cachePath.startsWith('file://') ? cachePath : `file://${cachePath}`;
     const targetPath = `${SQLITE_DIR}/${dbFileName}`;
-
     try {
       const targetInfo = await FileSystem.getInfoAsync(targetPath);
-      if (targetInfo.exists) {
-        log('Target DB already exists at', targetPath);
-        return;
-      }
 
-      // Prefer cache copy if present
-      const cacheInfo = await FileSystem.getInfoAsync(cacheUri);
+      // If valid, skip copy
+      if (targetInfo.exists && targetInfo.size && targetInfo.size > 0) return;
+
+      logger.debug(`[copyDb] Copying ${dbFileName}...`);
+
+      // 1. Try Cache
+      const cachePath = `${MUSHAF_CACHE_DIR}/${dbFileName}`;
+      const cacheInfo = await FileSystem.getInfoAsync(cachePath);
       if (cacheInfo.exists) {
-        log('Copying DB from cache:', cacheUri, '->', targetPath);
-        await FileSystem.copyAsync({ from: cacheUri, to: targetPath });
+        await FileSystem.copyAsync({ from: cachePath, to: targetPath });
         return;
       }
 
-      // Fallback to packaged asset in assets/database/<dbFileName>
-      try {
-        const ASSET_MODULE = ASSET_DB_MODULES[dbFileName];
-        if (!ASSET_MODULE) throw new Error(`No static asset registered for ${dbFileName}`);
-        const asset = Asset.fromModule(ASSET_MODULE as any);
+      // 2. Try Assets
+      const ASSET_MODULE = ASSET_DB_MODULES[dbFileName];
+      if (ASSET_MODULE) {
+        const asset = Asset.fromModule(ASSET_MODULE);
         await asset.downloadAsync();
-        const assetPath = asset.localUri || asset.uri;
-        if (!assetPath) throw new Error('Packaged DB has no uri');
-        log('Copying DB from asset:', assetPath, '->', targetPath);
-        await FileSystem.copyAsync({ from: assetPath, to: targetPath });
-        return;
-      } catch (e) {
-        logErr('Packaged asset fallback failed', e);
-        throw new Error(`DB not found in cache or bundled asset: ${dbFileName}`);
+        await FileSystem.copyAsync({ from: asset.localUri || asset.uri, to: targetPath });
+      } else {
+        throw new Error(`No asset found for ${dbFileName}`);
       }
-    } catch (e) {
-      logErr('Failed to ensure DB present', e);
-      throw e;
+    } catch (error) {
+      logger.error(`[copyDb] Failed for ${dbFileName}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * THE FIX: Wait for the layout swap to finish.
+   * Prevents UI from crashing the DB connection during a swap.
+   */
+  private static async waitForLock() {
+    if (!this.isSwappingLayout) return;
+
+    // Check every 100ms if the swap is done
+    let attempts = 0;
+    while (this.isSwappingLayout && attempts < 50) { // Wait max 5 seconds
+      await new Promise(r => setTimeout(r, 100));
+      attempts++;
     }
   }
 
   static async setActiveLayout(layoutId: string): Promise<boolean> {
+    // 1. Acquire Lock
+    if (this.isSwappingLayout) return false;
+    this.isSwappingLayout = true;
+
     try {
+      logger.debug(`[setActiveLayout] Switching to: ${layoutId}`);
       const layout = AVAILABLE_LAYOUTS.find((l) => l.layout_id === layoutId);
-      if (!layout) {
-        logErr('Layout not found', layoutId);
+      if (!layout) throw new Error('Layout not found');
+
+      // Check status
+      const status = await checkLayoutStatus(layoutId);
+      if (status !== 'ready') {
+        logger.warn('Layout not installed');
         return false;
       }
 
-      // Dynamically verify the layout's assets are installed (images + DB)
-      try {
-        const status = await checkLayoutStatus(layoutId);
-        if (status !== 'ready') {
-          logErr('Layout not installed, cannot activate', layoutId);
-          return false;
-        }
-      } catch (e) {
-        logErr('Failed checking layout status for activation', e);
-        return false;
+      // Optimization: Already active?
+      if (this.activeLayoutId === layoutId && this.activeDb) {
+        this.isSwappingLayout = false;
+        return true;
       }
 
-      // Close previous DB
-      if (this.activeDb) {
-        try { await this.activeDb.closeAsync(); } catch (_) {}
-        this.activeDb = null;
-      }
+      // 2. Clean Slate: Close EVERYTHING before touching files
+      // This prevents the "locked" error on Android.
+      await this.closeAllInternal();
 
-      // Ensure sqlite dir and copy DB
+      // 3. Prepare Files
       await this.ensureSqliteDir();
       await this.copyDbToSqliteIfNeeded(layout.dbFileName);
 
-      // Open DB by name
+      // Android Safety Pause (Crucial for FS locks to release)
+      if (Platform.OS === 'android') {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+
+      // 4. Open New DB
       this.activeDb = await (SQLite as any).openDatabaseAsync(layout.dbFileName);
-  this.activeLayoutId = layoutId;
+      this.activeDbName = layout.dbFileName;
+      this.activeLayoutId = layoutId;
+
+      // WAL Mode helps concurrency
+      try { await this.activeDb.execAsync('PRAGMA journal_mode = WAL;'); } catch (e) { }
+
+      // 5. Check for words table / Handle Fallback
+      const hasWords = await this.checkHasWordsTable(this.activeDb);
+
+      if (!hasWords) {
+        logger.debug('[setActiveLayout] Active DB missing words. Preparing fallback...');
+        await this.copyDbToSqliteIfNeeded(FALLBACK_DB_NAME);
+
+        if (Platform.OS === 'android') await new Promise(r => setTimeout(r, 100));
+
+        this.separateWordsDb = await (SQLite as any).openDatabaseAsync(FALLBACK_DB_NAME);
+        this.separateWordsDbName = FALLBACK_DB_NAME;
+
+        // WAL Mode for fallback
+        try { await this.separateWordsDb.execAsync('PRAGMA journal_mode = WAL;'); } catch (e) { }
+      }
 
       await AsyncStorage.setItem(STORAGE_KEY_ACTIVE_LAYOUT, layoutId);
-      log('Set active layout', layoutId);
+      this.notifyDatabaseChange();
       return true;
+
     } catch (error) {
-      logErr('Error setting active layout', error);
+      logger.error('Error setting active layout', error);
+      // Emergency Cleanup
+      await this.closeAllInternal();
       return false;
+    } finally {
+      // 6. Release Lock
+      this.isSwappingLayout = false;
     }
   }
 
-  static async getActiveLayoutId(): Promise<string> {
-    try {
-      const layoutId = await AsyncStorage.getItem(STORAGE_KEY_ACTIVE_LAYOUT);
-      return layoutId || 'indopak_15';
-    } catch (error) {
-      logErr('Error getting active layout id', error);
-      return 'indopak_15';
+  private static async closeAllInternal() {
+    if (this.activeDb) {
+      try { await this.activeDb.closeAsync(); } catch (e) { }
+      this.activeDb = null;
     }
+    if (this.separateWordsDb) {
+      // Only close if it's a different object instance
+      if (this.separateWordsDb !== this.activeDb) {
+        try { await this.separateWordsDb.closeAsync(); } catch (e) { }
+      }
+      this.separateWordsDb = null;
+    }
+    this.activeLayoutId = null;
+    this.activeDbName = null;
+    this.separateWordsDbName = null;
+  }
+
+  static async getWordsDb(): Promise<any> {
+    // 1. SAFETY: Wait here if a swap is happening!
+    await this.waitForLock();
+
+    // 2. Return valid connections
+    if (this.separateWordsDb) return this.separateWordsDb;
+
+    // If active DB is set and has words (checked during init), return it
+    if (this.activeDb && this.activeDbName !== FALLBACK_DB_NAME) {
+      // We assume if separateWordsDb is null, activeDb handles it
+      return this.activeDb;
+    }
+
+    // 3. Last Resort: If we are here, something is wrong, but don't try to open 
+    // files blindly. Just return activeDb and hope for the best to avoid crashes.
+    return this.activeDb;
+  }
+
+  // --- Getters & Helpers ---
+
+  static async getVersesForWordRange(firstId: number, lastId: number): Promise<Array<{ surah: number; ayah: number }>> {
+    const db = await this.getWordsDb(); // This now waits for lock
+    if (!db) return [];
+    try {
+      const rows = await db.getAllAsync(
+        `SELECT DISTINCT surah, ayah FROM words WHERE id BETWEEN ? AND ? ORDER BY surah ASC, ayah ASC`,
+        [firstId, lastId]
+      );
+      return (rows || []).map((r: any) => ({ surah: r.surah, ayah: r.ayah }));
+    } catch (e) { return []; }
+  }
+
+  private static async checkHasWordsTable(db: any): Promise<boolean> {
+    try {
+      const row = await db.getFirstAsync(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='words' LIMIT 1`
+      );
+      return !!row;
+    } catch (e) { return false; }
+  }
+
+  static async getActiveLayoutId(): Promise<string> {
+    return this.activeLayoutId || (await AsyncStorage.getItem(STORAGE_KEY_ACTIVE_LAYOUT)) || 'indopak_15';
   }
 
   static async getActiveLayout(): Promise<LayoutMetadata | null> {
@@ -138,44 +239,55 @@ export class LayoutService {
     return AVAILABLE_LAYOUTS.find((l) => l.layout_id === id) || null;
   }
 
-  static async getPageLayout(pageNumber: number): Promise<PageLayout[]> {
-    if (!this.activeDb) {
-      logErr('No active DB selected');
-      return [];
-    }
+  static onDatabaseChange(callback: () => void): () => void {
+    this.dbChangeListeners.push(callback);
+    return () => {
+      const i = this.dbChangeListeners.indexOf(callback);
+      if (i > -1) this.dbChangeListeners.splice(i, 1);
+    };
+  }
 
+  private static notifyDatabaseChange(): void {
+    this.dbChangeListeners.forEach(cb => { try { cb(); } catch (e) { } });
+  }
+
+  static async initializeDefaultLayout(): Promise<boolean> {
+    if (this.activeDb) return true;
+    return this.setActiveLayout(await this.getActiveLayoutId());
+  }
+
+  static getActiveDb(): any {
+    // If locked, return null safely. Consumer handles graceful degradation.
+    if (this.isSwappingLayout) return null;
+    return this.activeDb;
+  }
+
+  // Wrapper for external closing
+  static async closeActiveLayout(): Promise<void> {
+    this.isSwappingLayout = true;
+    await this.closeAllInternal();
+    this.notifyDatabaseChange();
+    this.isSwappingLayout = false;
+  }
+
+  // Passthrough queries (ensure they check for activeDb)
+  static async getPageLayout(pageNumber: number): Promise<PageLayout[]> {
+    await this.waitForLock(); // Wait for DB
+    if (!this.activeDb) return [];
     try {
-      // @ts-ignore
-      const rows = await this.activeDb.getAllAsync<PageLayout>(
-        `SELECT 
-          page_number,
-          line_number,
-          line_type,
-          is_centered,
-          first_word_id,
-          last_word_id,
-          surah_number
-        FROM pages
-        WHERE page_number = ?
-        ORDER BY line_number ASC`,
+      return await this.activeDb.getAllAsync(
+        `SELECT page_number, line_number, line_type, is_centered, first_word_id, last_word_id, surah_number FROM pages WHERE page_number = ? ORDER BY line_number ASC`,
         [pageNumber]
       );
-      return rows || [];
-    } catch (error) {
-      logErr('Error fetching page layout', error);
-      return [];
-    }
+    } catch (e) { return []; }
   }
 
   static async getPageRange(startPage: number, endPage: number): Promise<Map<number, PageLayout[]>> {
-    if (!this.activeDb) {
-      logErr('No active DB selected');
-      return new Map();
-    }
+    await this.waitForLock();
+    if (!this.activeDb) return new Map();
 
     try {
-      // @ts-ignore
-      const rows = await this.activeDb.getAllAsync<PageLayout>(
+      const rows = await this.activeDb.getAllAsync(
         `SELECT 
           page_number,
           line_number,
@@ -197,45 +309,51 @@ export class LayoutService {
       });
       return pageMap;
     } catch (error) {
-      logErr('Error fetching page range', error);
+      logger.error('Error fetching page range', error);
       return new Map();
     }
   }
 
   static async getSurahStartPage(surahNumber: number): Promise<number> {
-    if (!this.activeDb) {
-      logErr('No active DB selected');
-      return 1;
-    }
+    await this.waitForLock();
+    if (!this.activeDb) return 1;
 
     try {
-      // @ts-ignore
-      const res = await this.activeDb.getFirstAsync<{ page_number: number }>(
-        `SELECT MIN(page_number) as page_number FROM pages WHERE surah_number = ? AND line_type = 'surah_name' LIMIT 1`,
+      // Strategy 1: Look for surah header (standard)
+      const res = await this.activeDb.getFirstAsync(
+        `SELECT page_number FROM pages WHERE surah_number = ? AND line_type = 'surah_name' LIMIT 1`,
         [surahNumber]
       );
-      return res?.page_number || 1;
+      if (res?.page_number) return res.page_number;
+
+      // Strategy 2: Look for ANY line belonging to this surah (min page)
+      const resMin = await this.activeDb.getFirstAsync(
+        `SELECT MIN(page_number) as page_number FROM pages WHERE surah_number = ?`,
+        [surahNumber]
+      );
+      if (resMin?.page_number) return resMin.page_number;
+
+      // Strategy 3: Hardcoded fallback
+      const layout = await this.getActiveLayout();
+      if (layout) {
+        // Import static data lazily
+        const { surahsData } = require('../../../data/surahs');
+        const surah = surahsData.find((s: any) => s.id === surahNumber);
+        if (surah) return surah.pageNumber;
+      }
+
+      return 1;
     } catch (error) {
-      logErr('Error getting surah start page', error);
+      logger.error('Error getting surah start page', error);
       return 1;
     }
   }
 
-  /**
-   * Return the surah_number and its start_page for the surah that starts at or
-   * before the given pageNumber in the currently active DB. This helps map a
-   * reader position across different layout DBs.
-   */
   static async getSurahForPage(pageNumber: number): Promise<{ surah_number: number; start_page: number } | null> {
-    if (!this.activeDb) {
-      logErr('No active DB selected for getSurahForPage');
-      return null;
-    }
+    await this.waitForLock();
+    if (!this.activeDb) return null;
 
     try {
-      // Build a subquery that computes start_page per surah, then pick the
-      // surah whose start_page is the largest value <= pageNumber.
-      // We use a derived table because SQLite requires the aggregation first.
       const sql = `SELECT surah_number, start_page FROM (
           SELECT surah_number, MIN(page_number) AS start_page
           FROM pages
@@ -243,66 +361,41 @@ export class LayoutService {
           GROUP BY surah_number
         ) WHERE start_page <= ? ORDER BY start_page DESC LIMIT 1`;
 
-      // @ts-ignore
-      const res = await this.activeDb.getFirstAsync<{ surah_number: number; start_page: number }>(sql, [pageNumber]);
+      const res = await this.activeDb.getFirstAsync(sql, [pageNumber]);
       if (!res) return null;
       return { surah_number: res.surah_number, start_page: res.start_page };
     } catch (error) {
-      logErr('Error getting surah for page', error);
+      logger.error('Error getting surah for page', error);
       return null;
     }
   }
 
   static async getSurahPages(surahNumber: number): Promise<number[]> {
-    if (!this.activeDb) {
-      logErr('No active DB selected');
-      return [];
-    }
+    await this.waitForLock();
+    if (!this.activeDb) return [];
 
     try {
-      // @ts-ignore
-      const rows = await this.activeDb.getAllAsync<{ page_number: number }>(
+      const rows = await this.activeDb.getAllAsync(
         `SELECT DISTINCT page_number FROM pages WHERE surah_number = ? ORDER BY page_number ASC`,
         [surahNumber]
       );
-  return (rows || []).map((r: { page_number: number }) => r.page_number);
+      return (rows || []).map((r: { page_number: number }) => r.page_number);
     } catch (error) {
-      logErr('Error getting surah pages', error);
+      logger.error('Error getting surah pages', error);
       return [];
     }
   }
 
   static async getTotalPages(): Promise<number> {
-    if (!this.activeDb) {
-      logErr('No active DB selected');
-      return 0;
-    }
+    await this.waitForLock();
+    if (!this.activeDb) return 0;
 
     try {
-      // @ts-ignore
-      const res = await this.activeDb.getFirstAsync<{ total: number }>(`SELECT MAX(page_number) as total FROM pages`);
+      const res = await this.activeDb.getFirstAsync(`SELECT MAX(page_number) as total FROM pages`);
       return res?.total || 0;
     } catch (error) {
-      logErr('Error getting total pages', error);
+      logger.error('Error getting total pages', error);
       return 0;
-    }
-  }
-
-  static async initializeDefaultLayout(): Promise<boolean> {
-    try {
-      const id = await this.getActiveLayoutId();
-      return await this.setActiveLayout(id);
-    } catch (error) {
-      logErr('Error initializing default layout', error);
-      return false;
-    }
-  }
-
-  static async closeActiveLayout(): Promise<void> {
-    if (this.activeDb) {
-      try { await this.activeDb.closeAsync(); } catch (_) {}
-      this.activeDb = null;
-      this.activeLayoutId = null;
     }
   }
 }

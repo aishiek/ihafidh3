@@ -5,11 +5,13 @@ import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-nati
 
 export default function NotificationSettingsCard() {
   const colors = useCustomColors();
-  const { 
-    notificationSettings, 
+  const {
+    notificationSettings,
     setNotificationSetting,
     revisionReminderSettings,
-    setRevisionReminderSettings
+    setRevisionReminderSettings,
+    pageReminderSettings,
+    setPageReminderSettings
   } = useSettingsStore();
 
   const notificationOptions = [
@@ -63,10 +65,10 @@ export default function NotificationSettingsCard() {
       <Text style={[styles.title, { color: colors.text }]}>
         🔔 Notifications
       </Text>
-      
+
       {notificationOptions.map((option) => (
-        <Pressable 
-          key={option.key} 
+        <Pressable
+          key={option.key}
           style={styles.settingRow}
           onPress={() => setNotificationSetting(option.key, !(notificationSettings?.[option.key] ?? false))}
         >
@@ -83,7 +85,60 @@ export default function NotificationSettingsCard() {
           </View>
           <Switch
             value={notificationSettings?.[option.key] ?? false}
-            onValueChange={(value) => setNotificationSetting(option.key, value)}
+            onValueChange={async (value) => {
+              setNotificationSetting(option.key, value);
+              // Send immediate Daily Ayah notification when enabling
+              if (value && option.key === 'dailyAyah') {
+                try {
+                  // Fetch the actual Ayah of the Day
+                  const { getTodayCardVerse } = await import('@/utils/ayahOfTheDay');
+                  const { fetchSingleVerse } = await import('@/services/quranApi');
+                  const { surahsData } = await import('@/data/surahs');
+                  const { translationLanguage } = await import('@/store/settingsStore').then(m => m.useSettingsStore.getState());
+
+                  const cardVerse = getTodayCardVerse(new Date());
+                  const surah = surahsData.find(s => s.id === cardVerse.surahId);
+                  const verse = await fetchSingleVerse(cardVerse.surahId, cardVerse.verseNumber, translationLanguage || 'en.asad');
+
+                  if (verse && surah) {
+                    const Notifications = await import('expo-notifications');
+                    // Clean translation from HTML tags
+                    const cleanTranslation = (verse.translation || '').replace(/<[^>]+>/g, '');
+
+                    await Notifications.scheduleNotificationAsync({
+                      content: {
+                        title: `📖 ${surah.name} • ${cardVerse.verseNumber}`,
+                        body: cleanTranslation,
+                        data: {
+                          type: 'daily_ayah',
+                          target: 'index',
+                          highlightAyah: true,
+                          surahId: cardVerse.surahId,
+                          verseNumber: cardVerse.verseNumber
+                        },
+                        sound: true,
+                      },
+                      trigger: null, // Immediate
+                    });
+                  }
+                } catch (e) {
+                  console.warn('[NotificationSettings] Daily Ayah notification failed:', e);
+                  // Fallback to simple notification
+                  try {
+                    const Notifications = await import('expo-notifications');
+                    await Notifications.scheduleNotificationAsync({
+                      content: {
+                        title: '📖 Daily Ayah Enabled',
+                        body: "You'll receive a daily verse from the Quran. May Allah bless your journey! 🤲",
+                        data: { type: 'daily_ayah' },
+                        sound: true,
+                      },
+                      trigger: null,
+                    });
+                  } catch { }
+                }
+              }
+            }}
             trackColor={{ false: '#767577', true: colors.primary }}
             thumbColor={notificationSettings?.[option.key] ? '#fff' : '#f4f3f4'}
           />
@@ -92,12 +147,12 @@ export default function NotificationSettingsCard() {
 
       {/* Revision Reminder - Separate Section */}
       <View style={[styles.separator, { backgroundColor: colors.text, opacity: 0.1 }]} />
-      
-      <Pressable 
+
+      <Pressable
         style={styles.settingRow}
-        onPress={() => setRevisionReminderSettings({ 
-          ...revisionReminderSettings, 
-          enabled: !revisionReminderSettings.enabled 
+        onPress={() => setRevisionReminderSettings({
+          ...revisionReminderSettings,
+          enabled: !revisionReminderSettings.enabled
         })}
       >
         <View style={styles.settingLeft}>
@@ -113,9 +168,9 @@ export default function NotificationSettingsCard() {
         </View>
         <Switch
           value={revisionReminderSettings.enabled}
-          onValueChange={(enabled) => setRevisionReminderSettings({ 
-            ...revisionReminderSettings, 
-            enabled 
+          onValueChange={(enabled) => setRevisionReminderSettings({
+            ...revisionReminderSettings,
+            enabled
           })}
           trackColor={{ false: '#767577', true: colors.primary }}
           thumbColor={revisionReminderSettings.enabled ? '#fff' : '#f4f3f4'}
@@ -130,20 +185,20 @@ export default function NotificationSettingsCard() {
           </Text>
           <View style={styles.daysInputContainer}>
             <TextInput
-              style={[styles.daysInput, { 
-                color: colors.text, 
+              style={[styles.daysInput, {
+                color: colors.text,
                 backgroundColor: colors.background,
                 borderColor: colors.text
               }]}
-                value={daysInput}
-                onChangeText={(text) => {
-                  // Allow user to type freely (including empty string) — handle persist on blur/submit
-                  // Keep only digits to avoid non-numeric input.
-                  const digitsOnly = text.replace(/[^0-9]/g, '');
-                  setDaysInput(digitsOnly);
-                }}
-                onBlur={() => commitDaysInput()}
-                onSubmitEditing={() => commitDaysInput()}
+              value={daysInput}
+              onChangeText={(text) => {
+                // Allow user to type freely (including empty string) — handle persist on blur/submit
+                // Keep only digits to avoid non-numeric input.
+                const digitsOnly = text.replace(/[^0-9]/g, '');
+                setDaysInput(digitsOnly);
+              }}
+              onBlur={() => commitDaysInput()}
+              onSubmitEditing={() => commitDaysInput()}
               keyboardType="number-pad"
               maxLength={2}
             />
@@ -153,6 +208,27 @@ export default function NotificationSettingsCard() {
           </View>
         </View>
       )}
+
+      {/* Page Revision Reminder (Smart Page Mode) */}
+      <View style={[styles.separator, { backgroundColor: colors.text, opacity: 0.1 }]} />
+      <Pressable
+        style={styles.settingRow}
+        onPress={() => setPageReminderSettings({ enabled: !(pageReminderSettings?.enabled ?? false) })}
+      >
+        <View style={styles.settingLeft}>
+          <Text style={styles.icon}>📄</Text>
+          <View style={styles.textContainer}>
+            <Text style={[styles.settingTitle, { color: colors.text }]}>Page Revision Reminder</Text>
+            <Text style={[styles.settingDescription, { color: colors.text, opacity: 0.7 }]}>Get notified when daily/weekly page goals are incomplete</Text>
+          </View>
+        </View>
+        <Switch
+          value={pageReminderSettings?.enabled ?? false}
+          onValueChange={(enabled) => setPageReminderSettings({ enabled })}
+          trackColor={{ false: '#767577', true: colors.primary }}
+          thumbColor={pageReminderSettings?.enabled ? '#fff' : '#f4f3f4'}
+        />
+      </Pressable>
     </View>
   );
 }
@@ -228,7 +304,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 12,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
   },

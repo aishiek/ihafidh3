@@ -49,7 +49,7 @@ class MushafDownloadService {
   async isInstalled(): Promise<boolean> {
     try {
       this.log('CHECK', 'Checking if Mushaf is installed...');
-      
+
       // Check if at least one layout is installed (new layout-specific system)
       const layoutIds = ['indopak_15', 'madina_15', 'warsh_15', 'tajweed'];
       for (const layoutId of layoutIds) {
@@ -59,10 +59,10 @@ class MushafDownloadService {
           return true;
         }
       }
-      
+
       // Fallback: Check legacy installation (for backwards compatibility)
-      const dbExists = await RNFS.exists(`${MUSHAF_CACHE_DIR}/qudratullah-indopak-15-lines.db`);
-      
+      const dbExists = await RNFS.exists(`${MUSHAF_CACHE_DIR}/qudratullah-indopak-nastaleeq.db`);
+
       // Check page coordinate JSON files
       let pageJsonCount = 0;
       const jsonDir = `${MUSHAF_CACHE_DIR}/json`;
@@ -91,7 +91,7 @@ class MushafDownloadService {
 
       // Relaxed legacy check: require DB + JSON + at least 500 images
       const legacyComplete = dbExists && pageJsonCount >= 500 && imageCount >= 500;
-      
+
       if (legacyComplete) {
         this.log('CHECK', `✅ Mushaf installed (legacy): DB ✓, ${pageJsonCount} pages ✓, ${imageCount} images ✓`);
         return true;
@@ -110,7 +110,7 @@ class MushafDownloadService {
       let total = 0;
 
       // DB file
-      const dbPath = `${MUSHAF_CACHE_DIR}/qudratullah-indopak-15-lines.db`;
+      const dbPath = `${MUSHAF_CACHE_DIR}/qudratullah-indopak-nastaleeq.db`;
       if (await RNFS.exists(dbPath)) {
         const s = await RNFS.stat(dbPath);
         total += Number(s.size || 0);
@@ -192,7 +192,7 @@ class MushafDownloadService {
   private async ensureCacheDir(): Promise<void> {
     try {
       this.log('SETUP', `Ensuring cache dir exists: ${MUSHAF_CACHE_DIR}`);
-      
+
       if (!(await RNFS.exists(MUSHAF_CACHE_DIR))) {
         await RNFS.mkdir(MUSHAF_CACHE_DIR, { mkdirs: true });
         this.log('SETUP', '✅ Created cache directory');
@@ -248,54 +248,54 @@ class MushafDownloadService {
     return false;
   }
 
-    // Search for a filename anywhere under the cache dir up to a max depth
-    private async findFileInCache(fileName: string, dir: string = MUSHAF_CACHE_DIR, maxDepth: number = 4): Promise<string | null> {
-      try {
-        const entries = await RNFS.readDir(dir);
-        for (const e of entries) {
-          if (e.isFile && e.name === fileName) return e.path;
-        }
-
-        if (maxDepth <= 0) return null;
-
-        for (const e of entries) {
-          if (e.isDirectory) {
-            try {
-              const found = await this.findFileInCache(fileName, e.path, maxDepth - 1);
-              if (found) return found;
-            } catch (inner) {
-              // ignore and continue
-            }
-          }
-        }
-      } catch (e) {
-        // ignore
+  // Search for a filename anywhere under the cache dir up to a max depth
+  private async findFileInCache(fileName: string, dir: string = MUSHAF_CACHE_DIR, maxDepth: number = 4): Promise<string | null> {
+    try {
+      const entries = await RNFS.readDir(dir);
+      for (const e of entries) {
+        if (e.isFile && e.name === fileName) return e.path;
       }
 
-      return null;
-    }
+      if (maxDepth <= 0) return null;
 
-    // Recursively collect files matching a predicate under a directory (limited depth)
-    private async findAllFiles(dir: string, predicate: (name: string) => boolean, maxDepth: number = 6): Promise<string[]> {
-      const results: string[] = [];
-      try {
-        const entries = await RNFS.readDir(dir);
-        for (const e of entries) {
+      for (const e of entries) {
+        if (e.isDirectory) {
           try {
-            if (e.isFile && predicate(e.name)) results.push(e.path);
-            else if (e.isDirectory && maxDepth > 0) {
-              const nested = await this.findAllFiles(e.path, predicate, maxDepth - 1);
-              results.push(...nested);
-            }
+            const found = await this.findFileInCache(fileName, e.path, maxDepth - 1);
+            if (found) return found;
           } catch (inner) {
-            // ignore
+            // ignore and continue
           }
         }
-      } catch (e) {
-        // ignore
       }
-      return results;
+    } catch (e) {
+      // ignore
     }
+
+    return null;
+  }
+
+  // Recursively collect files matching a predicate under a directory (limited depth)
+  private async findAllFiles(dir: string, predicate: (name: string) => boolean, maxDepth: number = 6): Promise<string[]> {
+    const results: string[] = [];
+    try {
+      const entries = await RNFS.readDir(dir);
+      for (const e of entries) {
+        try {
+          if (e.isFile && predicate(e.name)) results.push(e.path);
+          else if (e.isDirectory && maxDepth > 0) {
+            const nested = await this.findAllFiles(e.path, predicate, maxDepth - 1);
+            results.push(...nested);
+          }
+        } catch (inner) {
+          // ignore
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    return results;
+  }
 
   private async extractArchive(
     archivePath: string,
@@ -318,7 +318,7 @@ class MushafDownloadService {
         // Verify file size
         const stat = await RNFS.stat(archivePath);
         const size = Number(stat.size || 0);
-        
+
         if (size < 1024) {
           throw new Error(`File too small to extract: ${size} bytes`);
         }
@@ -327,23 +327,23 @@ class MushafDownloadService {
 
         // Extract with timeout
         const extractPromise = unzip(archivePath, extractionTarget);
-        const timeoutPromise = new Promise((_, reject) => 
+        const timeoutPromise = new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Extraction timeout')), 120000)
         );
-        
+
         await Promise.race([extractPromise, timeoutPromise]);
 
         // Verify extraction
         try {
           const files = await RNFS.readDir(extractionTarget);
-               this.log('EXTRACT', `Extracted files: ${files.map((f: any) => f.name).join(', ')}`);
+          this.log('EXTRACT', `Extracted files: ${files.map((f: any) => f.name).join(', ')}`);
         } catch (e) {
           this.log('EXTRACT', 'Could not list files (non-critical)', e);
         }
 
         // Verify extraction with timeout
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
+
         const extractedFiles = await RNFS.readDir(extractionTarget);
         this.log('EXTRACT', `✅ Extracted ${extractedFiles.length} items`);
 
@@ -428,7 +428,7 @@ class MushafDownloadService {
       const parts: { name: string; url: string; stage: DownloadProgress['stage']; skip?: boolean }[] = [];
 
       // DB stage: only needed for legacy IndoPak cache; other layouts use packaged DB
-      const legacyDbPath = `${MUSHAF_CACHE_DIR}/qudratullah-indopak-15-lines.db`;
+      const legacyDbPath = `${MUSHAF_CACHE_DIR}/qudratullah-indopak-nastaleeq.db`;
       parts.push({
         name: 'mushaf-db.zip',
         url: MUSHAF_DOWNLOAD_URLS.db,
@@ -476,7 +476,7 @@ class MushafDownloadService {
           try {
             const percent = Math.max(1, Math.min(99, Math.round(offset * 100)));
             onProgress?.({ total: 0, current: 0, percentage: percent, stage: part.stage, statusMessage: `Skipping ${part.stage}... ${percent}%` });
-          } catch (_) {}
+          } catch (_) { }
           continue;
         }
 
@@ -556,7 +556,7 @@ class MushafDownloadService {
           try {
             const percent = Math.max(1, Math.min(99, Math.round(offset * 100)));
             onProgress?.({ total: 0, current: 0, percentage: percent, stage: 'extracting', statusMessage: `Finalizing ${part.stage}... ${percent}%` });
-          } catch (_) {}
+          } catch (_) { }
         } catch (e) {
           this.logError('DOWNLOAD', `Failed to download/extract ${part.name}`, e);
 
@@ -618,7 +618,7 @@ class MushafDownloadService {
 
     const targetDir = `${MUSHAF_CACHE_DIR}/images/${dirName}`;
     const topLevelDir = `${MUSHAF_CACHE_DIR}/${dirName}`;
-    
+
     // Possible source locations after extraction
     const possibleSources = [
       topLevelDir,                                    // e.g., mushaf/indopak/
@@ -633,19 +633,19 @@ class MushafDownloadService {
       }
 
       let totalMoved = 0;
-      
+
       // Try each possible source location
       for (const sourceDir of possibleSources) {
         if (!(await RNFS.exists(sourceDir))) continue;
-        
+
         const files = await RNFS.readDir(sourceDir);
         let movedCount = 0;
-        
+
         for (const f of files) {
           if (f.isFile && /\.(png|jpe?g)$/i.test(f.name)) {
             const standardized = this.standardizeFilename(f.name, layoutId);
             const dest = `${targetDir}/${standardized}`;
-            
+
             try {
               if (!(await RNFS.exists(dest))) {
                 await RNFS.moveFile(f.path, dest);
@@ -657,11 +657,11 @@ class MushafDownloadService {
             }
           }
         }
-        
+
         if (movedCount > 0) {
           totalMoved += movedCount;
           this.log('NORMALIZE', `Moved ${movedCount} images from ${sourceDir.split('/').pop()}/ for ${layoutId}`);
-          
+
           // Only remove source dir if it's now empty and not the images dir itself
           if (sourceDir !== `${MUSHAF_CACHE_DIR}/images`) {
             try {
@@ -696,11 +696,11 @@ class MushafDownloadService {
             }
           }
         }
-        
+
         if (renamedCount > 0) {
           this.log('NORMALIZE', `Standardized ${renamedCount} filenames for ${layoutId}`);
         }
-        
+
         // Log final count after normalization
         const finalFiles = await RNFS.readDir(targetDir);
         const imageCount = finalFiles.filter((f: any) => f.isFile && /\.(png|jpe?g)$/i.test(f.name)).length;
@@ -717,13 +717,13 @@ class MushafDownloadService {
   private standardizeFilename(filename: string, layoutId: string): string {
     // Determine correct extension for layout
     const correctExt = layoutId === 'indopak_15' ? '.png' : '.jpg';
-    
+
     // Extract page number from various formats
     const patterns = [
       /^page[-_]?(\d+)\.(png|jpe?g)$/i,
       /^(\d+)\.(png|jpe?g)$/i,
     ];
-    
+
     for (const pattern of patterns) {
       const match = filename.match(pattern);
       if (match) {
@@ -733,7 +733,7 @@ class MushafDownloadService {
         }
       }
     }
-    
+
     // If no match, return original
     return filename;
   }
@@ -742,12 +742,12 @@ class MushafDownloadService {
    * Verify image counts for a layout. All layouts should have 610 pages.
    * ONLY checks the layout-specific directory - no legacy fallback.
    */
-  private async verifyLayoutImages(layoutId: string): Promise<{ 
-    layoutId: string; 
-    count: number; 
-    expected: number; 
-    ok: boolean; 
-    dir: string 
+  private async verifyLayoutImages(layoutId: string): Promise<{
+    layoutId: string;
+    count: number;
+    expected: number;
+    ok: boolean;
+    dir: string
   }> {
     const layoutDirs: Record<string, string> = {
       'indopak_15': 'indopak',
@@ -755,34 +755,34 @@ class MushafDownloadService {
       'warsh_15': 'warsh',
       'tajweed': 'tajweed',
     };
-    
+
     const dirName = layoutDirs[layoutId];
     if (!dirName) return { layoutId, count: 0, expected: 0, ok: false, dir: '' };
-    
+
     const expected = 610; // All layouts should have 610 pages
     const correctExt = layoutId === 'indopak_15' ? '.png' : '.jpg';
-    
+
     // Check ONLY the layout-specific directory
     const targetDir = `${MUSHAF_CACHE_DIR}/images/${dirName}`;
-    
+
     try {
       if (!(await RNFS.exists(targetDir))) {
         this.log('VERIFY', `Directory not found: ${targetDir}`);
         return { layoutId, count: 0, expected, ok: false, dir: targetDir };
       }
-      
+
       const files = await RNFS.readDir(targetDir);
-      const imageFiles = files.filter((f: any) => 
-        f.isFile && 
-        f.name.endsWith(correctExt) && 
+      const imageFiles = files.filter((f: any) =>
+        f.isFile &&
+        f.name.endsWith(correctExt) &&
         /^page_\d+\.(png|jpe?g)$/i.test(f.name)
       );
-      
+
       const count = imageFiles.length;
       const ok = count >= expected;
-      
+
       this.log('VERIFY', `${ok ? '✅' : '❌'} ${layoutId}: ${count}/${expected} images in ${targetDir}`);
-      
+
       return { layoutId, count, expected, ok, dir: targetDir };
     } catch (e) {
       this.logError('VERIFY', `Failed to verify ${layoutId}`, e);
@@ -808,17 +808,17 @@ class MushafDownloadService {
       // Check layout-specific directory first
       const imagesDir = `${MUSHAF_CACHE_DIR}/images/${dirName}`;
       const dirExists = await RNFS.exists(imagesDir);
-      
+
       if (dirExists) {
         // Check if images directory has files
         const files = await RNFS.readDir(imagesDir);
-        const imageFiles = files.filter((f: any) => 
+        const imageFiles = files.filter((f: any) =>
           f.isFile && (f.name.endsWith('.png') || f.name.endsWith('.jpg') || f.name.endsWith('.jpeg'))
         );
 
         // Require at least 500 images (most layouts have 604-610 pages)
         const hasImages = imageFiles.length >= 500;
-        
+
         if (hasImages) {
           this.log('CHECK', `✅ Layout ${layoutId} installed: ${imageFiles.length} images`);
           return true;
@@ -829,7 +829,7 @@ class MushafDownloadService {
       const topLevelDir = `${MUSHAF_CACHE_DIR}/${dirName}`;
       if (await RNFS.exists(topLevelDir)) {
         const files = await RNFS.readDir(topLevelDir);
-        const imageFiles = files.filter((f: any) => 
+        const imageFiles = files.filter((f: any) =>
           f.isFile && (f.name.endsWith('.png') || f.name.endsWith('.jpg') || f.name.endsWith('.jpeg'))
         );
         if (imageFiles.length >= 500) {
@@ -842,13 +842,13 @@ class MushafDownloadService {
       if (layoutId === 'indopak_15') {
         const legacyDir = `${MUSHAF_CACHE_DIR}/images`;
         const legacyExists = await RNFS.exists(legacyDir);
-        
+
         if (legacyExists) {
           const files = await RNFS.readDir(legacyDir);
-          const imageFiles = files.filter((f: any) => 
+          const imageFiles = files.filter((f: any) =>
             f.isFile && f.name.endsWith('.png')
           );
-          
+
           if (imageFiles.length >= 500) {
             this.log('CHECK', `✅ IndoPak installed (legacy location): ${imageFiles.length} images`);
             return true;

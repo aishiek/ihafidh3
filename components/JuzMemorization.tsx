@@ -6,9 +6,9 @@ import { useProgressStore } from '@/store/progressStore';
 import { calculateJuzProgress, getJuzVerseRange } from '@/utils/juzCalculator';
 import { useCustomColors } from '@/utils/themeUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
-import { ArrowLeft } from 'lucide-react-native';
+import { ArrowLeft, ArrowRight } from 'lucide-react-native';
 import React, { useCallback, useMemo } from 'react';
-import { FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 function getSurahIdByName(name: string): number | null {
   const surah = surahsData.find(s => s.name === name || s.englishName === name || s.arabicName === name);
@@ -132,9 +132,9 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
         >
           <Text style={styles.completeBtnText}>{enabled ? '✓ Memorized' : inProgress ? 'Complete' : 'Mark All'}</Text>
           {enabled && (
-            <View style={{ 
-              marginLeft: 6, 
-              padding: 4, 
+            <View style={{
+              marginLeft: 6,
+              padding: 4,
               borderRadius: 12,
               backgroundColor: 'rgba(255, 255, 255, 0.2)',
               width: 22,
@@ -163,7 +163,7 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
                   <View style={styles.startIndicator} />
                 </View>
 
-                <Text style={styles.arrow}>→</Text>
+                <ArrowRight size={20} color="#60a5fa" strokeWidth={2.5} />
 
                 <View style={styles.verseGroup}>
                   {showEndSurahName && <Text style={styles.surahName}>{endSurah}</Text>}
@@ -183,12 +183,12 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
             <View style={[styles.progressBar, { width: `${Math.max(2, progress)}%`, backgroundColor: primary }]} />
           </View>
         </View>
-  </TouchableOpacity>
+      </TouchableOpacity>
     );
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}> 
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Juz verses are handled by parent via onOpenJuz */}
       <FlatList
         data={data}
@@ -238,21 +238,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
-  badgeText: { 
-    color: '#fff', 
-    fontWeight: '700', 
-    fontSize: 18 
+  badgeText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 18
   },
-  info: { 
+  info: {
     flex: 1,
   },
-  title: { 
-    fontSize: 18, 
+  title: {
+    fontSize: 18,
     fontWeight: '700',
     marginBottom: 4,
   },
-  subtitle: { 
-    fontSize: 14, 
+  subtitle: {
+    fontSize: 14,
     marginBottom: 6,
     opacity: 0.8,
   },
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 6,
   },
-  progressText: { 
+  progressText: {
     fontSize: 13,
     fontWeight: '500',
   },
@@ -350,13 +350,7 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     fontWeight: '500',
   },
-  arrow: {
-    color: '#60a5fa',
-    fontSize: Platform.OS === 'android' ? 26 : 22,
-    fontWeight: Platform.OS === 'android' ? 'bold' : '500',
-    lineHeight: Platform.OS === 'android' ? 26 : 22,
-    includeFontPadding: false,
-  },
+
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -400,14 +394,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
-  modalOverlay: { 
-    flex: 1, 
-    backgroundColor: 'rgba(0,0,0,0.7)', 
-    alignItems: 'center', 
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
   },
-  modalCard: { 
+  modalCard: {
     padding: 28,
     borderRadius: 16,
     minWidth: 280,
@@ -420,18 +414,18 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: 'center',
   },
-  progressBarContainer: { 
+  progressBarContainer: {
     width: '100%',
     marginTop: 8,
   },
-  progressBarBackground: { 
-    height: 8, 
-    borderRadius: 4, 
+  progressBarBackground: {
+    height: 8,
+    borderRadius: 4,
     overflow: 'hidden',
     width: '100%',
   },
-  progressBarFill: { 
-    height: '100%', 
+  progressBarFill: {
+    height: '100%',
     borderRadius: 4,
     minWidth: 8,
   },

@@ -1,6 +1,10 @@
 import { useSettingsStore, type PlaybackSpeed } from '@/store/settingsStore';
 import type { Verse } from '@/types';
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
+// NOTE: utils/ sits at the workspace root while the real implementation lives under /app/mushaf.
+// Using a direct relative path avoids metro resolving '@/mushaf' to the wrong location when this
+// module is required from outside the app/ directory.
+import LayoutService from '../app/mushaf/services/layoutService';
 
 export type AudioStatus = {
   isPlaying?: boolean;
@@ -670,6 +674,18 @@ export async function playVerseWithOptionalBismillah(verse: Verse, repeats = 1, 
 
 export async function playSurah(surah: number, cb?: (status: AudioStatus) => void) {
   try {
+    // Disable surah playback for Warsh layout because surah->page mapping differs
+    // across layouts and the app intentionally disables full-surah audio for Warsh.
+    try {
+      const active = await LayoutService.getActiveLayoutId();
+      if (active === 'warsh_15') {
+        console.log('AudioUtils: Surah audio disabled for warsh_15 layout');
+        cb?.({ isPlaying: false, error: 'Surah audio disabled for Warsh layout' });
+        return;
+      }
+    } catch (e) {
+      // If we can't determine the layout, proceed as normal — don't block audio.
+    }
     const reciter = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
     const url = getSurahAudioUrl(reciter, surah);
     if (url) {
@@ -688,6 +704,17 @@ export const generateSurahAudioUrl = getSurahAudioUrl;
 
 export const playSurahAudioWithFallback = async (surah: number, repeats: number = 1, cb?: (status: AudioStatus) => void) => {
   try {
+    // Avoid playing full-surah audio when Warsh layout is active.
+    try {
+      const active = await LayoutService.getActiveLayoutId();
+      if (active === 'warsh_15') {
+        console.log('AudioUtils: Surah audio disabled for warsh_15 layout (playSurahAudioWithFallback)');
+        cb?.({ isPlaying: false, error: 'Surah audio disabled for Warsh layout' });
+        return;
+      }
+    } catch (e) {
+      // If layout detection fails, keep trying normally.
+    }
     const reciter = useSettingsStore.getState().reciterIdentifier || 'ar.alafasy';
     const url = getSurahAudioUrl(reciter, surah);
     if (url) {

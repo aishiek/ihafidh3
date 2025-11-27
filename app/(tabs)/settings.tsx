@@ -21,7 +21,7 @@ const USER_NAME_KEY = 'user_name';
 export default function SettingsScreen() {
   const { theme, colorScheme, setColorScheme } = useThemeStore();
   const { userName, translationLanguage, reciterIdentifier, showTranslation, showTransliteration, fontSizeArabic, fontSizeTransliteration, fontSizeTranslation, arabicFont, setUserName, setTranslationLanguage, setReciterIdentifier, setShowTranslation, setShowTransliteration, setFontSizeArabic, setFontSizeTransliteration, setFontSizeTranslation, setArabicFont } = useSettingsStore();
-  
+
   // Mixed state management integration
   const unifiedTheme = useUnifiedTheme();
   const fastingContext = useFastingCalendar();
@@ -73,10 +73,10 @@ export default function SettingsScreen() {
   const saveUserData = async () => {
     try {
       const trimmedName = localName.trim();
-      
+
       console.log('Saving user data - name before:', userName);
-      
-      // Update both Zustand store and AsyncStorage
+
+      // Update Zustand store and AsyncStorage
       setUserName(trimmedName);
       setTranslationLanguage(selectedTranslation);
       setReciterIdentifier(selectedReciter);
@@ -84,9 +84,9 @@ export default function SettingsScreen() {
       setShowTransliteration(localShowTransliteration);
       setArabicFont(localArabicFont);
       await AsyncStorage.setItem(USER_NAME_KEY, trimmedName);
-      
+
       console.log('Saving user data - name after:', trimmedName);
-      
+
       Alert.alert(
         'Settings Saved',
         'Your personal information and preferences have been saved successfully.',
@@ -106,7 +106,7 @@ export default function SettingsScreen() {
     const emailSubject = 'iHafidh App Feedback';
     const emailBody = 'Hello iHafidh Team,\n\nI would like to share my feedback:\n\n';
     const mailtoUrl = `mailto:iHafidhapp@gmail.com?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
-    
+
     Linking.canOpenURL(mailtoUrl)
       .then((supported) => {
         if (supported) {
@@ -117,10 +117,12 @@ export default function SettingsScreen() {
             'Send Feedback',
             'Please send your feedback and suggestions to:\n\niHafidhapp@gmail.com',
             [
-              { text: 'Copy Email', onPress: () => {
-                // Note: Clipboard would need to be imported for this to work
-                Alert.alert('Email Address', 'iHafidhapp@gmail.com');
-              }},
+              {
+                text: 'Copy Email', onPress: () => {
+                  // Note: Clipboard would need to be imported for this to work
+                  Alert.alert('Email Address', 'iHafidhapp@gmail.com');
+                }
+              },
               { text: 'OK' }
             ]
           );
@@ -384,8 +386,8 @@ export default function SettingsScreen() {
       es: 'Spanish',
       fr: 'French',
       hi: 'Hindi',
-  id: 'Bahasa',
-      
+      id: 'Bahasa',
+
       ru: 'Russian',
       tr: 'Turkish',
       ms: 'Malay',
@@ -432,7 +434,7 @@ export default function SettingsScreen() {
             <User size={20} color={theme.primary} style={styles.sectionIcon} />
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Personal Information</Text>
           </View>
-          
+
           <Text style={styles.inputLabel}>Name</Text>
           <TextInput
             style={styles.input}
@@ -452,8 +454,8 @@ export default function SettingsScreen() {
 
           <Text style={styles.inputLabel}>Reciter</Text>
           <View style={styles.pickerContainer}>
-            <ScrollView 
-              horizontal 
+            <ScrollView
+              horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.pickerScrollContent}
             >
@@ -479,8 +481,8 @@ export default function SettingsScreen() {
 
           <Text style={styles.inputLabel}>Translation Language</Text>
           <View style={styles.pickerContainer}>
-            <ScrollView 
-              horizontal 
+            <ScrollView
+              horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.pickerScrollContent}
             >
@@ -522,14 +524,14 @@ export default function SettingsScreen() {
             ]}>
               <View style={[
                 styles.toggleThumb,
-                { 
+                {
                   transform: [{ translateX: localShowTranslation ? 16 : 0 }],
                   backgroundColor: '#FFFFFF'
                 }
               ]} />
             </View>
           </Pressable>
-          
+
           <Pressable
             onPress={() => setLocalShowTransliteration(!localShowTransliteration)}
             style={styles.displayOption}
@@ -541,14 +543,14 @@ export default function SettingsScreen() {
             ]}>
               <View style={[
                 styles.toggleThumb,
-                { 
+                {
                   transform: [{ translateX: localShowTransliteration ? 16 : 0 }],
                   backgroundColor: '#FFFFFF'
                 }
               ]} />
             </View>
           </Pressable>
-          
+
           {/* Theme Colors */}
           <View style={{ marginTop: 16 }}>
             <Text style={[styles.inputLabel, { marginBottom: 12 }]}>Theme Color</Text>
@@ -600,11 +602,11 @@ export default function SettingsScreen() {
           <View style={styles.sectionTitle}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Arabic Font</Text>
           </View>
-          
+
           <Text style={{ color: theme.text, marginBottom: 12 }}>
             Choose the font for Arabic text display
           </Text>
-          
+
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
             {[
               { value: 'default', label: 'System Default (Scheherazade)' },
@@ -612,14 +614,14 @@ export default function SettingsScreen() {
               { value: 'amiri-quran', label: 'Amiri Quran' },
               { value: 'indo-pak', label: 'Indo-Pak (Noore Huda)' }
             ].map((font) => (
-              <Pressable 
-                key={font.value} 
-                onPress={() => { 
-                  setLocalArabicFont(font.value as any); 
-                  setArabicFont(font.value as any); 
-                }} 
-                style={{ 
-                  alignItems: 'center', 
+              <Pressable
+                key={font.value}
+                onPress={() => {
+                  setLocalArabicFont(font.value as any);
+                  setArabicFont(font.value as any);
+                }}
+                style={{
+                  alignItems: 'center',
                   width: '48%',
                   padding: 12,
                   marginBottom: 8,
@@ -629,7 +631,7 @@ export default function SettingsScreen() {
                   borderColor: localArabicFont === font.value ? theme.primary : theme.inactive,
                 }}
               >
-                <Text style={{ 
+                <Text style={{
                   color: localArabicFont === font.value ? '#FFFFFF' : theme.text,
                   fontSize: 12,
                   textAlign: 'center',
@@ -640,7 +642,7 @@ export default function SettingsScreen() {
               </Pressable>
             ))}
           </View>
-          
+
           {/* Tajweed Color Legend - Show only when Tajweed is selected */}
           {localArabicFont === 'tajweed' && (
             <View style={{ marginTop: 16, padding: 12, backgroundColor: theme.card, borderRadius: 8 }}>
@@ -703,7 +705,7 @@ export default function SettingsScreen() {
           <View style={styles.sectionTitle}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Reading Font Sizes</Text>
           </View>
-          
+
           <Text style={{ color: theme.inactive, fontSize: 11, marginBottom: 12, fontStyle: 'italic' }}>
             Tap anywhere on the slider to adjust size
           </Text>
@@ -831,7 +833,7 @@ export default function SettingsScreen() {
             <Calendar size={20} color={theme.primary} style={styles.sectionIcon} />
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Fasting Calendar</Text>
           </View>
-          
+
           <Text style={[styles.feedbackText, { marginBottom: 16 }]}>Manage your Islamic fasting calendar notifications and settings.</Text>
 
           {/* Fasting Notifications Status (Global Master) */}
@@ -842,47 +844,47 @@ export default function SettingsScreen() {
             </View>
             <Pressable
               onPress={async () => {
-                 await fastingContext.updateSettings({
-                   notifications: {
-                     ...fastingContext.state.settings.notifications,
-                     enabled: !fastingContext.state.settings.notifications.enabled
-                   }
-                 });
-               }}
+                await fastingContext.updateSettings({
+                  notifications: {
+                    ...fastingContext.state.settings.notifications,
+                    enabled: !fastingContext.state.settings.notifications.enabled
+                  }
+                });
+              }}
             >
-              <View style={[styles.toggleSwitch,{ backgroundColor: fastingContext?.state.settings.notifications.enabled ? theme.primary : theme.inactive }]}>
-                <View style={[styles.toggleThumb,{ transform: [{ translateX: fastingContext?.state.settings.notifications.enabled ? 16 : 0 }], backgroundColor: '#FFFFFF' }]} />
+              <View style={[styles.toggleSwitch, { backgroundColor: fastingContext?.state.settings.notifications.enabled ? theme.primary : theme.inactive }]}>
+                <View style={[styles.toggleThumb, { transform: [{ translateX: fastingContext?.state.settings.notifications.enabled ? 16 : 0 }], backgroundColor: '#FFFFFF' }]} />
               </View>
             </Pressable>
           </View>
 
           {/* Location Display - Interactive */}
-           <Pressable 
-             style={[styles.displayOption, styles.interactiveOption]}
-             onPress={() => setShowLocationSelector(true)}
-           >
-             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-               <Globe size={16} color={'#FFFFFF'} style={{ marginRight: 8 }} />
-               <Text style={[styles.displayOptionText, { color: theme.text }]}>Location</Text>
-             </View>
-             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-               <Text style={[styles.displayOptionText, { color: '#FFFFFF', fontSize: 12 }]}> 
-                 {fastingContext.state.settings.location.city}, {fastingContext.state.settings.location.country}
-               </Text>
-               <Text style={[styles.displayOptionText, { color: theme.primary, fontSize: 12, marginLeft: 8 }]}>
-                 Change
-               </Text>
-             </View>
-           </Pressable>
+          <Pressable
+            style={[styles.displayOption, styles.interactiveOption]}
+            onPress={() => setShowLocationSelector(true)}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Globe size={16} color={'#FFFFFF'} style={{ marginRight: 8 }} />
+              <Text style={[styles.displayOptionText, { color: theme.text }]}>Location</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={[styles.displayOptionText, { color: '#FFFFFF', fontSize: 12 }]}>
+                {fastingContext.state.settings.location.city}, {fastingContext.state.settings.location.country}
+              </Text>
+              <Text style={[styles.displayOptionText, { color: theme.primary, fontSize: 12, marginLeft: 8 }]}>
+                Change
+              </Text>
+            </View>
+          </Pressable>
 
-           {/* Navigate to full fasting settings */}
-           <Pressable 
-             style={[styles.feedbackButton, { backgroundColor: theme.primary, marginTop: 16 }]}
-             onPress={() => router.push('/fasting/settings')}
-           >
-             <Text style={styles.feedbackButtonText}>Manage Fasting Settings</Text>
-           </Pressable>
-         </View>
+          {/* Navigate to full fasting settings */}
+          <Pressable
+            style={[styles.feedbackButton, { backgroundColor: theme.primary, marginTop: 16 }]}
+            onPress={() => router.push('/fasting/settings')}
+          >
+            <Text style={styles.feedbackButtonText}>Manage Fasting Settings</Text>
+          </Pressable>
+        </View>
 
         {/* Feedback Section */}
         <View style={styles.section}>
@@ -890,15 +892,15 @@ export default function SettingsScreen() {
             <MessageSquare size={20} color={theme.primary} style={styles.sectionIcon} />
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Feedback & Support</Text>
           </View>
-          
+
           <Text style={styles.feedbackText}>
             We value your feedback! Help us improve iHafidh by sharing your thoughts, suggestions, or reporting any issues.
           </Text>
-          
+
           <Pressable style={styles.feedbackButton} onPress={sendFeedback}>
             <Text style={styles.feedbackButtonText}>Send Feedback</Text>
           </Pressable>
-          
+
           <Text style={styles.feedbackText}>
             Please send your feedback and suggestions to:
             {'\n'}iHafidhapp@gmail.com
@@ -907,7 +909,7 @@ export default function SettingsScreen() {
 
         {/* App version label */}
         <View style={styles.versionRow}>
-          <Text style={styles.versionText}>Ver-2.0.1</Text>
+          <Text style={styles.versionText}>Ver-2.0.2</Text>
         </View>
       </ScrollView>
 

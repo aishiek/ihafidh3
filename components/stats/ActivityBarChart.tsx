@@ -196,16 +196,16 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
 
   // Auto-scroll to end when data or timeframe changes
   React.useEffect(() => {
-    const timer = setTimeout(() => {
+    // Use requestAnimationFrame to ensure layout is ready (fixes Android disappearing issue)
+    requestAnimationFrame(() => {
       scrollViewRef.current?.scrollToEnd({ animated: false });
-    }, 100);
-    return () => clearTimeout(timer);
+    });
   }, [timeframe, chartData.labels.length]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.card }]}>
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerTopRow}>
           <Text style={[styles.title, { color: colors.text }]}>📊 Activity Overview</Text>
           {pageData && (
             <View style={styles.toggleContainer}>
@@ -239,7 +239,6 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
 
         <View style={[styles.timeframeSelector, { backgroundColor: colors.background }]}>
           {(['daily', 'weekly', 'monthly', 'yearly'] as Timeframe[]).map((tf) => {
-            // Use short labels to prevent wrapping on small screens
             const getLabel = (timeframe: Timeframe) => {
               switch (timeframe) {
                 case 'daily': return 'Day';
@@ -293,90 +292,95 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
         </View>
       </View>
 
-      {/* Bar Chart */}
-      <ScrollView
-        ref={scrollViewRef}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.scrollView}
-        onContentSizeChange={() => {
-          scrollViewRef.current?.scrollToEnd({ animated: false });
-        }}
-      >
-        <View style={{ width: chartContentWidth }}>
-          {/* Y-axis labels */}
-          <View style={styles.yAxisContainer}>
-            {[
-              maxValue,
-              Math.floor(maxValue * 0.75),
-              Math.floor(maxValue * 0.5),
-              Math.floor(maxValue * 0.25),
-              0
-            ].map((val, i) => (
-              <Text key={i} style={[styles.yAxisText, { color: colors.textSecondary }]}>
-                {val}
-              </Text>
-            ))}
-          </View>
-
-          {/* Chart area */}
-          <View style={styles.chartWrapper}>
-            {/* Grid lines */}
-            <View style={styles.gridContainer}>
-              {[0, 1, 2, 3, 4].map((i) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.gridLine,
-                    { borderTopColor: colors.textSecondary, borderTopWidth: 1, opacity: 0.1 }
-                  ]}
-                />
-              ))}
-            </View>
-
-            {/* Bars container */}
-            <View style={styles.barsWrapper}>
-              {chartData.labels.map((label, i) => {
-                const memHeight = maxValue > 0 ? (chartData.memorized[i] / maxValue) * 180 : 0;
-                const revHeight = maxValue > 0 ? (chartData.revised[i] / maxValue) * 180 : 0;
-
-                return (
-                  <View key={i} style={[styles.barColumn, { width: barWidth }]}>
-                    <View style={styles.barGroup}>
-                      <View style={styles.barPair}>
-                        <View
-                          style={[
-                            styles.bar,
-                            {
-                              height: Math.max(memHeight, chartData.memorized[i] > 0 ? 3 : 0),
-                              backgroundColor: '#4ECDC4',
-                            },
-                          ]}
-                        />
-                        <View
-                          style={[
-                            styles.bar,
-                            {
-                              height: Math.max(revHeight, chartData.revised[i] > 0 ? 3 : 0),
-                              backgroundColor: '#FF9800',
-                            },
-                          ]}
-                        />
-                      </View>
-                    </View>
-                    <Text
-                      style={[styles.barLabel, { color: colors.textSecondary }]}
-                      numberOfLines={1}
-                    >
-                      {label}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
+      {/* Chart Container with Fixed Y-Axis */}
+      <View style={styles.chartContainer}>
+        {/* Fixed Y-axis labels */}
+        <View style={styles.yAxisContainer}>
+          {[
+            maxValue,
+            Math.floor(maxValue * 0.75),
+            Math.floor(maxValue * 0.5),
+            Math.floor(maxValue * 0.25),
+            0
+          ].map((val, i) => (
+            <Text key={i} style={[styles.yAxisText, { color: colors.textSecondary }]}>
+              {val}
+            </Text>
+          ))}
         </View>
-      </ScrollView>
+
+        {/* Scrollable Bar Chart */}
+        <ScrollView
+          ref={scrollViewRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.scrollView}
+          onContentSizeChange={() => {
+            requestAnimationFrame(() => {
+              scrollViewRef.current?.scrollToEnd({ animated: false });
+            });
+          }}
+        >
+          <View style={{ width: chartContentWidth, height: 220 }}>
+            {/* Chart area */}
+            <View style={styles.chartWrapper}>
+              {/* Grid lines */}
+              <View style={styles.gridContainer}>
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <View
+                    key={i}
+                    style={[
+                      styles.gridLine,
+                      { borderTopColor: colors.textSecondary, borderTopWidth: 1, opacity: 0.1 }
+                    ]}
+                  />
+                ))}
+              </View>
+
+              {/* Bars container */}
+              <View style={styles.barsWrapper}>
+                {chartData.labels.map((label, i) => {
+                  const memHeight = maxValue > 0 ? (chartData.memorized[i] / maxValue) * 180 : 0;
+                  const revHeight = maxValue > 0 ? (chartData.revised[i] / maxValue) * 180 : 0;
+
+                  return (
+                    <View key={i} style={[styles.barColumn, { width: barWidth }]}>
+                      <View style={styles.barGroup}>
+                        <View style={styles.barPair}>
+                          <View
+                            style={[
+                              styles.bar,
+                              {
+                                height: Math.max(memHeight, chartData.memorized[i] > 0 ? 3 : 0),
+                                backgroundColor: '#4ECDC4',
+                              },
+                            ]}
+                          />
+                          <View
+                            style={[
+                              styles.bar,
+                              {
+                                height: Math.max(revHeight, chartData.revised[i] > 0 ? 3 : 0),
+                                backgroundColor: '#FF9800',
+                              },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                      <Text
+                        style={[styles.barLabel, { color: colors.textSecondary }]}
+                        numberOfLines={1}
+                      >
+                        {label}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+        </ScrollView>
+      </View>
 
       {/* Legend */}
       <View style={styles.legend}>
@@ -401,22 +405,22 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 16,
+  },
+  headerTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 8,
   },
   toggleContainer: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 8,
     padding: 2,
-    marginTop: 4,
-    alignSelf: 'flex-start',
   },
   toggleButton: {
     paddingVertical: 4,
@@ -436,13 +440,13 @@ const styles = StyleSheet.create({
   timeframeButton: {
     flex: 1,
     paddingVertical: 8,
-    paddingHorizontal: 8, // Reduced from 12 for tighter fit
+    paddingHorizontal: 4,
     borderRadius: 6,
     alignItems: 'center',
-    justifyContent: 'center', // Center content
+    justifyContent: 'center',
   },
   timeframeText: {
-    fontSize: 13, // Increased from 12 for better readability
+    fontSize: 13,
     fontWeight: '600',
   },
   summaryContainer: {
@@ -474,27 +478,26 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
   },
-  scrollView: {
-    marginHorizontal: -20,
-    paddingHorizontal: 20,
+  chartContainer: {
+    flexDirection: 'row',
+    height: 220,
   },
   yAxisContainer: {
-    position: 'absolute',
-    left: 20,
-    top: 0,
-    height: 180,
     width: 40,
+    height: 180,
     justifyContent: 'space-between',
     alignItems: 'flex-end',
     paddingRight: 8,
-    zIndex: 2,
+    marginRight: 4, // Add spacing between axis and chart
   },
   yAxisText: {
     fontSize: 11,
     fontWeight: '500',
   },
+  scrollView: {
+    flex: 1,
+  },
   chartWrapper: {
-    marginLeft: 50,
     height: 220,
   },
   gridContainer: {

@@ -15,7 +15,7 @@ export default function PageModeScopeSelector({ visible, value, onSelect, onClos
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={[styles.sheet, { borderColor: primary }]}> 
+        <View style={[styles.sheet, { borderColor: primary }]}>
           <Text style={styles.title}>Page mode scope</Text>
           <Text style={styles.subtitle}>Choose whether Page mode should paginate by Surah or by Juz</Text>
 
@@ -35,9 +35,7 @@ export default function PageModeScopeSelector({ visible, value, onSelect, onClos
             </Pressable>
           </View>
 
-          <Pressable onPress={onClose} style={[styles.doneButton, { backgroundColor: primary }]}> 
-            <Text style={{ color: '#111', fontWeight: '700' }}>Done</Text>
-          </Pressable>
+          {/* Removed Done button - user can tap outside to close or just select an option */}
         </View>
       </View>
     </Modal>

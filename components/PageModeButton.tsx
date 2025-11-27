@@ -49,9 +49,9 @@ const PageModeButton: React.FC<Props> = ({ onPress, onLongPress, isActive = fals
 
 const styles = StyleSheet.create({
   iconButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,

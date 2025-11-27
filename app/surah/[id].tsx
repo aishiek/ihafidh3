@@ -9,6 +9,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowRight } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import LayoutService from '../mushaf/services/layoutService';
 
 export default function SurahScreen() {
   const { id: surahId } = useLocalSearchParams<{ id: string }>();
@@ -179,6 +180,35 @@ export default function SurahScreen() {
     console.log("▶️ Playing surah...");
     // integrate your audioUtils play logic here
   };
+
+  // Track active layout so we can hide the full-surah play control for Warsh
+  const [isWarshLayout, setIsWarshLayout] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    async function checkLayout() {
+      try {
+        const active = await LayoutService.getActiveLayoutId();
+        if (!mounted) return;
+        setIsWarshLayout(active === 'warsh_15');
+      } catch (e) {
+        // default to false (show controls) on error
+      }
+    }
+
+    checkLayout();
+
+    // also react to layout DB swaps
+    const unsub = LayoutService.onDatabaseChange(async () => {
+      try {
+        const active = await LayoutService.getActiveLayoutId();
+        if (!mounted) return;
+        setIsWarshLayout(active === 'warsh_15');
+      } catch (e) {}
+    });
+
+    return () => { mounted = false; unsub(); };
+  }, []);
 
   // Go-to-verse modal state
   const [showGoModal, setShowGoModal] = useState(false);
@@ -381,23 +411,26 @@ export default function SurahScreen() {
       {/* 🔹 Actions (Unified Buttons) */}
       <View style={styles.actions}>
         <View style={{ flex: 1, marginHorizontal: 4, flexDirection: 'row', alignItems: 'center' }}>
-          <Pressable
-            style={{
-              flex: 1,
-              paddingVertical: 9,
-              borderRadius: 8,
-              alignItems: 'center',
-              backgroundColor: '#1976D2',
-              borderColor: '#1976D2',
-              borderWidth: 1,
-            }}
-            android_ripple={{ color: 'transparent' }}
-            onPress={handlePlaySurah}
-          >
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff' }}>
-              ▶️ Play Surah
-            </Text>
-          </Pressable>
+          {/* Hide full-surah play in Warsh layout since full-surah audio mappings are disabled */}
+          {!isWarshLayout && (
+            <Pressable
+              style={{
+                flex: 1,
+                paddingVertical: 9,
+                borderRadius: 8,
+                alignItems: 'center',
+                backgroundColor: '#1976D2',
+                borderColor: '#1976D2',
+                borderWidth: 1,
+              }}
+              android_ripple={{ color: 'transparent' }}
+              onPress={handlePlaySurah}
+            >
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff' }}>
+                ▶️ Play Surah
+              </Text>
+            </Pressable>
+          )}
 
           <Pressable
             accessibilityRole="button"

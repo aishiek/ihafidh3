@@ -107,7 +107,9 @@ export const PageAudioControls: React.FC<PageAudioControlsProps> = ({ verses, re
       )}
 
       {isPlaying && (
-        <Text style={styles.verseIndicator}>Verse {currentVerse + 1} of {verses.length}</Text>
+        <View style={styles.verseIndicatorContainer}>
+          <Text style={styles.verseIndicator}>Verse {currentVerse + 1} of {verses.length}</Text>
+        </View>
       )}
     </View>
   );
@@ -120,7 +122,8 @@ const styles = StyleSheet.create({
   playButton: { backgroundColor: '#FFD700', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8 },
   playButtonText: { color: '#111', fontWeight: '700' },
   inlineButton: { marginLeft: 8 },
-  verseIndicator: { marginLeft: 12, color: '#aaa', fontSize: 12 },
+  verseIndicatorContainer: { flex: 1, alignItems: 'center' },
+  verseIndicator: { color: '#aaa', fontSize: 12 },
   disabled: { opacity: 0.6 }
 });
 

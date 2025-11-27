@@ -359,17 +359,52 @@ export class AyahNotificationService {
         return;
       }
 
-      await scheduleDailyNotification({
-        id: this.DAILY_AYAH_ID,
-        title: '📖 Daily Ayah',
-        body: 'Your daily verse is ready. Tap to read and reflect.',
-        hour,
-        minute,
-        channelId: 'ayah',
-        data: {
-          type: 'daily_ayah',
-        },
-      });
+      // Try to include today's Ayah content in the notification payload
+      try {
+        const { getTodayCardVerse } = await import('@/utils/ayahOfTheDay');
+        const { fetchSingleVerse } = await import('@/services/quranApi');
+        const { surahsData } = await import('@/data/surahs');
+        const todayVerse = getTodayCardVerse(new Date());
+        const verse = await fetchSingleVerse(todayVerse.surahId, todayVerse.verseNumber);
+        const surah = surahsData.find(s => s.id === todayVerse.surahId);
+
+        const title = surah ? `📖 ${surah.name} • ${todayVerse.verseNumber}` : '📖 Daily Ayah';
+        // Prefer the translated text (strip html) but fallback to a short arabic excerpt
+        let bodyText = '';
+        if (verse?.translation) bodyText = (verse.translation || '').replace(/<[^>]+>/g, '').slice(0, 120);
+        else if (verse?.arabicText) bodyText = (verse.arabicText || '').slice(0, 80);
+
+        await scheduleDailyNotification({
+          id: this.DAILY_AYAH_ID,
+          title,
+          body: bodyText || 'Your daily verse is ready. Tap to read and reflect.',
+          hour,
+          minute,
+          channelId: 'ayah',
+          data: {
+            type: 'daily_ayah',
+            target: 'index',
+            highlightAyah: true,
+            surahId: todayVerse.surahId,
+            verseNumber: todayVerse.verseNumber,
+          },
+        });
+      } catch (innerErr) {
+        // Fallback — schedule a simple daily ayah reminder if fetching fails
+        await scheduleDailyNotification({
+          id: this.DAILY_AYAH_ID,
+          title: '📖 Daily Ayah',
+          body: 'Your daily verse is ready. Tap to read and reflect.',
+          hour,
+          minute,
+          channelId: 'ayah',
+          data: {
+            type: 'daily_ayah',
+            target: 'index',
+            highlightAyah: true,
+          },
+        });
+      }
     } catch (error) {
       console.error('[AyahNotificationService] Schedule failed:', error);
     }
@@ -604,7 +639,8 @@ export class EnhancedNotificationService {
         switch (data.type) {
           case 'daily_ayah':
           case 'daily-ayah':
-            navigation?.navigate('(tabs)', { screen: 'index' });
+            // Navigate to index.tsx where Ayah of the Day card is displayed
+            navigation?.navigate('(tabs)', { screen: 'index', params: { highlightAyah: true } });
             break;
           case 'daily-verse-reminder':
             navigation?.navigate('(tabs)', { screen: 'read' });

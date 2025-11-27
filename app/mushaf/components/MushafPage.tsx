@@ -168,7 +168,18 @@ export function MushafPage(props: MushafPageProps) {
           },
         ]}
       >
-        {/* Base Image - Brightened */}
+        {/* Base Image - Brightened
+            NOTE: Try to dynamically load react-native-color-matrix-image-filters for a
+            dark-mode inversion effect. Using a dynamic require here keeps the code
+            safe if the dependency hasn't been installed yet (it falls back to a
+            regular <Image />). */}
+
+        {/* Base Image render. We removed the native ColorMatrix dependency because
+            it caused an iOS runtime crash on some systems (setMatrix: unrecognized
+            selector). Fall back to a simple image + dark overlay for dark mode so
+            the app remains stable cross-platform without native inversion.
+        */}
+
         <Image
           source={{ uri: state.imageUri }}
           style={[
@@ -188,6 +199,24 @@ export function MushafPage(props: MushafPageProps) {
             }));
           }}
         />
+
+        {/* Dark-mode aesthetic overlay (non-destructive) — sits above the image and
+            below UI overlays (page number, SVG text highlights). This avoids
+            native image-processing and keeps readability intact. */}
+        {isDark && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: '#000',
+              opacity: 0.25,
+            }}
+          />
+        )}
 
         {/* Page number badge (overlay) */}
         <View style={[styles.pageNumberBadge, { right: 8, bottom: 8 }]}>

@@ -422,6 +422,18 @@ export async function fetchVersesByChapter(chapterId: number): Promise<JuzVerse[
     `;
     const rows = await database.getAllAsync<JuzVerse>(sql, [chapterId]);
     log('juzDbService', `Query returned ${rows.length} verses for chapter ${chapterId}`);
+
+    // Sanity-check: ensure returned rows have expected chapter_id. If mismatch
+    // observed frequently in runtime logs it points to a mapping/db problem.
+    try {
+      const mismatches = (rows || []).filter(r => r.chapter_id !== chapterId);
+      if (mismatches.length > 0) {
+        log('juzDbService', `⚠️ fetchVersesByChapter found ${mismatches.length} rows with unexpected chapter_id (requested=${chapterId}) - sample:`, mismatches.slice(0, 5));
+      }
+    } catch (e) {
+      // keep quiet on inspection failures
+      log('juzDbService', 'Warning: failed to validate chapter_id on returned rows', e);
+    }
     
     if (!rows || rows.length === 0) {
       throw new Error(`No verses found for chapter ${chapterId} in database`);

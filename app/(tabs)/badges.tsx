@@ -1,8 +1,7 @@
 import { QuranProgressTracker } from '@/data/quranProgress';
 import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
-import { calculateCurrentBadge } from '@/utils/badgeUtils';
-import { getJuz30Progress } from '@/utils/juzCalculations';
+import { calculateCurrentBadge, getBadgeStates } from '@/utils/badgeUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { ArrowLeft, Award, CheckCircle, Lock } from 'lucide-react-native';
@@ -79,131 +78,8 @@ export default function BadgesScreen() {
     }
   }, [memorizedVerses, progress.juz.completed]);
 
-  // Badge definitions and logic
-  const badges = useMemo(() => {
-    const totalVerses = memorizedVerses.length;
-    const completedJuz = progress.juz.completed;
-    
-    // Use the new Juz 30 calculation
-    const juz30Progress = getJuz30Progress(memorizedVerses);
-    const isJuz30Complete = juz30Progress.isComplete;
-
-    return [
-      {
-        id: 'seeker',
-        name: 'Seeker',
-        description: 'Beginning the Journey',
-        icon: '🌱',
-        requirement: 'Start memorizing verses',
-        isUnlocked: totalVerses > 0,
-        progress: totalVerses > 0 ? 100 : 0,
-        level: 0
-      },
-      {
-        id: 'awwal-noor',
-        name: 'Awwal Noor',
-        description: 'First Light',
-        icon: '✨',
-        requirement: 'Complete the 30th Juz (Juz Amma)',
-        isUnlocked: isJuz30Complete,
-        progress: juz30Progress.percentage,
-        level: 1,
-        details: `${juz30Progress.memorized}/${juz30Progress.total} verses memorized in Juz Amma`
-      },
-      // 3 Juz Completed
-      {
-        id: 'munir-al-darb',
-        name: 'Munir Al-Darb',
-        description: 'Illuminator of the Path',
-        icon: '🕌',
-        requirement: 'Complete any 3 Juz of the Quran',
-        isUnlocked: completedJuz >= 3,
-        progress: Math.min((completedJuz / 3) * 100, 100),
-        level: 1.5,
-        details: `${completedJuz}/3 Juz completed`
-      },
-      {
-        id: 'hamil-al-hikmah',
-        name: 'Hamil Al-Hikmah',
-        description: 'Bearer of Wisdom',
-        icon: '📜',
-        requirement: 'Complete any 5 Juz of the Quran',
-        isUnlocked: completedJuz >= 5,
-        progress: Math.min((completedJuz / 5) * 100, 100),
-        level: 2,
-        details: `${completedJuz}/5 Juz completed`
-      },
-      // 10 Juz Completed
-      {
-        id: 'sahib-al-istiqaamah',
-        name: 'Sahib Al-Istiqamah',
-        description: 'Keeper of Steadfastness',
-        icon: '🌙',
-        requirement: 'Complete any 10 Juz of the Quran',
-        isUnlocked: completedJuz >= 10,
-        progress: Math.min((completedJuz / 10) * 100, 100),
-        level: 2.5,
-        details: `${completedJuz}/10 Juz completed`
-      },
-      {
-        id: 'saari-fi-sabeelillah',
-        name: 'Saari Fi Sabeelillah',
-        description: 'Traveller in Allah\'s Path',
-        icon: '🚶‍♂️',
-        requirement: 'Complete any 15 Juz of the Quran',
-        isUnlocked: completedJuz >= 15,
-        progress: Math.min((completedJuz / 15) * 100, 100),
-        level: 3,
-        details: `${completedJuz}/15 Juz completed`
-      },
-      // 20 Juz Completed
-      {
-        id: 'sahib-al-azm',
-        name: 'Sahib Al-Azm',
-        description: 'Master of Determination',
-        icon: '🏔️',
-        requirement: 'Complete any 20 Juz of the Quran',
-        isUnlocked: completedJuz >= 20,
-        progress: Math.min((completedJuz / 20) * 100, 100),
-        level: 3.5,
-        details: `${completedJuz}/20 Juz completed`
-      },
-      {
-        id: 'naasir-al-quran',
-        name: 'Naasir Al-Quran',
-        description: 'Defender of the Quran',
-        icon: '⚔️',
-        requirement: 'Complete any 23 Juz of the Quran',
-        isUnlocked: completedJuz >= 23,
-        progress: Math.min((completedJuz / 23) * 100, 100),
-        level: 4,
-        details: `${completedJuz}/23 Juz completed`
-      },
-      // 25 Juz Completed
-      {
-        id: 'rahiq-al-yaqeen',
-        name: 'Rahiq Al-Yaqeen',
-        description: 'Nectar of Certainity',
-        icon: '📖✨',
-        requirement: 'Complete any 25 Juz of the Quran',
-        isUnlocked: completedJuz >= 25,
-        progress: Math.min((completedJuz / 25) * 100, 100),
-        level: 4.5,
-        details: `${completedJuz}/25 Juz completed`
-      },
-      {
-        id: 'hafidh-al-quran',
-        name: 'Hafidh Al-Quran',
-        description: 'Guardian of the Holy Quran',
-        icon: '🏆',
-        requirement: 'Complete all 6,236 verses of the Holy Quran',
-        isUnlocked: totalVerses >= 6236,
-        progress: Math.min((totalVerses / 6236) * 100, 100),
-        level: 5,
-        details: `${totalVerses}/6,236 verses memorized`
-      }
-    ];
-  }, [memorizedVerses, progress]);
+  // Consolidate badge state from shared helper
+  const badges = useMemo(() => getBadgeStates(memorizedVerses, progress.juz.completed), [memorizedVerses, progress.juz.completed]);
 
   const currentBadge = useMemo(() => calculateCurrentBadge(memorizedVerses, progress.juz.completed), [memorizedVerses, progress.juz.completed]);
   const nextBadge = badges.find(badge => !badge.isUnlocked);

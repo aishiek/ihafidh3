@@ -35,7 +35,7 @@ export const AVAILABLE_LAYOUTS: LayoutMetadata[] = [
     region: 'South Asia',
     description: 'Popular in India, Pakistan, and Bangladesh',
     downloaded: false, // Checked dynamically
-    dbFileName: 'qpc-v1-15-lines.db',
+    dbFileName: 'qudratullah-indopak-nastaleeq.db',
     fileSize: 300,
     imageFormat: 'png',
   },
@@ -64,7 +64,7 @@ export const AVAILABLE_LAYOUTS: LayoutMetadata[] = [
     region: 'North Africa',
     description: 'Warsh narration - used in North Africa',
     downloaded: false,
-    dbFileName: 'qpc-nastaleeq-15-lines.db',
+    dbFileName: 'qpc-hafs-15-lines.db',
     fileSize: 250,
     imageSource: 'QuranHub/quran-pages-images (GPL-3.0)',
     imageFormat: 'jpg',

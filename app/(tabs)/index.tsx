@@ -30,7 +30,8 @@ import {
   Target,
   XCircle
 } from 'lucide-react-native';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
 import { AppState, Dimensions, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -981,9 +982,32 @@ export default function HomeScreen() {
   const dailyPagesPercentage = Math.min(100, (dailyPagesProgress / dailyPagesTarget) * 100);
   const weeklyPagesPercentage = Math.min(100, (weeklyPagesProgress / weeklyPagesTarget) * 100);
 
+  // Get deep-link params (e.g. highlightAyah when navigating from Ayah notification)
+  const params = useLocalSearchParams() as { highlightAyah?: string; surahId?: string; verseId?: string };
+
+  const scrollRef = useRef<ScrollView | null>(null);
+  const ayahCardLayoutY = useRef<number | null>(null);
+  const [ayahHighlight, setAyahHighlight] = useState(false);
+
+  useEffect(() => {
+    // If notification requested highlight, scroll to card and trigger highlight animation
+    const highlightRequested = params?.highlightAyah === '1' || params?.highlightAyah === 'true';
+    if (highlightRequested) {
+      setTimeout(() => {
+        if (typeof ayahCardLayoutY.current === 'number') {
+          scrollRef.current?.scrollTo({ y: Math.max(0, ayahCardLayoutY.current - 24), animated: true });
+        }
+        setAyahHighlight(true);
+        // Turn off highlight after a short interval so it can be replayed later
+        setTimeout(() => setAyahHighlight(false), 2500);
+      }, 300); // small delay to allow container layout
+    }
+  // We want this effect to run when the component mounts and when params change
+  }, [params?.highlightAyah]);
+
   return (
     <>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollRef} style={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <MinimalTopStrip style={{}} />
           <Text style={styles.greeting}>Assalamu Alaikkum{userName ? `, ${userName} ` : ''}</Text>
@@ -1000,8 +1024,12 @@ export default function HomeScreen() {
         </View>
 
         {/* Ayah of the Day */}
-        <View style={styles.section}>
-          <AyahOfTheDayCard />
+        <View
+          style={styles.section}
+          onLayout={(e) => { ayahCardLayoutY.current = e.nativeEvent.layout.y; }}
+        >
+          {/* pass highlight flag to AyahOfTheDayCard so it shows the visual indicator */}
+          <AyahOfTheDayCard highlight={ayahHighlight} />
         </View>
 
         <View style={styles.section}>
@@ -1040,7 +1068,7 @@ export default function HomeScreen() {
               <View style={styles.revisionItem}>
                 <View style={styles.revisionHeader}>
                   <Text style={styles.revisionTitle}>Daily Verses</Text>
-                  {dailyVersesProgress >= dailyVersesTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
+                  {dailyVersesProgress > 0 && dailyVersesProgress >= dailyVersesTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
                 </View>
                 <Text style={styles.revisionProgress}>{dailyVersesProgress} / {dailyVersesTarget} verses</Text>
                 <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${dailyVersesPercentage}%`, backgroundColor: dailyVersesProgress >= dailyVersesTarget ? '#4CAF50' : '#2196F3' }]} /></View>
@@ -1048,7 +1076,7 @@ export default function HomeScreen() {
               <View style={styles.revisionItem}>
                 <View style={styles.revisionHeader}>
                   <Text style={styles.revisionTitle}>Weekly Surahs</Text>
-                  {weeklySurahsProgress >= weeklySurahsTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
+                  {weeklySurahsProgress > 0 && weeklySurahsProgress >= weeklySurahsTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
                 </View>
                 <Text style={styles.revisionProgress}>{weeklySurahsProgress} / {weeklySurahsTarget} surahs</Text>
                 <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${weeklySurahsPercentage}%`, backgroundColor: weeklySurahsProgress >= weeklySurahsTarget ? '#4CAF50' : '#2196F3' }]} /></View>
@@ -1059,7 +1087,7 @@ export default function HomeScreen() {
               <View style={styles.revisionItem}>
                 <View style={styles.revisionHeader}>
                   <Text style={styles.revisionTitle}>Daily Pages</Text>
-                  {dailyPagesProgress >= dailyPagesTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
+                  {dailyPagesProgress > 0 && dailyPagesProgress >= dailyPagesTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
                 </View>
                 <Text style={styles.revisionProgress}>{dailyPagesProgress} / {dailyPagesTarget} pages</Text>
                 <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${dailyPagesPercentage}%`, backgroundColor: dailyPagesProgress >= dailyPagesTarget ? '#4CAF50' : '#2196F3' }]} /></View>
@@ -1067,7 +1095,7 @@ export default function HomeScreen() {
               <View style={styles.revisionItem}>
                 <View style={styles.revisionHeader}>
                   <Text style={styles.revisionTitle}>Weekly Pages</Text>
-                  {weeklyPagesProgress >= weeklyPagesTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
+                  {weeklyPagesProgress > 0 && weeklyPagesProgress >= weeklyPagesTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
                 </View>
                 <Text style={styles.revisionProgress}>{weeklyPagesProgress} / {weeklyPagesTarget} pages</Text>
                 <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${weeklyPagesPercentage}%`, backgroundColor: weeklyPagesProgress >= weeklyPagesTarget ? '#4CAF50' : '#2196F3' }]} /></View>

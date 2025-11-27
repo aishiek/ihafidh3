@@ -8,6 +8,7 @@ interface TajweedRendererProps {
   config: TajweedConfig;
   isCentered?: boolean;
   onWordPress?: (word: WordWithTajweed) => void;
+  textColor?: string;
 }
 
 export const TajweedRenderer: React.FC<TajweedRendererProps> = ({
@@ -15,6 +16,7 @@ export const TajweedRenderer: React.FC<TajweedRendererProps> = ({
   config,
   isCentered = false,
   onWordPress,
+  textColor = '#000',
 }) => {
   const renderedWords = useMemo(() => {
     return words.map((word) => {
@@ -35,8 +37,8 @@ export const TajweedRenderer: React.FC<TajweedRendererProps> = ({
       const primaryRule = applicableRules[0];
       const backgroundColor = primaryRule
         ? `${TAJWEED_COLORS[primaryRule].hexColor}${Math.round(config.opacity * 255)
-            .toString(16)
-            .padStart(2, '0')}`
+          .toString(16)
+          .padStart(2, '0')}`
         : 'transparent';
 
       return {
@@ -70,7 +72,7 @@ export const TajweedRenderer: React.FC<TajweedRendererProps> = ({
             style={{
               fontSize: 24,
               textAlign: 'right',
-              color: '#000',
+              color: textColor,
               backgroundColor: item.backgroundColor,
               paddingHorizontal: 4,
               paddingVertical: 2,
@@ -95,3 +97,5 @@ export const TajweedRenderer: React.FC<TajweedRendererProps> = ({
     </View>
   );
 };
+
+export default TajweedRenderer;

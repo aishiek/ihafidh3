@@ -329,3 +329,5 @@ const styles = StyleSheet.create({
     backgroundColor: BADGE_TEXT_AMBER,
   },
 });
+
+export default MushafDownloadCard;

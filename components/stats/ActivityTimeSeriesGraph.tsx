@@ -145,7 +145,9 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
   // Calculate max value for Y-axis scaling
   const maxValue = useMemo(() => {
     const allValues = chartData.flatMap(p => [p.memorized, p.revised]);
-    const max = Math.max(...allValues, 5); // Minimum 5 for better visibility
+    // Filter out NaNs and ensure we have numbers
+    const validValues = allValues.filter(v => typeof v === 'number' && !isNaN(v));
+    const max = Math.max(...validValues, 5); // Minimum 5 for better visibility
     // Round up to nearest multiple of 5
     return Math.ceil(max / 5) * 5;
   }, [chartData]);
@@ -167,11 +169,15 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
     if (chartData.length <= 1) {
       return padding.left + graphWidth / 2; // Center the single point
     }
-    return padding.left + (index / (chartData.length - 1)) * graphWidth;
+    const x = padding.left + (index / (chartData.length - 1)) * graphWidth;
+    return isNaN(x) ? padding.left : x;
   };
 
   const yScale = (value: number) => {
-    return padding.top + graphHeight - (value / maxValue) * graphHeight;
+    const safeValue = isNaN(value) ? 0 : value;
+    const safeMax = maxValue || 5; // Prevent division by zero
+    const y = padding.top + graphHeight - (safeValue / safeMax) * graphHeight;
+    return isNaN(y) ? padding.top + graphHeight : y;
   };
 
   // Generate Y-axis labels
@@ -187,17 +193,25 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
     let path = '';
     points.forEach((point, index) => {
       const x = xScale(index);
-      const y = yScale(getValue(point));
+      const val = getValue(point);
+      const y = yScale(val);
+
+      if (isNaN(x) || isNaN(y)) return;
 
       if (index === 0) {
         path += `M ${x} ${y}`;
       } else {
         // Smooth curve using quadratic bezier
         const prevX = xScale(index - 1);
-        const prevY = yScale(getValue(points[index - 1]));
-        const cpX = (prevX + x) / 2;
+        const prevVal = getValue(points[index - 1]);
+        const prevY = yScale(prevVal);
 
-        path += ` Q ${cpX} ${prevY}, ${x} ${y}`;
+        if (isNaN(prevX) || isNaN(prevY)) {
+          path += ` M ${x} ${y}`; // Restart path if previous point was invalid
+        } else {
+          const cpX = (prevX + x) / 2;
+          path += ` Q ${cpX} ${prevY}, ${x} ${y}`;
+        }
       }
     });
 

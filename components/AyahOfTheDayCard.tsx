@@ -10,7 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Share2, Sparkles } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, AppStateStatus, Image, Linking, PixelRatio, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, AppStateStatus, Image, Linking, PixelRatio, Platform, Pressable, Animated, StyleSheet, Text, View } from 'react-native';
 import Share from 'react-native-share';
 import Svg, { Circle, Defs, Stop, RadialGradient as SvgRadialGradient } from 'react-native-svg';
 import ViewShot from 'react-native-view-shot';
@@ -137,6 +137,8 @@ const DynamicPatternOverlay = ({ pattern, colors }: { pattern: any; colors: any 
 
 interface AyahOfTheDayCardProps { 
   style?: any; 
+  /** When true, briefly animate a highlight effect */
+  highlight?: boolean;
 }
 
 // Branded Footer Component for Share Image - Modern & Compact Design
@@ -207,7 +209,7 @@ const BrandedFooter = ({ colors }: { colors: any }) => {
   );
 };
 
-export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style }) => {
+export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style, highlight = false }) => {
   const translationLang = useSettingsStore(state => state.translationLanguage) || 'en.asad';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -229,6 +231,8 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style }) => 
   const viewShotRef = useRef<ViewShot>(null);
   const [cardLayout, setCardLayout] = useState<{ width: number; height: number } | null>(null);
   const [imagesLoaded, setImagesLoaded] = useState(false);
+  // Animated highlight value — creates a brief pulse/outline when triggered
+  const highlightAnim = useRef(new Animated.Value(0)).current;
 
   const computeKey = (d = new Date()) => d.toISOString().split('T')[0];
 
@@ -339,6 +343,21 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style }) => 
       }
     }
   }, [isFocused, loadAyah]);
+
+  // When highlight toggles, run a short animation
+  useEffect(() => {
+    if (!highlight) return;
+    try {
+      highlightAnim.setValue(0);
+      Animated.sequence([
+        Animated.timing(highlightAnim, { toValue: 1, duration: 260, useNativeDriver: false }),
+        Animated.delay(1400),
+        Animated.timing(highlightAnim, { toValue: 0, duration: 360, useNativeDriver: false }),
+      ]).start();
+    } catch (e) {
+      // ignore animation errors silently
+    }
+  }, [highlight, highlightAnim]);
 
   // Get today's pattern and colors
   const today = new Date();
@@ -451,11 +470,22 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style }) => 
         <View style={[styles.glowEffect, { backgroundColor: colors.accent }]} />
 
         {/* Main Card */}
-        <Pressable
-          style={styles.cardContainer}
-          onPress={handlePress}
+        <Animated.View
+          style={[
+            styles.cardContainer,
+            {
+              // interpolated animated styles for highlight effect
+              borderWidth: highlightAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 3] }),
+              borderColor: highlightAnim.interpolate({ inputRange: [0, 1], outputRange: ['rgba(251,191,36,0.2)', colors.accent] }),
+              transform: [{ scale: highlightAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.01] }) }],
+            } as any,
+          ]}
           onLayout={(e) => setCardLayout({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}
         >
+          <Pressable
+            style={{ flex: 1 }}
+            onPress={handlePress}
+          >
           <View style={styles.gradient}>
             {/* Dynamic Background Pattern */}
             <DynamicPatternOverlay pattern={pattern} colors={colors} />
@@ -526,7 +556,8 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style }) => 
             {/* Decorative Overlay */}
             <View style={[styles.decorativeOverlay, { backgroundColor: colors.accent }]} />
           </View>
-        </Pressable>
+          </Pressable>
+        </Animated.View>
       </ViewShot>
 
       {/* Share Button - Outside ViewShot */}

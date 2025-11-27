@@ -6,20 +6,19 @@ import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtil
 import { useCustomColors } from '@/utils/themeUtils';
 import { router, Stack } from 'expo-router';
 import {
-  ArrowLeft,
-  Bell,
-  Book,
-  Check,
-  ChevronRight,
-  Clock,
-  FileText,
-  Moon,
-  Palette,
-  RotateCcw,
-  Sun,
-  Target,
-  User,
-  Volume2
+    ArrowLeft,
+    Bell,
+    Book,
+    Check,
+    ChevronRight,
+    Clock,
+    Moon,
+    Palette,
+    RotateCcw,
+    Sun,
+    Target,
+    User,
+    Volume2
 } from 'lucide-react-native';
 import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -432,31 +431,7 @@ export default function SettingsScreen() {
             )}
           </View>
 
-          {/* Page Revision Reminder */}
-          <View style={styles.settingItem}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <View style={styles.iconContainer}>
-                  <FileText size={20} color="#4ECDC4" />
-                </View>
-                <View>
-                  <Text style={styles.settingLabel}>Page Revision Reminder</Text>
-                  <Text style={styles.settingDescription}>
-                    Get notified when daily/weekly page goals are incomplete
-                  </Text>
-                </View>
-              </View>
-              <Switch
-                value={pageReminderSettings?.enabled || false}
-                onValueChange={(enabled) =>
-                  setPageReminderSettings({ enabled })
-                }
-                trackColor={{ false: '#444444', true: '#4ECDC480' }}
-                thumbColor={pageReminderSettings?.enabled ? '#4ECDC4' : '#888888'}
-                ios_backgroundColor="#444444"
-              />
-            </View>
-          </View>
+
         </View>
 
         {/* Revision Goals */}
@@ -687,8 +662,8 @@ export default function SettingsScreen() {
                 trackColor="#333333"
                 filledColor={colors.primary}
                 thumbColor={colors.primary}
+                onChange={(v) => setArabicPreview(Math.round(v))}
                 onChangeEnd={(v) => {
-                  // ✅ ZERO parent callbacks during drag - only update on release
                   const rounded = Math.round(v);
                   setArabicPreview(rounded);
                   setFontSizeArabic(rounded);
@@ -726,8 +701,8 @@ export default function SettingsScreen() {
                 trackColor="#333333"
                 filledColor={colors.primary}
                 thumbColor={colors.primary}
+                onChange={(v) => setTransPreview(Math.round(v))}
                 onChangeEnd={(v) => {
-                  // ✅ ZERO parent callbacks during drag - only update on release
                   const rounded = Math.round(v);
                   setTransPreview(rounded);
                   setFontSizeTranslation(rounded);
@@ -765,8 +740,8 @@ export default function SettingsScreen() {
                 trackColor="#333333"
                 filledColor={colors.primary}
                 thumbColor={colors.primary}
+                onChange={(v) => setTranslitPreview(Math.round(v))}
                 onChangeEnd={(v) => {
-                  // ✅ ZERO parent callbacks during drag - only update on release
                   const rounded = Math.round(v);
                   setTranslitPreview(rounded);
                   setFontSizeTransliteration(rounded);

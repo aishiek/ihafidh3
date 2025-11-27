@@ -25,8 +25,8 @@ type SliderProps = {
  */
 export const Slider: React.FC<SliderProps> = ({
   value,
-  onChange = () => {},
-  onChangeEnd = () => {},
+  onChange = () => { },
+  onChangeEnd = () => { },
   min = 0,
   max = 100,
   step = 1,
@@ -41,7 +41,7 @@ export const Slider: React.FC<SliderProps> = ({
   const isDragging = useRef(false);
   const [sliderPosition, setSliderPosition] = useState(0);
   const thumbScale = useRef(new Animated.Value(1)).current;
-  
+
   // Store the initial slider position when drag starts
   const dragStartPosition = useRef(0);
 
@@ -92,21 +92,32 @@ export const Slider: React.FC<SliderProps> = ({
     onPanResponderGrant: (event: GestureResponderEvent) => {
       isDragging.current = true;
       animateThumbScale(1.3);
-      
+
       // Jump to touch position
       const touchX = event.nativeEvent.locationX;
       const newPosition = Math.max(0, Math.min(trackWidth, touchX));
       setSliderPosition(newPosition);
-      
+      dragStartPosition.current = newPosition;
+
       const newValue = xToValue(newPosition);
-      onChangeEnd(newValue);
+      onChange(newValue);
     },
-    onPanResponderMove: () => {
-      // No drag movement - tap only
+    onPanResponderMove: (_: GestureResponderEvent, gestureState: any) => {
+      if (!isDragging.current) return;
+
+      const newPosition = Math.max(0, Math.min(trackWidth, dragStartPosition.current + gestureState.dx));
+      setSliderPosition(newPosition);
+
+      const newValue = xToValue(newPosition);
+      onChange(newValue);
     },
     onPanResponderRelease: () => {
       animateThumbScale(1);
-      
+
+      // Fire the final commit
+      const finalValue = xToValue(sliderPosition);
+      onChangeEnd(finalValue);
+
       setTimeout(() => {
         isDragging.current = false;
       }, 100);
@@ -117,7 +128,7 @@ export const Slider: React.FC<SliderProps> = ({
 
   return (
     <View style={[styles.container, { height }]}>
-      <View 
+      <View
         style={styles.trackContainer}
         onLayout={handleLayout}
         {...panResponder.panHandlers}
@@ -134,7 +145,7 @@ export const Slider: React.FC<SliderProps> = ({
           ]}
         />
       </View>
-      
+
       <Animated.View
         style={[
           styles.thumb,

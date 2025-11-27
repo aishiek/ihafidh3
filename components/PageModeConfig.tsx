@@ -1,6 +1,6 @@
 import { useThemeColor } from '@/utils/useThemeColor';
 import React from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 interface Props {
   visible: boolean;
@@ -15,85 +15,112 @@ const PRESETS = [3, 5, 10, 15];
 export default function PageModeConfig({ visible, initialScope, initialVersesPerPage, onCancel, onStart }: Props) {
   const { primary } = useThemeColor();
   const [scope, setScope] = React.useState<'surah' | 'juz'>(initialScope);
-  const [vpp, setVpp] = React.useState<string>(String(initialVersesPerPage ?? 15));
-  const [showError, setShowError] = React.useState<string | null>(null);
+  const [vpp, setVpp] = React.useState<string>('');
+  const [selectedPreset, setSelectedPreset] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     setScope(initialScope);
-    setVpp(String(initialVersesPerPage ?? 15));
-    setShowError(null);
+    // Don't set a default value - leave it blank
+    setVpp('');
+    setSelectedPreset(null);
   }, [initialScope, initialVersesPerPage, visible]);
 
   const onPressStart = () => {
     const num = parseInt(String(vpp || ''), 10);
-    if (Number.isNaN(num)) return setShowError('Enter a number');
-    if (num < 3 || num > 20) return setShowError('Enter a value between 3 and 20');
-    setShowError(null);
+    if (Number.isNaN(num)) {
+      Alert.alert('Invalid Input', 'Please enter a number.');
+      return;
+    }
+    if (num < 3 || num > 20) {
+      Alert.alert('Limit Reached', 'Verses can be chosen from 3 to 20 only');
+      return;
+    }
     onStart(scope, num);
   };
 
+  const handlePresetPress = (preset: number) => {
+    setVpp(String(preset));
+    setSelectedPreset(preset);
+  };
+
+  const handleCustomInput = (text: string) => {
+    setVpp(text.replace(/[^0-9]/g, ''));
+    setSelectedPreset(null);
+  };
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
-      <View style={styles.overlay}>
-        <View style={[styles.sheet, { borderColor: primary }]}> 
-          <Text style={styles.title}>Configure Page Mode</Text>
-          <Text style={styles.subtitle}>Choose how you want to navigate</Text>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.overlay}
+      >
+        <Pressable
+          style={styles.overlayPressable}
+          onPress={() => {
+            Keyboard.dismiss();
+            // Don't call onCancel immediately - let user tap again if they really want to close
+          }}
+        >
+          <Pressable style={[styles.sheet, { borderColor: primary }]} onPress={e => e.stopPropagation()}>
+            <Text style={styles.title}>Configure Page Mode</Text>
+            <Text style={styles.subtitle}>
+              {initialScope === 'surah' ? 'Configure Surah reading' : 'Configure Juz reading'}
+            </Text>
 
-          <Text style={styles.sectionTitle}>Select Mode</Text>
-          <View style={styles.modeRow}>
-            <Pressable onPress={() => setScope('surah')} style={[styles.modeCard, scope === 'surah' ? { borderColor: primary, borderWidth: 2 } : { borderColor: '#333' }]}> 
-              <Text style={styles.modeCardLabel}>By Surah</Text>
-              <Text style={styles.modeCardDesc}>Navigate by chapters</Text>
-            </Pressable>
-
-            <Pressable onPress={() => setScope('juz')} style={[styles.modeCard, scope === 'juz' ? { borderColor: primary, borderWidth: 2 } : { borderColor: '#333' }]}> 
-              <Text style={styles.modeCardLabel}>By Juz</Text>
-              <Text style={styles.modeCardDesc}>Navigate by parts</Text>
-            </Pressable>
-          </View>
-
-          <Text style={[styles.sectionTitle, { marginTop: 12 }]}>Verses per page</Text>
-          <View style={styles.presetRow}>
-            {PRESETS.map(p => (
-              <Pressable key={p} onPress={() => setVpp(String(p))} style={[styles.preset, String(p) === vpp ? { backgroundColor: primary } : { backgroundColor: '#333' }]}> 
-                <Text style={{ color: '#fff', fontWeight: '700' }}>{p}</Text>
-              </Pressable>
-            ))}
-            <View style={{ width: 8 }} />
-            <View style={styles.customBox}>
-              <TextInput value={vpp} onChangeText={t => setVpp(t.replace(/[^0-9]/g, ''))} keyboardType="numeric" style={styles.customInput} placeholder="Custom" placeholderTextColor="#888" />
+            <Text style={[styles.sectionTitle, { marginTop: 12 }]}>Verses per page</Text>
+            <View style={styles.presetRow}>
+              {PRESETS.map(p => (
+                <Pressable key={p} onPress={() => handlePresetPress(p)} style={[styles.preset, selectedPreset === p ? { backgroundColor: primary } : { backgroundColor: '#333' }]}>
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>{p}</Text>
+                </Pressable>
+              ))}
+              <View style={{ width: 8 }} />
+              <View style={styles.customBox}>
+                <TextInput
+                  value={vpp}
+                  onChangeText={handleCustomInput}
+                  // Use default keyboard as requested by user
+                  // keyboardType="number-pad"
+                  returnKeyType="done"
+                  onSubmitEditing={() => {
+                    Keyboard.dismiss();
+                  }}
+                  blurOnSubmit={true}
+                  maxLength={3}
+                  style={styles.customInput}
+                  placeholder="Custom"
+                  placeholderTextColor="#666"
+                />
+              </View>
             </View>
-          </View>
-          <Text style={{ color: '#888', marginTop: 6, fontSize: 13 }}>{`Default from settings: ${initialVersesPerPage ?? 15} verses`}</Text>
+            <Text style={{ color: '#888', marginTop: 8, fontSize: 11 }}>{`Default from settings: ${initialVersesPerPage ?? 15} verses`}</Text>
 
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 18 }}>
-            <Pressable onPress={onCancel} style={[styles.outlineBtn, { borderColor: '#444' }]}>
-              <Text style={{ color: '#fff' }}>Cancel</Text>
-            </Pressable>
-            <Pressable onPress={onPressStart} style={[styles.primaryBtn, { backgroundColor: primary }]}>
-              <Text style={{ color: '#111', fontWeight: '700' }}>Start Reading</Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 20 }}>
+              <Pressable onPress={onCancel} style={[styles.outlineBtn, { borderColor: '#444' }]}>
+                <Text style={{ color: '#fff', fontSize: 14 }}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={onPressStart} style={[styles.primaryBtn, { backgroundColor: primary }]}>
+                <Text style={{ color: '#111', fontWeight: '700', fontSize: 14 }}>Start Reading</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
-  sheet: { width: '100%', padding: 18, borderTopLeftRadius: 16, borderTopRightRadius: 16, backgroundColor: '#111', borderWidth: 1 },
-  title: { color: '#FFD700', fontSize: 18, fontWeight: '700', marginBottom: 4 },
-  subtitle: { color: '#ccc', marginBottom: 8 },
-  sectionTitle: { color: '#aaa', marginTop: 12, marginBottom: 8 },
-  modeRow: { flexDirection: 'row', gap: 12 },
-  modeCard: { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#222' },
-  modeCardLabel: { color: '#fff', fontWeight: '700', marginBottom: 6 },
-  modeCardDesc: { color: '#bbb', fontSize: 12 },
-  presetRow: { flexDirection: 'row', alignItems: 'center' },
-  preset: { padding: 12, borderRadius: 8, minWidth: 48, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
-  customBox: { borderRadius: 8, backgroundColor: '#222', padding: 6, minWidth: 80, alignItems: 'center' },
-  customInput: { width: 64, height: 36, color: '#fff', textAlign: 'center' },
-  outlineBtn: { flex: 1, padding: 12, justifyContent: 'center', alignItems: 'center', borderRadius: 10, borderWidth: 1 },
-  primaryBtn: { flex: 1, padding: 12, justifyContent: 'center', alignItems: 'center', borderRadius: 10 },
+  overlay: { flex: 1 },
+  overlayPressable: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.7)', padding: 20 },
+  sheet: { width: '100%', maxWidth: 340, padding: 20, borderRadius: 16, backgroundColor: '#111', borderWidth: 1 },
+  title: { color: '#FFD700', fontSize: 18, fontWeight: '700', marginBottom: 4, textAlign: 'center' },
+  subtitle: { color: '#ccc', fontSize: 13, marginBottom: 12, textAlign: 'center' },
+  sectionTitle: { color: '#aaa', fontSize: 13, marginBottom: 8 },
+  presetRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
+  preset: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, minWidth: 48, alignItems: 'center', justifyContent: 'center' },
+  customBox: { borderRadius: 8, backgroundColor: '#222', padding: 2, borderWidth: 1, borderColor: '#333' },
+  customInput: { width: 80, height: 40, color: '#fff', textAlign: 'center', fontSize: 16, fontWeight: '600' },
+  outlineBtn: { flex: 1, paddingVertical: 12, justifyContent: 'center', alignItems: 'center', borderRadius: 10, borderWidth: 1 },
+  primaryBtn: { flex: 1, paddingVertical: 12, justifyContent: 'center', alignItems: 'center', borderRadius: 10 },
 });

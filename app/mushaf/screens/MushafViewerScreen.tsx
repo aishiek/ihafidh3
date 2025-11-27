@@ -6,19 +6,21 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Heart } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { BackHandler, Modal, Platform, SafeAreaView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { BackHandler, Modal, PanResponder, Platform, SafeAreaView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MushafFooter from '../components/MushafFooter';
 import MushafHeader from '../components/MushafHeader';
 import MushafPage from '../components/MushafPage';
 import SurahList from '../components/SurahList';
 import { useMushafBookmarks } from '../hooks/useMushafBookmarks';
-import { PageMetadata, getPageMetadata, initMushafDB } from '../services/mushafMetadataService';
+import LayoutService from '../services/layoutService';
+import { downloadMushaf } from '../services/mushafDownloadService';
+import { PageMetadata, getPageMetadata, getPageVerses, initMushafDB, resetDbCache } from '../services/mushafMetadataService';
 import { getAllSurahs, isMushafDatabaseReady } from '../services/mushafSurahService';
 
 // ...existing imports...
 
-const TOTAL_PAGES = 610;
+
 
 export default function MushafViewerScreen() {
   const insets = useSafeAreaInsets();
@@ -39,16 +41,19 @@ export default function MushafViewerScreen() {
   // Safely parse page number
   // Always use the latest pageNumber from params, fallback to last read only if param is missing
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [totalPages, setTotalPages] = useState<number>(604); // Default to 604 pages
 
   useEffect(() => {
     const pageNum = Number(params?.pageNumber);
-    if (!isNaN(pageNum) && pageNum > 0 && pageNum <= TOTAL_PAGES) {
-      setCurrentPage(pageNum);
+    if (!isNaN(pageNum)) {
+      if (pageNum >= 1 && pageNum <= totalPages) {
+        handlePageChange(pageNum);
+      }
     } else {
       // Only restore last read if no valid page param
       (async () => {
         const last = await getLastRead();
-        if (last && last.page && last.page > 0 && last.page <= TOTAL_PAGES) {
+        if (last && last.page && last.page > 0 && last.page <= totalPages) {
           setCurrentPage(last.page);
         } else {
           setCurrentPage(1);
@@ -69,15 +74,66 @@ export default function MushafViewerScreen() {
 
   // Surah list for navigation
   const [surahList, setSurahList] = useState<{ id: number; name: string; page: number }[] | null>(null);
-  const [dbReady, setDbReady] = useState<boolean>(isMushafDatabaseReady());
+  const [dbReady, setDbReady] = useState(false);
 
   // Page metadata (Surah/Juz info)
   const [pageMetadata, setPageMetadata] = useState<PageMetadata | null>(null);
+  const [pageVerses, setPageVerses] = useState<any[]>([]);
+  const [isInstalling, setIsInstalling] = useState(false);
+
+  // Keep a ref for the current page so DB-change callbacks can use latest value
+  const currentPageRef = React.useRef<number>(currentPage);
+  React.useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
 
   // Theme support
   const { themeMode } = useThemeStore();
   const colors = useCustomColors();
   const isDark = themeMode === 'dark';
+
+  // Initialize DB and load layout info
+  useEffect(() => {
+    let mounted = true;
+    const init = async () => {
+      try {
+        await initMushafDB();
+
+        // Get total pages from active layout
+        const layout = await LayoutService.getActiveLayout();
+        if (mounted && layout) {
+          setTotalPages(layout.total_pages);
+        }
+
+        if (mounted) setDbReady(true);
+      } catch (e) {
+        console.error('Failed to init DB:', e);
+      }
+    };
+    init();
+
+    // Listen for layout changes to update total pages
+    const unsub = LayoutService.onDatabaseChange(async () => {
+      const layout = await LayoutService.getActiveLayout();
+      if (mounted && layout) {
+        setTotalPages(layout.total_pages);
+      }
+      // Re-fetch current page data
+      if (mounted) {
+        try {
+          const meta = await getPageMetadata(currentPage);
+          const verses = await getPageVerses(currentPage);
+          setPageMetadata(meta);
+          setPageVerses(verses);
+        } catch (e) {
+          console.error('Error refreshing page data:', e);
+        }
+      }
+    });
+
+    return () => {
+      mounted = false;
+      unsub();
+    };
+  }, [currentPage]);
 
   // Load surah list on mount
   useEffect(() => {
@@ -87,7 +143,7 @@ export default function MushafViewerScreen() {
         const list = await getAllSurahs();
         if (!mounted) return;
         setSurahList(list.map(s => ({ id: s.id, name: s.name, page: s.page })));
-        setDbReady(true);
+        // setDbReady(true); // This is now handled by the new useEffect above
       } catch (e) {
         console.error('[MushafViewerScreen] Error loading surahs:', e);
         setDbReady(isMushafDatabaseReady());
@@ -113,20 +169,109 @@ export default function MushafViewerScreen() {
     let mounted = true;
     (async () => {
       try {
-        const db = await initMushafDB();
-        const metadata = await getPageMetadata(db, currentPage);
+        await initMushafDB(); // Validate LayoutService is ready
+        const metadata = await getPageMetadata(currentPage);
+        const verses = await getPageVerses(currentPage);
+        console.log(`[MushafViewerScreen] Page ${currentPage} verses:`, verses);
         if (mounted) {
           setPageMetadata(metadata);
+          setPageVerses(verses);
         }
       } catch (error) {
         console.error('[MushafViewerScreen] Error fetching metadata:', error);
         if (mounted) {
           setPageMetadata(null);
+          setPageVerses([]);
         }
       }
     })();
     return () => { mounted = false; };
   }, [currentPage]);
+
+  // Subscribe to LayoutService DB swaps so we can re-initialize when layout/db changes
+  useEffect(() => {
+    let mounted = true;
+
+    const handleDbChange = async () => {
+      console.log('[MushafViewerScreen] Layout DB changed - reinitializing page data');
+      try {
+        // Reset any init cache and re-init
+        resetDbCache();
+        await initMushafDB();
+        if (!mounted) return;
+
+        // Attempt to reload page metadata & verses for the current page
+        try {
+          const meta = await getPageMetadata(currentPageRef.current);
+          const verses = await getPageVerses(currentPageRef.current);
+          if (!mounted) return;
+          setPageMetadata(meta);
+          setPageVerses(verses);
+          setDbReady(true);
+          // reload surah list for the new DB/layout so navigation mapping stays correct
+          try {
+            const list = await getAllSurahs();
+            if (mounted) setSurahList(list.map(s => ({ id: s.id, name: s.name, page: s.page })));
+          } catch (e) {
+            console.error('[MushafViewerScreen] Failed to reload surah list after DB change', e);
+          }
+        } catch (e) {
+          console.error('[MushafViewerScreen] Failed to reload page after DB change:', e);
+          if (!mounted) return;
+          setPageMetadata(null);
+          setPageVerses([]);
+          setDbReady(false);
+        }
+      } catch (err) {
+        console.error('[MushafViewerScreen] DB change handler failed:', err);
+        if (mounted) setDbReady(false);
+      }
+    };
+
+    const unsubscribe = LayoutService.onDatabaseChange(handleDbChange);
+    return () => { mounted = false; unsubscribe(); };
+  }, []);
+
+  const handleInstallMushaf = async () => {
+    try {
+      setIsInstalling(true);
+
+      // Determine which layout to download. Prefer the currently active layout
+      // if it is one of the downloadable layouts. Fallback to `indopak_15` which
+      // contains the legacy DB and common assets.
+      let targetLayout = 'indopak_15';
+      try {
+        const active = await LayoutService.getActiveLayout();
+        if (active && ['indopak_15', 'madina_15', 'warsh_15', 'tajweed'].includes(active.layout_id)) {
+          targetLayout = active.layout_id;
+        }
+      } catch (e) {
+        console.warn('[MushafViewerScreen] Could not determine active layout, defaulting to indopak_15', e);
+      }
+
+      // Info: the download may include DB, images, and layout JSON depending on layout
+      // selected. This makes the install button attempt to repair the missing data
+      // for the currently active layout instead of always installing indopak.
+      console.log('[MushafViewerScreen] Installing layout:', targetLayout);
+      await downloadMushaf(targetLayout);
+
+      // Re-initialize and re-fetch metadata/verses for the current page
+      try {
+        await initMushafDB();
+        const metadata = await getPageMetadata(currentPage);
+        const verses = await getPageVerses(currentPage);
+        setPageMetadata(metadata);
+        setPageVerses(verses);
+        setDbReady(true);
+      } catch (e) {
+        console.error('[MushafViewerScreen] Error reloading after install:', e);
+      }
+    } catch (e) {
+      console.error('[MushafViewerScreen] install failed', e);
+    } finally {
+      setIsInstalling(false);
+    }
+  };
 
   // Show airplane prompt when mushaf is downloaded
   useEffect(() => {
@@ -160,13 +305,17 @@ export default function MushafViewerScreen() {
   }, []);
 
   // Navigation handlers
-  const handleFirst = () => setCurrentPage(1);
-  const handlePrev = () => setCurrentPage(p => Math.max(1, p - 1));
-  const handleNext = () => setCurrentPage(p => Math.min(TOTAL_PAGES, p + 1));
-  const handleLast = () => setCurrentPage(TOTAL_PAGES);
+  const handlePageChange = (pageNum: number) => {
+    setCurrentPage(pageNum);
+  };
+
+  const handleFirst = () => handlePageChange(1);
+  const handlePrev = () => handlePageChange(Math.max(1, currentPage - 1));
+  const handleNext = () => handlePageChange(Math.min(totalPages, currentPage + 1));
+  const handleLast = () => handlePageChange(totalPages);
 
   const handleJumpToPage = (pageNum: number) => {
-    if (pageNum >= 1 && pageNum <= TOTAL_PAGES) setCurrentPage(pageNum);
+    if (pageNum >= 1 && pageNum <= totalPages) handlePageChange(pageNum);
   };
 
   const handleBookmarkToggle = () => {
@@ -209,6 +358,32 @@ export default function MushafViewerScreen() {
   const handleGoToSurah = () => {
     setShowSurahPicker(true);
   };
+
+  // Keep refs for current/total pages so PanResponder can access latest values
+  const totalPagesRef = React.useRef<number>(totalPages);
+  React.useEffect(() => { totalPagesRef.current = totalPages; }, [totalPages]);
+
+  // Swipe gesture for page navigation using PanResponder
+  const panResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderRelease: (evt, gestureState) => {
+        const { dx, vx } = gestureState;
+        const current = currentPageRef.current;
+        const total = totalPagesRef.current;
+
+        // Swipe right (positive dx) - go to previous page
+        if (dx > 50 || vx > 0.5) {
+          if (current > 1) handlePageChange(current - 1);
+        }
+        // Swipe left (negative dx) - go to next page
+        else if (dx < -50 || vx < -0.5) {
+          if (current < total) handlePageChange(current + 1);
+        }
+      },
+    })
+  ).current;
 
   return (
     <>
@@ -288,7 +463,7 @@ export default function MushafViewerScreen() {
                 onChangeText={setPageInputValue}
                 keyboardType="numeric"
                 style={modalStyles.jumpInput}
-                placeholder="Enter page number"
+                placeholder={`Page (1-${totalPages})`}
                 placeholderTextColor="#666"
               />
               <View style={{ flexDirection: 'row', marginTop: 12, gap: 12 }}>
@@ -302,7 +477,7 @@ export default function MushafViewerScreen() {
                   style={[modalStyles.button, modalStyles.yesButton]}
                   onPress={() => {
                     const n = Number(pageInputValue);
-                    if (!isNaN(n) && n >= 1 && n <= TOTAL_PAGES) setCurrentPage(n);
+                    if (!isNaN(n) && n >= 1 && n <= totalPages) setCurrentPage(n);
                     setShowPageInput(false);
                   }}
                 >
@@ -326,20 +501,22 @@ export default function MushafViewerScreen() {
         />
 
         {/* Main content - Mushaf page with key to force remount */}
-        <View style={styles.content}>
+        <View style={styles.content} {...panResponder.panHandlers}>
           <MushafPage key={`page-${currentPage}`} pageNumber={currentPage} />
         </View>
 
         {/* Footer with navigation controls */}
         <MushafFooter
           pageNumber={currentPage}
-          totalPages={TOTAL_PAGES}
+          totalPages={totalPages}
           onPrevious={handlePrev}
           onNext={handleNext}
           onPrevSurah={handlePrevSurah}
           onNextSurah={handleNextSurah}
           onGoToSurah={handleGoToSurah}
           isDbReady={dbReady}
+          verses={pageVerses}
+          reciterId="ar.alafasy"
         />
       </SafeAreaView>
     </>

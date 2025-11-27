@@ -12,7 +12,7 @@ interface LayoutSelectorProps {
   onLayoutSelected: (layoutId: string) => void;
 }
 
-export const LayoutSelector: React.FC<LayoutSelectorProps> = ({ visible, onClose, onLayoutSelected }) => {
+const LayoutSelector: React.FC<LayoutSelectorProps> = ({ visible, onClose, onLayoutSelected }) => {
   const [activeLayoutId, setActiveLayoutId] = useState<string>('indopak_15');
   const [loading, setLoading] = useState(false);
   const [downloadedLayouts, setDownloadedLayouts] = useState<Set<string>>(new Set(['indopak_15'])); // Initialize with indopak
@@ -328,3 +328,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
+export default LayoutSelector;

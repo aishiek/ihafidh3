@@ -16,6 +16,10 @@ module.exports = function(api) {
         extensions: ['.js', '.jsx', '.ts', '.tsx'],
       }],
       'react-native-reanimated/plugin',
+      // Remove console.* calls in production builds to keep logs clean and avoid leaking
+      // potentially sensitive information. We use the widely used transform-remove-console
+      // during production builds only.
+      ...(process.env.NODE_ENV === 'production' ? ['transform-remove-console'] : []),
     ],
   };
 };
