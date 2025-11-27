@@ -639,18 +639,40 @@ export class EnhancedNotificationService {
         switch (data.type) {
           case 'daily_ayah':
           case 'daily-ayah':
-            // Navigate to index.tsx where Ayah of the Day card is displayed
-            navigation?.navigate('(tabs)', { screen: 'index', params: { highlightAyah: true } });
+            // Navigate to home screen (root) and pass highlight param — prefer router where available
+            try { 
+              // runtime import to avoid bundling cross-file circularity
+              const { router } = require('expo-router');
+              router.replace('/?highlightAyah=1');
+            } catch {
+              // fallback to navigation object if provided
+              try { navigation?.navigate?.('/', { highlightAyah: true }); } catch {};
+            }
             break;
           case 'daily-verse-reminder':
-            navigation?.navigate('(tabs)', { screen: 'read' });
+            try {
+              const { router } = require('expo-router');
+              router.replace('/read');
+            } catch {
+              try { navigation?.navigate?.('read'); } catch {}
+            }
             break;
           case 'weekly-surah-reminder':
-            navigation?.navigate('(tabs)', { screen: 'stats' });
+            try {
+              const { router } = require('expo-router');
+              router.replace('/stats');
+            } catch {
+              try { navigation?.navigate?.('stats'); } catch {}
+            }
             break;
           case 'hifdh-overdue':
           case 'revision-needed':
-            navigation?.navigate('(tabs)', { screen: 'index' });
+            try {
+              const { router } = require('expo-router');
+              router.replace('/');
+            } catch {
+              try { navigation?.navigate?.('/', {}); } catch {}
+            }
             break;
         }
       });

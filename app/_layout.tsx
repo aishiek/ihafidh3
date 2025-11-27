@@ -376,8 +376,9 @@ function RootLayoutContent() {
             if (data?.target === 'index' || data?.highlightAyah) {
               const surahId = data?.surahId || getTodayCardVerse(new Date()).surahId;
               const verseId = data?.verseNumber || getTodayCardVerse(new Date()).verseNumber;
+              // Navigate to the app root and include query params for highlight handling.
               const qs = `?highlightAyah=1&surahId=${surahId}&verseId=${verseId}`;
-              try { router.replace(`/(tabs)/index${qs}`); } catch { router.push(`/(tabs)/index${qs}`); }
+              try { router.replace(`/${qs}`); } catch { router.push(`/${qs}`); }
             } else {
               const today = getTodayCardVerse(new Date());
               try { router.replace(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); } catch { router.push(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); }
