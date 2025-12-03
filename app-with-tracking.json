@@ -28,7 +28,8 @@
             "hermesEnabled": false
           },
           "ios": {
-            "hermesEnabled": false
+            "hermesEnabled": false,
+            "deploymentTarget": "16.0"
           }
         }
       ]
