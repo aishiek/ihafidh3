@@ -5,7 +5,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Font from 'expo-font';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
-import * as Notifications from 'expo-notifications';
+// expo-notifications is optional in this project (we use Firebase + Notifee).
+// Load at runtime if present to avoid plugin resolution/build-time errors when the module is not installed.
+let Notifications: any = null;
+try { Notifications = require('expo-notifications'); } catch (e) { /* not installed or not available in this build */ }
 import { openDatabaseSync } from 'expo-sqlite';
 import { Platform } from 'react-native';
 // Optional modules (may not be installed) loaded via dynamic require to avoid build-time errors
@@ -66,8 +69,10 @@ export async function runTurboModuleProbe(): Promise<ProbeResult[]> {
 
   // Fonts / Notifications / Location
   tasks.push(runSingle('Font.isLoaded(dummy)', async () => { try { (Font as any).isLoaded && (Font as any).isLoaded('ScheherazadeNew-Regular'); } catch {} }));
-  tasks.push(runSingle('Notifications.getPermissionsAsync', async () => { try { await Notifications.getPermissionsAsync(); } catch {} }));
-  tasks.push(runSingle('Notifications.getDevicePushTokenAsync', async () => { try { await Notifications.getDevicePushTokenAsync(); } catch {} }));
+  if (Notifications) {
+    tasks.push(runSingle('Notifications.getPermissionsAsync', async () => { try { await Notifications.getPermissionsAsync(); } catch {} }));
+    tasks.push(runSingle('Notifications.getDevicePushTokenAsync', async () => { try { await Notifications.getDevicePushTokenAsync(); } catch {} }));
+  }
   tasks.push(runSingle('Location.getProviderStatusAsync', async () => { try { await Location.getProviderStatusAsync(); } catch {} }));
 
   // Device / App / Network (optional)

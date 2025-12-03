@@ -2,7 +2,7 @@
   "expo": {
     "name": "iHafidh",
     "slug": "ihafidh2",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "orientation": "default",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
@@ -19,14 +19,6 @@
     "plugins": [
       "expo-router",
       "expo-sqlite",
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/images/icon.png",
-          "color": "#ffffff",
-          "defaultChannel": "default"
-        }
-      ],
       [
         "expo-build-properties",
         {
@@ -93,7 +85,7 @@
     },
     "android": {
       "package": "com.ihafidh",
-      "versionCode": 28,
+      "versionCode": 30,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
