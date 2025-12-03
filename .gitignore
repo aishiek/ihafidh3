@@ -91,3 +91,6 @@ yarn-error.*
 *.tsbuildinfo
 
 # @end expo-cli
+
+# Firebase service account (keep it secret locally - add to secrets via wrangler instead)
+firebaseServiceAccountKey.json
