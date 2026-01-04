@@ -222,15 +222,25 @@ function RootLayoutContent() {
   }, []);
 
   // Initialize Firebase Cloud Messaging for push notifications
+  const notificationsEnabled = useSettingsStore(s => s.notificationsEnabled);
+
   React.useEffect(() => {
     // Initialize push notifications after a short delay to avoid blocking app startup
     const timer = setTimeout(() => {
-      PushNotificationService.initialize().catch(e =>
-        console.log('[Push] Initialization failed:', e)
-      );
+      PushNotificationService.initialize()
+        .then(() => {
+          // Sync subscriptions based on current settings
+          // Use 'notificationsEnabled' for Fasting (as general daily reminder)
+          PushNotificationService.syncFastingSubscription(notificationsEnabled);
+          // Use 'ayahEnabled' for Daily Ayah
+          PushNotificationService.syncAyahSubscription(ayahEnabled ?? false);
+        })
+        .catch(e =>
+          console.log('[Push] Initialization failed:', e)
+        );
     }, 1000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [notificationsEnabled, ayahEnabled]);
 
   // Sync daily Ayah notification schedule with settings
   React.useEffect(() => {

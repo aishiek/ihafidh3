@@ -3,15 +3,24 @@ import messaging from '@react-native-firebase/messaging';
 
 // NOTE: Updated for your deployed worker name/account.
 // Replace this value if you publish under a different Cloudflare subdomain or name.
-const TOPICS = ['fasting', 'daily_ayah'];
-
 export class PushNotificationService {
     /**
-     * Initialize push notifications and subscribe to topics
+     * Get the current timezone offset string (e.g., "+0800" or "-0500")
+     */
+    static getTimezoneOffset(): string {
+        const offsetMinutes = new Date().getTimezoneOffset();
+        const sign = offsetMinutes > 0 ? '-' : '+'; // JS offset is inverted
+        const absMinutes = Math.abs(offsetMinutes);
+        const hours = Math.floor(absMinutes / 60);
+        const minutes = absMinutes % 60;
+        return `${sign}${String(hours).padStart(2, '0')}${String(minutes).padStart(2, '0')}`;
+    }
+
+    /**
+     * Initialize push notifications (permissions only, no auto-subscribe)
      */
     static async initialize() {
         try {
-            console.log('[Push] Initializing Firebase Cloud Messaging...');
 
             // Request permission
             const authStatus = await messaging().requestPermission();
@@ -26,13 +35,7 @@ export class PushNotificationService {
 
             console.log('[Push] Permission granted');
 
-            // Subscribe to topics
-            for (const topic of TOPICS) {
-                await messaging().subscribeToTopic(topic);
-                console.log(`[Push] Subscribed to topic: ${topic}`);
-            }
-
-            // Get FCM token (useful for debugging, though not needed for topics)
+            // Get FCM token (useful for debugging)
             const token = await messaging().getToken();
             console.log('[Push] FCM Token:', token);
 
@@ -51,7 +54,7 @@ export class PushNotificationService {
                     body: remoteMessage.notification?.body || '',
                     data: remoteMessage.data,
                     android: {
-                        channelId: 'default', // Make sure this channel exists in Notifee setup
+                        channelId: 'default',
                         pressAction: {
                             id: 'default',
                         },
@@ -70,6 +73,54 @@ export class PushNotificationService {
             console.log('[Push] Initialization complete');
         } catch (error) {
             console.error('[Push] Initialization failed:', error);
+        }
+    }
+
+    /**
+     * Subscribe/Unsubscribe from Fasting Topic based on setting
+     */
+    static async syncFastingSubscription(enabled: boolean) {
+        try {
+            const offset = this.getTimezoneOffset();
+            const topic = `fasting_${offset}`;
+            const legacyTopic = 'fasting';
+
+            if (enabled) {
+                console.log(`[Push] Subscribing to: ${topic}`);
+                await messaging().subscribeToTopic(topic);
+                // Unsubscribe from legacy generic topic just in case
+                await messaging().unsubscribeFromTopic(legacyTopic);
+            } else {
+                console.log(`[Push] Unsubscribing from: ${topic}`);
+                await messaging().unsubscribeFromTopic(topic);
+                await messaging().unsubscribeFromTopic(legacyTopic);
+            }
+        } catch (error) {
+            console.error('[Push] Failed to sync fasting subscription:', error);
+        }
+    }
+
+    /**
+     * Subscribe/Unsubscribe from Daily Ayah Topic based on setting
+     */
+    static async syncAyahSubscription(enabled: boolean) {
+        try {
+            const offset = this.getTimezoneOffset();
+            const topic = `daily_ayah_${offset}`;
+            const legacyTopic = 'daily_ayah';
+
+            if (enabled) {
+                console.log(`[Push] Subscribing to: ${topic}`);
+                await messaging().subscribeToTopic(topic);
+                // Unsubscribe from legacy generic topic just in case
+                await messaging().unsubscribeFromTopic(legacyTopic);
+            } else {
+                console.log(`[Push] Unsubscribing from: ${topic}`);
+                await messaging().unsubscribeFromTopic(topic);
+                await messaging().unsubscribeFromTopic(legacyTopic);
+            }
+        } catch (error) {
+            console.error('[Push] Failed to sync ayah subscription:', error);
         }
     }
 

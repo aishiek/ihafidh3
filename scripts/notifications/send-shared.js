@@ -21,96 +21,131 @@ const TOPIC_DAILY_AYAH = 'daily_ayah';
 
 async function main() {
     try {
-        console.log('--- Starting Notification Check ---');
+        console.log('--- Starting System Check (Hourly Timezone Aware) ---');
 
-        // 1. Get Tomorrow's Date (Singapore Time as reference)
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        const day = tomorrow.getDate();
-        const month = tomorrow.getMonth() + 1;
-        const year = tomorrow.getFullYear();
+        const now = new Date();
+        const utcHour = now.getUTCHours();
+        const TARGET_HOUR = 5; // 5 AM Local Time
 
-        console.log(`Checking for date: ${year}-${month}-${day}`);
+        console.log(`Current UTC Hour: ${utcHour}`);
+        console.log(`Target Local Hour: ${TARGET_HOUR}`);
 
-        // 2. Fetch Hijri Date from Aladhan API
-        const response = await fetch(`https://api.aladhan.com/v1/gToH/${day}-${month}-${year}`);
-        const data = await response.json();
+        // 1. Identify valid offsets for this hour
+        // Formula: (utc + offset) % 24 == target
+        const validOffsets = [];
 
-        if (data.code !== 200) throw new Error('API Error');
+        // Scan standard offsets (-11 to +14)
+        // We include half-hour offsets if needed, but for simplicity starting with integers
+        // To cover half-hours (e.g. India +5:30), we would need to run script every 30 mins
+        // For now, we support integer offsets (covering most major users)
+        for (let offset = -11; offset <= 14; offset++) {
+            let localHour = (utcHour + offset);
+            // Handle wrap around
+            if (localHour < 0) localHour += 24;
+            if (localHour >= 24) localHour -= 24;
 
-        const hijri = data.data.hijri;
-        const hijriDay = parseInt(hijri.day);
-        const hijriMonth = hijri.month.number;
-        const weekday = data.data.gregorian.weekday.en; // Monday, Thursday...
-
-        console.log(`Hijri: ${hijri.day} ${hijri.month.en} (${hijri.year}) - ${weekday}`);
-
-        /// --- FASTING LOGIC --- ///
-        let sendFasting = false;
-        let title = '';
-        let body = '';
-
-        // Mon/Thu
-        if (weekday === 'Monday' || weekday === 'Thursday') {
-            sendFasting = true;
-            title = `Sunnah Fasting Tomorrow (${weekday})`;
-            body = `Don't forget to fast tomorrow! It is a Sunnah act.`;
+            if (localHour === TARGET_HOUR) {
+                // Format offset string matches App (e.g. "+0800", "-0500")
+                const sign = offset >= 0 ? '+' : '-';
+                const abs = Math.abs(offset);
+                const offsetStr = `${sign}${String(abs).padStart(2, '0')}00`; // Assuming 00 minutes
+                validOffsets.push({ val: offset, str: offsetStr });
+            }
         }
 
-        // White Days (13, 14, 15)
-        if (hijriDay >= 13 && hijriDay <= 15) {
-            sendFasting = true;
-            title = `Ayyamul Bidh Fasting Tomorrow`;
-            body = `Tomorrow is the ${hijriDay}th of ${hijri.month.en}. Remind yourself to fast!`;
+        if (validOffsets.length === 0) {
+            console.log('No timezones match 5 AM right now. Exiting.');
+            process.exit(0);
         }
 
-        // Ashura (10th Muharram)
-        if (hijriMonth === 1 && hijriDay === 10) {
-            sendFasting = true;
-            title = `Ashura Fasting Tomorrow`;
-            body = `Tomorrow is Ashura (10th Muharram). Proven expiation for the previous year's sins.`;
-        }
+        console.log(`Found timezones hitting 5 AM:`, validOffsets.map(o => o.str));
 
-        // Arafah (9th Dhul Hijjah)
-        if (hijriMonth === 12 && hijriDay === 9) {
-            sendFasting = true;
-            title = `Day of Arafah Tomorrow`;
-            body = `Fasting on Arafah expiates sins for the past and coming year.`;
-        }
+        // 2. Process each valid offset
+        for (const zone of validOffsets) {
+            console.log(`Processing Zone: ${zone.str} (UTC${zone.val})`);
 
-        if (sendFasting) {
-            console.log(`Sending Fasting Notification: ${title}`);
+            // Calculate Local Date for this zone
+            // We create a date object shifted by the offset
+            const localDate = new Date(now.getTime() + (zone.val * 60 * 60 * 1000));
+            const day = localDate.getUTCDate();
+            const month = localDate.getUTCMonth() + 1;
+            const year = localDate.getUTCFullYear();
+
+            console.log(`  Local Date: ${year}-${month}-${day}`);
+
+            // Fetch Hijri info
+            const response = await fetch(`https://api.aladhan.com/v1/gToH/${day}-${month}-${year}`);
+            const data = await response.json();
+
+            if (data.code !== 200) {
+                console.error(`  API Error for ${zone.str}`, data);
+                continue;
+            }
+
+            const hijri = data.data.hijri;
+            const hijriDay = parseInt(hijri.day);
+            const hijriMonth = hijri.month.number;
+            const weekday = data.data.gregorian.weekday.en;
+
+            console.log(`  Hijri: ${hijri.day} ${hijri.month.en} - ${weekday}`);
+
+            // --- Fasting Check (Is TODAY a fasting day?) ---
+            let sendFasting = false;
+            let title = '';
+            let body = '';
+
+            // Mon/Thu
+            if (weekday === 'Monday' || weekday === 'Thursday') {
+                sendFasting = true;
+                title = `Sunnah Fasting Today`;
+                body = `Today is ${weekday}. Just a reminder for Sunnah fasting!`;
+            }
+
+            // White Days (13, 14, 15)
+            if (hijriDay >= 13 && hijriDay <= 15) {
+                sendFasting = true;
+                title = `White Days Fasting`;
+                body = `Today is the ${hijriDay}th of ${hijri.month.en}. Remind yourself to fast!`;
+            }
+
+            // Ashura
+            if (hijriMonth === 1 && hijriDay === 10) {
+                sendFasting = true;
+                title = `Ashura Fasting`;
+                body = `Today is Ashura (10th Muharram).`;
+            }
+
+            // Arafah
+            if (hijriMonth === 12 && hijriDay === 9) {
+                sendFasting = true;
+                title = `Day of Arafah`;
+                body = `Today is the Day of Arafah.`;
+            }
+
+            if (sendFasting) {
+                const topic = `${TOPIC_FASTING}_${zone.str}`;
+                console.log(`  Sending Fasting -> ${topic}`);
+                await messaging.send({
+                    topic: topic,
+                    notification: { title, body },
+                    data: { type: 'fasting_reminder' }
+                });
+            } else {
+                console.log(`  No fasting today.`);
+            }
+
+            // --- Daily Ayah (Always Send) ---
+            const ayahTopic = `${TOPIC_DAILY_AYAH}_${zone.str}`;
+            console.log(`  Sending Ayah -> ${ayahTopic}`);
             await messaging.send({
-                topic: TOPIC_FASTING,
-                notification: { title, body },
-                data: { type: 'fasting_reminder' }
+                topic: ayahTopic,
+                notification: {
+                    title: "Daily Ayah",
+                    body: "Read your Ayah of the Day"
+                },
+                data: { type: 'daily_ayah', target: 'index' }
             });
-            console.log('Fasting notification sent.');
-        } else {
-            console.log('No fasting notification for tomorrow.');
         }
-
-        /// --- DAILY AYAH LOGIC --- ///
-        // Simple deterministic selection based on day of year
-        // We replicate the logic from ayahOfTheDay.ts (simplified)
-        // Since we don't import TS files here, we rely on a fixed list or simplified logic.
-        // For robustness in this script, we'll fetch a daily verse from an API or use a simple modulo of the day number.
-
-        // NOTE: Ideally, we should sync this list with client. For now, we will send a generic "Read your Daily Ayah" 
-        // OR we can embed the same list here. Embedding the list ensures exact match.
-        // For brevity, we will send a prompt for now, and the app will open to the correct verse automatically.
-        // The app calculates the verse based on DATE locally in `handleNotificationInteraction`.
-
-        const ayahTitle = "Daily Ayah";
-        const ayahBody = "Tap to read your Ayah of the Day.";
-
-        console.log(`Sending Daily Ayah Notification`);
-        await messaging.send({
-            topic: TOPIC_DAILY_AYAH,
-            notification: { title: ayahTitle, body: ayahBody },
-            data: { type: 'daily_ayah', target: 'index' }
-        });
-        console.log('Daily Ayah notification sent.');
 
         console.log('--- Done ---');
         process.exit(0);
