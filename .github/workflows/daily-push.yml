@@ -2,8 +2,8 @@ name: Daily Notifications
 
 on:
   schedule:
-    # Run at 10:00 UTC (6:00 PM Singapore/Malaysia)
-    - cron: "0 10 * * *"
+    # Run at 21:00 UTC (05:00 SGT)
+    - cron: "0 21 * * *"
   workflow_dispatch: # Allow manual run
 
 jobs:
