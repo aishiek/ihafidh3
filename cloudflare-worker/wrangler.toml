@@ -1,0 +1,12 @@
+name = "ihafdih-notify"
+main = "./worker.js"
+compatibility_date = "2025-12-03"
+
+# Cloudflare account and bindings
+account_id = "db530931df1b2457176a0c7f80216201"
+
+kv_namespaces = [
+  { binding = "PUSH_TOKENS", id = "2ac7f5d99a99460791c27fbd42421ee4" }
+]
+
+# Optional: add environment specific overrides or cron triggers here

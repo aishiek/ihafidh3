@@ -1,8 +1,8 @@
 // App-wide configuration for version gating and store links
 // Adjust these values when you release a new minimum-supported version.
 
-export const MIN_SUPPORTED_VERSION = '2.0.2'; // Local fallback minimum supported version
-export const LATEST_VERSION = '2.0.2'; // Local fallback latest version for soft prompts
+export const MIN_SUPPORTED_VERSION = '2.0.3'; // Local fallback minimum supported version
+export const LATEST_VERSION = '2.0.3'; // Local fallback latest version for soft prompts
 
 // Store metadata
 // Android package id is read from android/app/build.gradle -> applicationId

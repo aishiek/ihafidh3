@@ -108,14 +108,14 @@ export default function QuizScreen() {
         const results = await AsyncStorage.getItem('quizResults');
         if (results) {
           const parsedResults = JSON.parse(results) as QuizResult[];
-          
+
           // Calculate stats
           const totalQuizzes = parsedResults.length;
           const perfectQuizzes = parsedResults.filter(r => r.score === 100).length;
           const averageScore = totalQuizzes > 0 ? Math.round(
             parsedResults.reduce((sum, r) => sum + r.score, 0) / totalQuizzes
           ) : 0;
-          
+
           setQuizState(prevState => ({
             ...prevState,
             results: parsedResults,
@@ -137,7 +137,7 @@ export default function QuizScreen() {
   // Calculate fully memorized surahs
   const fullyMemorizedSurahs = useMemo(() => {
     const memorizedSurahs: { surahId: number; surahName: string; surahArabicName: string; versesCount: number }[] = [];
-    
+
     for (const surah of surahsData) {
       // Check if all verses in this surah are memorized
       let allMemorized = true;
@@ -148,7 +148,7 @@ export default function QuizScreen() {
           break;
         }
       }
-      
+
       if (allMemorized) {
         memorizedSurahs.push({
           surahId: surah.id,
@@ -158,20 +158,31 @@ export default function QuizScreen() {
         });
       }
     }
-    
+
     return memorizedSurahs;
   }, [memorizedVerses]);
 
   // Memoize failed surahs calculation
+  // Memoize failed surahs calculation
   const failedSurahs = useMemo(() => {
     const failed: { surahId: number; surahName: string; date: Date }[] = [];
-    const seenSurahs = new Set<number>();
+    const processedSurahIds = new Set<number>();
 
     // Go through quiz results in reverse order (newest first)
+    // Logic: 
+    // 1. If the MOST RECENT quiz for a surah is 100% correct, it is CLEARED (not added to list).
+    // 2. If the MOST RECENT quiz has < 100%, it is ADDED to list.
+    // 3. We ignore older results for the same surah once processed.
     [...quizState.results].reverse().forEach(result => {
-      // Only include results where at least one verse was marked incorrect
-      const hasIncorrectVerses = result.correctVerses < result.totalVerses;
-      if (hasIncorrectVerses && !seenSurahs.has(result.surahId)) {
+      if (processedSurahIds.has(result.surahId)) return; // Already handled this surah's latest result
+
+      const isPerfect = result.score === 100;
+
+      if (isPerfect) {
+        // Latest attempt was perfect, so it is CLEARED from practice list
+        processedSurahIds.add(result.surahId);
+      } else {
+        // Latest attempt was Failed, so it goes onto the list
         const surah = surahsData.find(s => s.id === result.surahId);
         if (surah) {
           failed.push({
@@ -179,26 +190,26 @@ export default function QuizScreen() {
             surahName: surah.name,
             date: new Date(result.date)
           });
-          seenSurahs.add(result.surahId);
+          processedSurahIds.add(result.surahId);
         }
       }
     });
 
-    return failed.slice(0, 5); // Return only last 5 failed surahs
+    return failed.slice(0, 15); // Return only last 15 currently failing surahs
   }, [quizState.results]);
 
   // Save quiz result
   const saveQuizResult = async (result: QuizResult) => {
     try {
       const newResults = [...quizState.results, result];
-      
+
       // Calculate stats
       const totalQuizzes = newResults.length;
       const perfectQuizzes = newResults.filter(r => r.score === 100).length;
       const averageScore = Math.round(
         newResults.reduce((sum, r) => sum + r.score, 0) / totalQuizzes
       );
-      
+
       setQuizState({
         results: newResults,
         stats: {
@@ -207,7 +218,7 @@ export default function QuizScreen() {
           averageScore
         }
       });
-      
+
       await AsyncStorage.setItem('quizResults', JSON.stringify(newResults));
     } catch (error) {
       console.error('Error saving quiz result:', error);
@@ -218,7 +229,7 @@ export default function QuizScreen() {
   const generateQuiz = async () => {
     if (fullyMemorizedSurahs.length === 0) {
       Alert.alert(
-        'No Quiz Available', 
+        'No Quiz Available',
         'You need to fully memorize at least one surah to take a quiz.'
       );
       return;
@@ -228,33 +239,33 @@ export default function QuizScreen() {
     try {
       // Select a random fully memorized surah
       const randomSurah = fullyMemorizedSurahs[Math.floor(Math.random() * fullyMemorizedSurahs.length)];
-      
+
       // Determine how many verses to quiz (3-25 for short surahs, 3-50 for long surahs 50+ verses)
       const minVerses = 3;
       const baseMaxVerses = randomSurah.versesCount >= 50 ? 50 : 25;
       const maxVerses = Math.min(baseMaxVerses, randomSurah.versesCount);
       const numVersesToQuiz = Math.floor(Math.random() * (maxVerses - minVerses + 1)) + minVerses;
-      
+
       // Select a random starting point for continuous verses
       const maxStartPoint = randomSurah.versesCount - numVersesToQuiz + 1;
       const startVerse = Math.floor(Math.random() * maxStartPoint) + 1;
-      
+
       // Get continuous verses starting from the random point
       const selectedVerseNumbers = Array.from(
-        { length: numVersesToQuiz }, 
+        { length: numVersesToQuiz },
         (_, i) => startVerse + i
       );
 
       // Fetch verse data
       const verses: QuizVerse[] = [];
-      
+
       for (const verseNumber of selectedVerseNumbers) {
         try {
           // Calculate which page this verse is on (assuming 10 verses per page)
           const page = Math.ceil(verseNumber / 10);
           const verseData = await quranStore.fetchVersesBySurah(randomSurah.surahId, page, 10);
           const verse = verseData.find(v => v.verseNumber === verseNumber);
-          
+
           if (verse) {
             verses.push({
               verseId: getVerseId(randomSurah.surahId, verseNumber),
@@ -464,7 +475,7 @@ export default function QuizScreen() {
             <Text style={styles.subtitle}>Test your memorization with smart recall challenges</Text>
           </View>
 
-          <ScrollView 
+          <ScrollView
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
@@ -485,7 +496,7 @@ export default function QuizScreen() {
             </View>
 
             {/* Reference Verse: Always show above Show Answer button */}
-            <View style={[styles.verseCard, { backgroundColor: '#232323', borderLeftWidth: 4, borderLeftColor: '#2196F3', marginBottom: 16 }]}> 
+            <View style={[styles.verseCard, { backgroundColor: '#232323', borderLeftWidth: 4, borderLeftColor: '#2196F3', marginBottom: 16 }]}>
               <View style={styles.verseHeader}>
                 <Text style={[styles.verseNumber, { color: primary }]}>Start from Verse {currentQuiz.verses[0].verseNumber}</Text>
               </View>
@@ -575,7 +586,7 @@ export default function QuizScreen() {
             <Text style={styles.subtitle}>Test your memorization with smart recall challenges</Text>
           </View>
 
-          <ScrollView 
+          <ScrollView
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
@@ -619,14 +630,14 @@ export default function QuizScreen() {
                       <View style={styles.streakInfo}>
                         <Text style={styles.streakSurahName}>{failedSurah.surahName}</Text>
                         <Text style={styles.streakDate}>
-                          {failedSurah.date.toLocaleDateString('en-US', { 
-                            month: 'short', 
+                          {failedSurah.date.toLocaleDateString('en-US', {
+                            month: 'short',
                             day: 'numeric',
                             year: 'numeric'
                           })}
                         </Text>
                       </View>
-                        <Pressable 
+                      <Pressable
                         style={styles.practiceButton}
                         onPress={() => {
                           // Use replace to open the target surah in Read without stacking duplicates
@@ -672,7 +683,7 @@ export default function QuizScreen() {
               <Text style={styles.sectionSubtitle}>
                 {fullyMemorizedSurahs.length} fully memorized surahs will be used for Quiz
               </Text>
-              
+
               {fullyMemorizedSurahs.length > 0 ? (
                 <Pressable style={[styles.startQuizButton, { backgroundColor: primary }]} onPress={generateQuiz}>
                   <Target size={24} color="#ffffff" />

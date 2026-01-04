@@ -93,7 +93,7 @@ export default function PageModeConfig({ visible, initialScope, initialVersesPer
                 />
               </View>
             </View>
-            <Text style={{ color: '#888', marginTop: 8, fontSize: 11 }}>{`Default from settings: ${initialVersesPerPage ?? 15} verses`}</Text>
+
 
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 20 }}>
               <Pressable onPress={onCancel} style={[styles.outlineBtn, { borderColor: '#444' }]}>

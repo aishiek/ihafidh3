@@ -337,6 +337,58 @@ export const CARD_FRIENDLY_VERSES: Array<{ surahId: number; verseNumber: number 
   { surahId: 68, verseNumber: 51 },
   { surahId: 69, verseNumber: 48 },
   { surahId: 73, verseNumber: 8 },
+
+  { surahId: 59, verseNumber: 22 },  // Names of Allah
+  { surahId: 42, verseNumber: 49 },  // To Allah belongs dominion
+  { surahId: 67, verseNumber: 14 },  // Does He not know who He created?
+  { surahId: 21, verseNumber: 30 },  // Heavens and earth were joined
+  { surahId: 36, verseNumber: 40 },  // Sun and moon cosmic order
+  { surahId: 41, verseNumber: 53 },  // Signs in horizons
+  { surahId: 8, verseNumber: 46 },   // Obey Allah and be patient
+  { surahId: 11, verseNumber: 56 },  // I put my trust in Allah
+  { surahId: 33, verseNumber: 3 },   // Trust in Allah
+  { surahId: 9, verseNumber: 51 },   // Only what Allah has decreed
+  { surahId: 2, verseNumber: 155 },  // Test with fear and hunger
+  { surahId: 2, verseNumber: 156 },  // Indeed we belong to Allah
+  { surahId: 3, verseNumber: 200 },  // Be patient and endure
+  { surahId: 90, verseNumber: 17 },  // Encourage patience and mercy
+  { surahId: 16, verseNumber: 126 }, // Endure patiently
+  { surahId: 14, verseNumber: 34 },  // Blessings countless
+  { surahId: 55, verseNumber: 78 },  // Blessed is the name of your Lord
+  { surahId: 3, verseNumber: 191 },  // Remember Allah standing
+  { surahId: 7, verseNumber: 156 },  // My mercy encompasses all
+  { surahId: 4, verseNumber: 110 },  // Whoever seeks forgiveness
+  { surahId: 25, verseNumber: 70 },  // Evil deeds replaced with good
+  { surahId: 11, verseNumber: 90 },  // Seek forgiveness
+  { surahId: 39, verseNumber: 18 },  // Listen and follow the best
+  { surahId: 35, verseNumber: 29 },  // Those who recite the Book
+  { surahId: 17, verseNumber: 82 },  // Quran is healing
+  { surahId: 10, verseNumber: 57 },  // Guidance and healing
+  { surahId: 16, verseNumber: 90 },  // Allah commands justice
+  { surahId: 42, verseNumber: 15 },  // I believe in what Allah revealed
+  { surahId: 18, verseNumber: 46 },  // Wealth and children are adornment
+  { surahId: 28, verseNumber: 60 },  // Whatever you have will end
+  { surahId: 87, verseNumber: 16 },  // You prefer worldly life
+  { surahId: 87, verseNumber: 17 },  // Hereafter is better
+  { surahId: 18, verseNumber: 110 }, // I am only a man like you
+  { surahId: 49, verseNumber: 11 },  // Do not insult one another
+  { surahId: 31, verseNumber: 19 },  // Be moderate in your pace
+  { surahId: 17, verseNumber: 53 },  // Say best words
+  { surahId: 41, verseNumber: 34 },  // Repel evil with better
+  { surahId: 2, verseNumber: 214 },  // When will Allah's help come?
+  { surahId: 8, verseNumber: 29 },   // He will grant criterion
+  { surahId: 29, verseNumber: 69 },  // Those who strive, We guide
+  { surahId: 48, verseNumber: 4 },   // Tranquility into hearts
+  { surahId: 2, verseNumber: 257 },  // Allah is Protector
+  { surahId: 3, verseNumber: 26 },   // O Allah, Owner of Sovereignty
+  { surahId: 3, verseNumber: 27 },   // You cause night to enter day
+  { surahId: 6, verseNumber: 59 },   // Keys of the unseen
+  { surahId: 27, verseNumber: 62 },  // Who responds to distressed
+  { surahId: 55, verseNumber: 26 },  // Everyone will perish
+  { surahId: 55, verseNumber: 27 },  // Face of your Lord remains
+  { surahId: 89, verseNumber: 28 },  // Return to your Lord
+  { surahId: 89, verseNumber: 29 },  // Enter among My servants
+
 ];
 
 // Deterministic daily verse selection from curated list

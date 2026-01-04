@@ -16,15 +16,14 @@ export type UpdateModalProps = {
 };
 
 export default function UpdateModal({ visible, forced = false, currentVersion, latestVersion, onClose, releaseNotes, iosAppIdOverride, androidPackageIdOverride }: UpdateModalProps) {
-  // Development bypass: Allow dismissing forced updates in __DEV__ mode
-  const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
-  const canDismiss = !forced || isDev;
+  // Billboard mode: Always allow dismissal so users can read news/updates but continue using the app
+  const canDismiss = true;
 
   return (
     <Modal transparent visible={visible} animationType="fade" statusBarTranslucent>
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
         <LinearGradient
-          colors={[ '#1f2937', '#0b1220' ]}
+          colors={['#1f2937', '#0b1220']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={{ width: '92%', borderRadius: 16, padding: 18, borderWidth: 1, borderColor: '#334155' }}
@@ -34,7 +33,7 @@ export default function UpdateModal({ visible, forced = false, currentVersion, l
               <Download size={18} color="#22c55e" />
             </View>
             <Text style={{ flex: 1, color: '#fff', fontSize: 18, fontWeight: '700' }} numberOfLines={1}>
-              Update available
+              {forced && latestVersion === currentVersion ? 'Announcement' : 'Update available'}
             </Text>
             {canDismiss && (
               <Pressable onPress={onClose} hitSlop={8} style={{ padding: 6 }}>
@@ -45,7 +44,9 @@ export default function UpdateModal({ visible, forced = false, currentVersion, l
 
           <Text style={{ color: '#cbd5e1', fontSize: 14, lineHeight: 20, marginBottom: 10 }}>
             {forced
-              ? 'A newer version is required to continue. This update includes important improvements.'
+              ? (latestVersion && latestVersion === currentVersion
+                ? 'Important Message'
+                : 'A newer version is recommended. This update includes important improvements.')
               : 'A newer version of iHafidh is available. Update now for the latest features and fixes.'}
           </Text>
 
@@ -86,11 +87,7 @@ export default function UpdateModal({ visible, forced = false, currentVersion, l
             </Pressable>
           </View>
 
-          {isDev && forced && (
-            <Text style={{ marginTop: 8, color: '#f59e0b', fontSize: 10, textAlign: 'center', fontStyle: 'italic' }}>
-              DEV MODE: Close button enabled (production: forced update)
-            </Text>
-          )}
+
           <Text style={{ marginTop: 10, color: '#64748b', fontSize: 11, textAlign: 'right' }}>
             {Platform.OS === 'ios' ? 'Opens App Store' : 'Opens Play Store'}
           </Text>

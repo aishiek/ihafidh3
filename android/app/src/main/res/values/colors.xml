@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#1a1a1a</color>
+    <color name="colorPrimaryDark">#000000</color>
+    <color name="colorAccent">#FFD700</color>
+    <color name="iconBackground">#1a1a1a</color>
+    <color name="splashscreen_background">#1a1a1a</color>
+    <!-- Notification icon tint color used by Firebase messaging -->
+    <color name="notification_icon_color">#FFFFFF</color>
+</resources>

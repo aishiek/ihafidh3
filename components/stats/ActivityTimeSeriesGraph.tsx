@@ -57,6 +57,9 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
     }
 
     const today = new Date();
+    const currentYear = today.getFullYear();
+    const startOfYear = new Date(currentYear, 0, 1);
+
     const points: DataPoint[] = [];
 
     // Helper to format date string
@@ -68,10 +71,16 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
     };
 
     if (timeRange === 'week') {
-      // Last 7 days
+      // Last 7 days, but strict cut-off at Jan 1 Current Year
+      // We start from 6 days ago (or less if close to Jan 1)
+
       for (let i = 6; i >= 0; i--) {
         const date = new Date(today);
         date.setDate(date.getDate() - i);
+
+        // STRICT FILTER: Stop if date is before Jan 1
+        if (date < startOfYear) continue;
+
         const dateStr = getDateStr(date);
 
         points.push({
@@ -83,10 +92,14 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
         });
       }
     } else if (timeRange === 'month') {
-      // Last 30 days
+      // Last 30 days, but strict cut-off at Jan 1 Current Year
       for (let i = 29; i >= 0; i--) {
         const date = new Date(today);
         date.setDate(date.getDate() - i);
+
+        // STRICT FILTER: Stop if date is before Jan 1
+        if (date < startOfYear) continue;
+
         const dateStr = getDateStr(date);
 
         points.push({
@@ -98,7 +111,24 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
         });
       }
     } else {
-      // Last 12 months
+      // Last 12 months (History allowed)
+      // Actually user said "history data should only apply for Year tab"
+      // So '1Y' tab can show history, but maybe we should stick to 'current year' months?
+      // "all other tabs should reflect for 2026 and no longer display 2025"
+      // Usually "1Y" trend means last 12 months. 
+      // User says "Year Mode" -> ok, let's keep it as Last 12 Months for trend context, 
+      // or strictly Current Year months?
+      // Since BarChart 'Yearly' shows last 3 years, let's make this '1Y' show strictly Current Year months?
+      // But standard graph '1Y' usually implies rolling.
+      // Given "just keep it in the year section", I'll make 1Y show LAST 12 MONTHS but maybe the user implicitly meant 
+      // strict 2026? 
+      // Actually, for a Trend Graph, showing just "Jan" when it's Jan 3rd is very empty.
+      // I will keep 1Y as rolling 12 months for now unless explicitly asked to truncate, 
+      // as "Year section" in Bar Chart handles the specific year buckets.
+      // WAIT, re-reading: "7D, 30D and 1Y ... just keep it in the year section"
+      // This implies 7D, 30D should be strict, but 1Y might be the "Year Mode".
+      // Let's stick to Rolling for 1Y to populate the graph, but strict for 7D/30D.
+
       for (let i = 11; i >= 0; i--) {
         const date = new Date(today);
         date.setMonth(date.getMonth() - i);
@@ -147,19 +177,28 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
     const allValues = chartData.flatMap(p => [p.memorized, p.revised]);
     // Filter out NaNs and ensure we have numbers
     const validValues = allValues.filter(v => typeof v === 'number' && !isNaN(v));
-    const max = Math.max(...validValues, 5); // Minimum 5 for better visibility
-    // Round up to nearest multiple of 5
-    return Math.ceil(max / 5) * 5;
+
+    if (validValues.length === 0) return 5;
+
+    const max = Math.max(...validValues);
+    // If max is small (e.g. < 5), use 5. If large, scale nicely.
+    // User complaint: "50 is not displayed correctly".
+    // We want a nice round number above max.
+    const ceil = Math.ceil(max / 5) * 5;
+    return Math.max(ceil, 5);
   }, [chartData]);
 
   // SVG dimensions
   const screenWidth = Dimensions.get('window').width;
-  const chartWidth = screenWidth - 80;
+  // Reduce width slightly to account for padding
+  const chartWidth = screenWidth - 60;
   const chartHeight = 200;
   const padding = { top: 20, right: 20, bottom: 30, left: 45 };
 
   // Calculate actual content width (for scrolling)
-  const contentWidth = Math.max(chartWidth, chartData.length * 40);
+  // Ensure strict minimal width 
+  const pointWidth = 50;
+  const contentWidth = Math.max(chartWidth, chartData.length * pointWidth);
   const graphWidth = contentWidth - padding.left - padding.right;
   const graphHeight = chartHeight - padding.top - padding.bottom;
 
@@ -182,6 +221,7 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
 
   // Generate Y-axis labels
   const yAxisLabels = useMemo(() => {
+    // Generate 5 ticks: 0, 25%, 50%, 75%, 100%
     const step = maxValue / 4;
     return [0, 1, 2, 3, 4].map(i => Math.round(i * step));
   }, [maxValue]);
@@ -189,6 +229,9 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
   // Create SVG path for line
   const createLinePath = (points: DataPoint[], getValue: (p: DataPoint) => number): string => {
     if (points.length === 0) return '';
+    // If single point, render a dot? Path needs at least 2 points to be a line? 
+    // Actually we render circles for points anyway, so line can be empty if 1 point.
+    if (points.length < 2) return '';
 
     let path = '';
     points.forEach((point, index) => {
@@ -210,6 +253,7 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
           path += ` M ${x} ${y}`; // Restart path if previous point was invalid
         } else {
           const cpX = (prevX + x) / 2;
+          // Use simpler straight lines if points are too close? No, quadratic is fine.
           path += ` Q ${cpX} ${prevY}, ${x} ${y}`;
         }
       }
@@ -233,10 +277,43 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.card }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={[styles.title, { color: colors.text }]}>📈 Activity Trends</Text>
+      {/* 
+        Header Stack:
+        Row 1: Title
+        Row 2: 7D/30D/1Y Tabs
+        Row 3: Verses/Pages Toggle
+      */}
+      <View style={styles.headerStack}>
+        <Text style={[styles.title, { color: colors.text }]}>📈 Activity Trends</Text>
+
+        <View style={styles.controlsRow}>
+          {/* Time Range Selector */}
+          <View style={[styles.rangeSelector, { backgroundColor: colors.background }]}>
+            {(['week', 'month', 'year'] as TimeRange[]).map((range) => (
+              <Pressable
+                key={range}
+                onPress={() => {
+                  setTimeRange(range);
+                  setSelectedPoint(null);
+                }}
+                style={[
+                  styles.rangeButton,
+                  timeRange === range && { backgroundColor: colors.primary }
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.rangeText,
+                    { color: timeRange === range ? '#1a1a1a' : colors.textSecondary }
+                  ]}
+                >
+                  {range === 'week' ? '7D' : range === 'month' ? '30D' : '1Y'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {/* Type Toggle */}
           {pageData && (
             <View style={styles.toggleContainer}>
               <Pressable
@@ -265,32 +342,6 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
               </Pressable>
             </View>
           )}
-        </View>
-
-        {/* Time Range Selector */}
-        <View style={[styles.rangeSelector, { backgroundColor: colors.background }]}>
-          {(['week', 'month', 'year'] as TimeRange[]).map((range) => (
-            <Pressable
-              key={range}
-              onPress={() => {
-                setTimeRange(range);
-                setSelectedPoint(null);
-              }}
-              style={[
-                styles.rangeButton,
-                timeRange === range && { backgroundColor: colors.primary }
-              ]}
-            >
-              <Text
-                style={[
-                  styles.rangeText,
-                  { color: timeRange === range ? '#1a1a1a' : colors.textSecondary }
-                ]}
-              >
-                {range === 'week' ? '7D' : range === 'month' ? '30D' : '1Y'}
-              </Text>
-            </Pressable>
-          ))}
         </View>
       </View>
 
@@ -428,7 +479,7 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
                 ? true
                 : timeRange === 'month'
                   ? index % 5 === 0 || index === chartData.length - 1
-                  : true;
+                  : true; // 1Y shows all months
 
               return (
                 <Pressable
@@ -437,7 +488,7 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
                   style={[
                     styles.xLabel,
                     {
-                      width: graphWidth / (chartData.length - 1),
+                      width: graphWidth / (chartData.length - 1 || 1),
                       marginLeft: index === 0 ? 0 : 0
                     }
                   ]}
@@ -481,32 +532,35 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 20,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+  headerStack: {
     marginBottom: 16,
+    gap: 12,
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 8,
+  },
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   toggleContainer: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 8,
     padding: 2,
-    marginTop: 4,
     alignSelf: 'flex-start',
   },
   toggleButton: {
     paddingVertical: 4,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     borderRadius: 6,
   },
   toggleText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
   rangeSelector: {
@@ -514,14 +568,19 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 4,
     gap: 4,
+    flex: 1,
+    maxWidth: 200,
   },
   rangeButton: {
+    flex: 1,
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   rangeText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
   tooltip: {

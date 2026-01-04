@@ -2,7 +2,8 @@ import MonthlyHifdhCalendar from '@/components/MonthlyHifdhCalendar';
 import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
 import { RevisionGoals } from '@/types/revision';
-import { getPageProgressForDate, loadRevisionGoals, saveRevisionGoals } from '@/utils/revisionTracking';
+import { formatDate } from '@/utils/dateUtils';
+import { loadRevisionGoals, saveRevisionGoals } from '@/utils/revisionTracking';
 import { useThemeColor } from '@/utils/useThemeColor';
 import { useRouter } from 'expo-router';
 import { BookOpen, Check, CheckCircle, ChevronDown, Settings, X } from 'lucide-react-native';
@@ -14,11 +15,11 @@ const DAILY_GOALS = [3, 5, 10, 20, 'custom'];
 export default function RevisionScreen() {
   const { primary } = useThemeColor();
   const router = useRouter();
-  const { 
-    memorizedVerses, 
-    dailyRevisedVerses, 
+  const {
+    memorizedVerses,
+    dailyRevisedVerses,
     weeklyRevisedVerses,
-    revisionSchedule, 
+    revisionSchedule,
     markVerseAsRevised,
     updateDailyRevisedVerses,
     updateWeeklyRevisedVerses,
@@ -39,7 +40,7 @@ export default function RevisionScreen() {
   } | null>(null);
 
   // Get today's date for tracking
-  const today = new Date().toISOString().split('T')[0];
+  const today = formatDate(new Date());
 
   // Page-vs-verse tabs
   const [dailyGoalType, setDailyGoalType] = useState<'verses' | 'pages'>('verses');
@@ -47,10 +48,7 @@ export default function RevisionScreen() {
   const [dailyPagesGoal, setDailyPagesGoal] = useState<number>(1);
   const [weeklyPagesGoal, setWeeklyPagesGoal] = useState<number>(7);
 
-  // Today's page progress (memoized async fetch)
-  const [todayPageProgress, setTodayPageProgress] = useState<{ memorized: number; revised: number }>({ memorized: 0, revised: 0 });
-  
-  // Calculate today's progress
+  // Calculate today's progress (Verses)
   const todayRevisedCount = useMemo(() => {
     return dailyRevisedVerses.filter(rv => rv.date === today).length;
   }, [dailyRevisedVerses, today]);
@@ -59,7 +57,9 @@ export default function RevisionScreen() {
   const progressPercentage = Math.min((todayRevisedCount / selectedGoal) * 100, 100);
 
   // Page-based daily progress calculations
-  const dailyPagesDone = todayPageProgress.revised || 0;
+  // Use store data directly for reactivity instead of async local storage fetch
+  const dailyPagesDone = revisionSchedule?.completedPagesToday?.length || 0;
+
   const pagesProgressPercentage = Math.min((dailyPagesDone / Math.max(1, dailyPagesGoal)) * 100, 100);
   const isDailyPagesGoalAchieved = dailyPagesDone >= dailyPagesGoal;
 
@@ -69,7 +69,7 @@ export default function RevisionScreen() {
     for (const surah of surahsData) {
       const surahStartId = currentVerseId + 1;
       const surahEndId = currentVerseId + surah.versesCount;
-      
+
       if (verseId >= surahStartId && verseId <= surahEndId) {
         return {
           surahName: surah.englishName,
@@ -95,8 +95,18 @@ export default function RevisionScreen() {
     currentWeekStart.setHours(0, 0, 0, 0);
 
     // Filter weekly revised verses for current week
+    const parseYmd = (d?: string | null) => {
+      if (!d) return null;
+      const parts = d.split('-');
+      if (parts.length !== 3) return null;
+      const [yyyy, mm, dd] = parts.map(p => Number(p));
+      if (!dd || !mm || !yyyy) return null;
+      return new Date(yyyy, mm - 1, dd);
+    };
+
     const thisWeekRevisedVerses = weeklyRevisedVerses.filter(rv => {
-      const revisionDate = new Date(rv.date);
+      const revisionDate = parseYmd(rv.date);
+      if (!revisionDate) return false;
       return revisionDate >= currentWeekStart;
     });
 
@@ -141,10 +151,24 @@ export default function RevisionScreen() {
     const now = new Date();
     const weekStart = new Date(now);
     weekStart.setDate(now.getDate() - now.getDay());
-    weekStart.setHours(0,0,0,0);
+    weekStart.setHours(0, 0, 0, 0);
     const weekStartStr = weekStart.toISOString().split('T')[0];
 
-    const count = pageMarks.filter(pm => pm.markedDate >= weekStartStr && pm.type === 'revised').length;
+    const parseYmd = (d?: string | null) => {
+      if (!d) return null;
+      const parts = d.split('-');
+      if (parts.length !== 3) return null;
+      const [yyyy, mm, dd] = parts.map(p => Number(p));
+      if (!dd || !mm || !yyyy) return null;
+      return new Date(yyyy, mm - 1, dd);
+    };
+
+    const count = pageMarks.filter(pm => {
+      if (pm.type !== 'revised' || !pm.markedDate) return false;
+      const markDate = parseYmd(pm.markedDate);
+      if (!markDate) return false;
+      return markDate >= weekStart;
+    }).length;
     return count;
   }, [pageMarks]);
 
@@ -188,7 +212,7 @@ export default function RevisionScreen() {
     const randomIndex = Math.floor(Math.random() * memorizedVerses.length);
     const verseId = memorizedVerses[randomIndex];
     const details = findVerseDetails(verseId);
-    
+
     setCurrentRevisionVerse({
       verseId,
       surahName: details.surahName,
@@ -199,14 +223,14 @@ export default function RevisionScreen() {
   // Mark current verse as revised
   const markCurrentVerseAsRevised = () => {
     if (!currentRevisionVerse) return;
-    
+
     markVerseAsRevised(currentRevisionVerse.verseId);
     updateDailyRevisedVerses(currentRevisionVerse.verseId);
     updateWeeklyRevisedVerses(currentRevisionVerse.verseId);
     setCurrentRevisionVerse(null);
-    
+
     Alert.alert(
-      'Revision Completed!', 
+      'Revision Completed!',
       `You have revised ${todayRevisedCount + 1} verses today.`,
       [{ text: 'Continue', style: 'default' }]
     );
@@ -245,7 +269,7 @@ export default function RevisionScreen() {
   // Handle surah selection
   const handleSurahToggle = (surahId: number) => {
     setSelectedSurahs(prev => {
-      const newSelection = prev.includes(surahId) 
+      const newSelection = prev.includes(surahId)
         ? prev.filter(id => id !== surahId)
         : [...prev, surahId];
       // Only update store if value actually changed
@@ -288,29 +312,16 @@ export default function RevisionScreen() {
     return () => { mounted = false; };
   }, []);
 
-  // Update today's page progress when today changes
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const p = await getPageProgressForDate(today);
-        if (!mounted) return;
-        setTodayPageProgress(p);
-      } catch (e) {
-        // ignore
-      }
-    })();
-    return () => { mounted = false; };
-  }, [today]);
-  
+
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Tarteel & Tartheeb</Text>
         <Text style={styles.subtitle}>Review your memorized verses daily</Text>
       </View>
-      
-      <ScrollView 
+
+      <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -404,20 +415,20 @@ export default function RevisionScreen() {
               <View style={styles.goalOptionsContainer}>
                 {[1, 2, 3, 5].map((n) => (
                   <Pressable
-                      key={`daily-pages-${n}`}
-                      style={[styles.goalOption, dailyPagesGoal === n && [styles.goalOptionSelected, { backgroundColor: primary, borderColor: primary }]]}
-                      onPress={() => handleDailyPageGoalChange(n)}
-                    >
-                      <Text style={[styles.goalOptionText, dailyPagesGoal === n && styles.goalOptionTextSelected]}>{n} page{n > 1 ? 's' : ''}</Text>
-                    </Pressable>
-                  ))}
-                  <Pressable style={styles.goalOption}><Text style={styles.goalOptionText}>Custom</Text></Pressable>
-                </View>
-              </>
-            )}
-            
+                    key={`daily-pages-${n}`}
+                    style={[styles.goalOption, dailyPagesGoal === n && [styles.goalOptionSelected, { backgroundColor: primary, borderColor: primary }]]}
+                    onPress={() => handleDailyPageGoalChange(n)}
+                  >
+                    <Text style={[styles.goalOptionText, dailyPagesGoal === n && styles.goalOptionTextSelected]}>{n} page{n > 1 ? 's' : ''}</Text>
+                  </Pressable>
+                ))}
+                <Pressable style={styles.goalOption}><Text style={styles.goalOptionText}>Custom</Text></Pressable>
+              </View>
+            </>
+          )}
+
         </View>
-        
+
         {/* Weekly Goal Selection */}
         {/* Weekly Goal Selection */}
         <View style={styles.goalSelectionCard}>
@@ -446,9 +457,9 @@ export default function RevisionScreen() {
           ) : (
             <Text style={styles.goalDescription}>Choose how many pages to revise this week</Text>
           )}
-          
+
           {weeklyGoalType === 'verses' && (
-            <Pressable 
+            <Pressable
               style={[styles.surahSelector, { backgroundColor: primary }]}
               onPress={() => setShowSurahModal(true)}
             >
@@ -459,7 +470,7 @@ export default function RevisionScreen() {
             </Pressable>
           )}
 
-            {weeklyGoalType === 'verses' && selectedSurahs.length > 0 && (
+          {weeklyGoalType === 'verses' && selectedSurahs.length > 0 && (
             <View style={styles.selectedSurahsContainer}>
               <Text style={styles.selectedSurahsTitle}>Selected Surahs:</Text>
               <View style={styles.selectedSurahsList}>
@@ -494,8 +505,8 @@ export default function RevisionScreen() {
 
         </View>
 
-  {/* Hifdh Planner - Monthly Calendar */}
-  <MonthlyHifdhCalendar />
+        {/* Hifdh Planner - Monthly Calendar */}
+        <MonthlyHifdhCalendar />
 
         {/* Daily Progress */}
         <View style={styles.progressCard}>
@@ -517,7 +528,7 @@ export default function RevisionScreen() {
               </Text>
             </View>
           </View>
-          
+
           <Text style={styles.progressText}>
             {dailyGoalType === 'verses' ? (
               `${todayRevisedCount} / ${selectedGoal} verses revised today`
@@ -525,12 +536,12 @@ export default function RevisionScreen() {
               `${dailyPagesDone} / ${dailyPagesGoal} pages revised today`
             )}
           </Text>
-          
+
           <View style={styles.progressBarContainer}>
             <View style={[styles.progressBar, { backgroundColor: '#333333' }]}>
               <View style={[
-                styles.progressFill, 
-                { 
+                styles.progressFill,
+                {
                   width: `${dailyGoalType === 'verses' ? progressPercentage : pagesProgressPercentage}%`,
                   backgroundColor: (dailyGoalType === 'verses' ? isGoalAchieved : isDailyPagesGoalAchieved) ? '#4CAF50' : primary
                 }
@@ -545,11 +556,11 @@ export default function RevisionScreen() {
           <View style={styles.progressCard}>
             <View style={styles.progressHeader}>
               <View style={styles.progressIconContainer}>
-                  {(weeklyGoalType === 'verses' ? weeklyProgress.isGoalAchieved : isWeeklyPagesGoalAchieved) ? (
-                    <CheckCircle size={24} color="#4CAF50" />
-                  ) : (
-                    <X size={24} color="#F44336" />
-                  )}
+                {(weeklyGoalType === 'verses' ? weeklyProgress.isGoalAchieved : isWeeklyPagesGoalAchieved) ? (
+                  <CheckCircle size={24} color="#4CAF50" />
+                ) : (
+                  <X size={24} color="#F44336" />
+                )}
               </View>
               <View style={styles.progressInfo}>
                 <Text style={styles.progressTitle}>Weekly Progress</Text>
@@ -561,7 +572,7 @@ export default function RevisionScreen() {
                 </Text>
               </View>
             </View>
-            
+
             <Text style={styles.progressText}>
               {weeklyGoalType === 'verses' ? (
                 `${weeklyProgress.completedSurahs} out of ${weeklyProgress.totalSurahs} selected surahs revised`
@@ -569,14 +580,14 @@ export default function RevisionScreen() {
                 `${weeklyPagesDone} / ${weeklyPagesGoal} pages revised this week`
               )}
             </Text>
-            
+
             <View style={styles.progressBarContainer}>
               <View style={[styles.progressBar, { backgroundColor: '#333333' }]}>
                 <View style={[
-                  styles.progressFill, 
-                  { 
+                  styles.progressFill,
+                  {
                     width: `${weeklyGoalType === 'verses' ? weeklyProgress.percentage : weeklyPagesPercentage}%`,
-                        backgroundColor: weeklyGoalType === 'verses' ? (weeklyProgress.isGoalAchieved ? '#4CAF50' : '#FF9800') : (isWeeklyPagesGoalAchieved ? '#4CAF50' : '#FF9800')
+                    backgroundColor: weeklyGoalType === 'verses' ? (weeklyProgress.isGoalAchieved ? '#4CAF50' : '#FF9800') : (isWeeklyPagesGoalAchieved ? '#4CAF50' : '#FF9800')
                   }
                 ]} />
               </View>
@@ -604,16 +615,16 @@ export default function RevisionScreen() {
               </Text>
             </View>
             <View style={styles.revisionActions}>
-              <Pressable 
+              <Pressable
                 style={[styles.revisionButton, styles.cancelButton]}
                 onPress={() => setCurrentRevisionVerse(null)}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </Pressable>
-          <Pressable 
+              <Pressable
                 style={[styles.revisionButton, styles.completeButton]}
                 onPress={markCurrentVerseAsRevised}
-          >
+              >
                 <Text style={styles.completeButtonText}>Mark as Revised</Text>
               </Pressable>
             </View>
@@ -646,14 +657,14 @@ export default function RevisionScreen() {
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Select Surahs for Weekly Revision</Text>
-            <Pressable 
+            <Pressable
               onPress={() => setShowSurahModal(false)}
               style={styles.modalCloseButton}
             >
               <X size={24} color="#ffffff" />
             </Pressable>
           </View>
-          
+
           <ScrollView style={styles.modalContent}>
             {surahsData.map((surah) => (
               <TouchableOpacity

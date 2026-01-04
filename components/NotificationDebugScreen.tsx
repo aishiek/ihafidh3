@@ -1,23 +1,26 @@
 import {
-    AyahNotificationService,
-    cancelAllNotifications,
-    FastingNotificationService,
-    getScheduledNotifications,
-    RevisionNotificationService,
-    sendTestNotification
+  AyahNotificationService,
+  cancelAllNotifications,
+  FastingNotificationService,
+  RevisionNotificationService,
+  sendTestNotification
 } from '@/services/NotificationService';
-import * as Notifications from 'expo-notifications';
+import notifee, { TriggerNotification } from '@notifee/react-native';
 import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function NotificationDebugScreen() {
-  const [scheduled, setScheduled] = useState<Notifications.NotificationRequest[]>([]);
+  const [scheduled, setScheduled] = useState<TriggerNotification[]>([]);
   const [loading, setLoading] = useState(false);
 
   const loadScheduled = async () => {
     setLoading(true);
-    const notifications = await getScheduledNotifications();
-    setScheduled(notifications);
+    try {
+      const notifications = await notifee.getTriggerNotifications();
+      setScheduled(notifications);
+    } catch (e) {
+      console.error('Failed to load notifications', e);
+    }
     setLoading(false);
   };
 
@@ -52,7 +55,7 @@ export default function NotificationDebugScreen() {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const dateStr = tomorrow.toISOString().split('T')[0];
-    
+
     await FastingNotificationService.scheduleReminder({
       fastingType: 'TEST',
       fastingName: 'Test Fasting',
@@ -71,7 +74,7 @@ export default function NotificationDebugScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Test Actions</Text>
-        
+
         <TouchableOpacity style={styles.button} onPress={handleSendTest}>
           <Text style={styles.buttonText}>🧪 Send Test Notification</Text>
         </TouchableOpacity>
@@ -88,15 +91,15 @@ export default function NotificationDebugScreen() {
           <Text style={styles.buttonText}>🌙 Schedule Test Fasting</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={[styles.button, styles.dangerButton]} 
+        <TouchableOpacity
+          style={[styles.button, styles.dangerButton]}
           onPress={handleCancelAll}
         >
           <Text style={styles.buttonText}>❌ Cancel All Notifications</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={[styles.button, styles.refreshButton]} 
+        <TouchableOpacity
+          style={[styles.button, styles.refreshButton]}
           onPress={loadScheduled}
         >
           <Text style={styles.buttonText}>🔄 Refresh List</Text>
@@ -115,13 +118,13 @@ export default function NotificationDebugScreen() {
           scheduled.map((notification, index) => (
             <View key={index} style={styles.notificationCard}>
               <Text style={styles.notificationId}>
-                ID: {notification.identifier}
+                ID: {notification.notification.id}
               </Text>
               <Text style={styles.notificationTitle}>
-                {notification.content.title}
+                {notification.notification.title}
               </Text>
               <Text style={styles.notificationBody}>
-                {notification.content.body}
+                {notification.notification.body}
               </Text>
               <Text style={styles.notificationTrigger}>
                 Trigger: {JSON.stringify(notification.trigger, null, 2)}

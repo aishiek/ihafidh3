@@ -101,39 +101,43 @@ export default function NotificationSettingsCard() {
                   const verse = await fetchSingleVerse(cardVerse.surahId, cardVerse.verseNumber, translationLanguage || 'en.asad');
 
                   if (verse && surah) {
-                    const Notifications = await import('expo-notifications');
+                    const notifee = await import('@notifee/react-native').then(m => m.default);
                     // Clean translation from HTML tags
                     const cleanTranslation = (verse.translation || '').replace(/<[^>]+>/g, '');
 
-                    await Notifications.scheduleNotificationAsync({
-                      content: {
-                        title: `📖 ${surah.name} • ${cardVerse.verseNumber}`,
-                        body: cleanTranslation,
-                        data: {
-                          type: 'daily_ayah',
-                          target: 'index',
-                          highlightAyah: true,
-                          surahId: cardVerse.surahId,
-                          verseNumber: cardVerse.verseNumber
-                        },
-                        sound: true,
+                    await notifee.displayNotification({
+                      title: `📖 ${surah.name} • ${cardVerse.verseNumber}`,
+                      body: cleanTranslation,
+                      data: {
+                        type: 'daily_ayah',
+                        target: 'index',
+                        highlightAyah: 1,
+                        surahId: cardVerse.surahId,
+                        verseNumber: cardVerse.verseNumber
                       },
-                      trigger: null, // Immediate
+                      android: {
+                        channelId: 'ayah',
+                        pressAction: {
+                          id: 'default',
+                        },
+                      },
                     });
                   }
                 } catch (e) {
                   console.warn('[NotificationSettings] Daily Ayah notification failed:', e);
                   // Fallback to simple notification
                   try {
-                    const Notifications = await import('expo-notifications');
-                    await Notifications.scheduleNotificationAsync({
-                      content: {
-                        title: '📖 Daily Ayah Enabled',
-                        body: "You'll receive a daily verse from the Quran. May Allah bless your journey! 🤲",
-                        data: { type: 'daily_ayah' },
-                        sound: true,
+                    const notifee = await import('@notifee/react-native').then(m => m.default);
+                    await notifee.displayNotification({
+                      title: '📖 Daily Ayah Enabled',
+                      body: "You'll receive a daily verse from the Quran. May Allah bless your journey! 🤲",
+                      data: { type: 'daily_ayah' },
+                      android: {
+                        channelId: 'ayah',
+                        pressAction: {
+                          id: 'default',
+                        },
                       },
-                      trigger: null,
                     });
                   } catch { }
                 }

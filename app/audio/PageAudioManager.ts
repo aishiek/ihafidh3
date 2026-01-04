@@ -69,7 +69,7 @@ export class PageAudioManager {
   private errorListeners = new Set<(err: Error) => void>();
   private downloadProgressListeners = new Set<(progress: number) => void>();
 
-  constructor() {}
+  constructor() { }
 
   private makeCacheId(reciterId: string, verse: VerseRef) {
     // Use a deterministic id for caching - prefer numeric verse id when available
@@ -128,6 +128,8 @@ export class PageAudioManager {
 
     const total = verses.length;
     let completed = 0;
+    let cacheHits = 0;
+    let downloads = 0;
 
     try {
       this.downloadProgressListeners.forEach((l) => l(0));
@@ -145,7 +147,16 @@ export class PageAudioManager {
           try {
             const fi = await FileSystem.getInfoAsync(localPath);
             exists = !!fi.exists;
-          } catch (e) { exists = false; }
+            if (exists) {
+              console.log(`[PageAudioManager] ✓ Cache HIT (DB): ${id} -> ${localPath}`);
+              cacheHits++;
+            } else {
+              console.log(`[PageAudioManager] ⚠ DB has path but file missing: ${id} -> ${localPath}`);
+            }
+          } catch (e) {
+            console.log(`[PageAudioManager] ⚠ DB path check failed: ${id}`, e);
+            exists = false;
+          }
         }
 
         if (!exists) {
@@ -153,13 +164,20 @@ export class PageAudioManager {
           localPath = this.makeLocalPath(reciterId, verse);
           try {
             const dir = localPath.substring(0, localPath.lastIndexOf('/'));
-            await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => {});
+            await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => { });
             const info = await FileSystem.getInfoAsync(localPath);
-            if (info.exists) exists = true;
+            if (info.exists) {
+              exists = true;
+              console.log(`[PageAudioManager] ✓ Cache HIT (FileSystem): ${id} -> ${localPath}`);
+              cacheHits++;
+            }
           } catch (_) { exists = false; }
         }
 
         if (!exists) {
+          console.log(`[PageAudioManager] ⬇ Cache MISS - Downloading: ${id}`);
+          downloads++;
+
           try {
             // Download to localPath
             const dst = this.makeLocalPath(reciterId, verse);
@@ -189,7 +207,15 @@ export class PageAudioManager {
 
             const fileInfo = await FileSystem.getInfoAsync(res.uri);
             const size = fileInfo.exists && 'size' in fileInfo ? fileInfo.size : undefined;
-            await cacheAudioFile(id, 'verse', res.uri, remoteUrl, size || 0).catch(() => {});
+
+            // Register in database cache
+            try {
+              await cacheAudioFile(id, 'verse', res.uri, remoteUrl, size || 0);
+              console.log(`[PageAudioManager] ✓ Cached to DB: ${id} (${size} bytes)`);
+            } catch (cacheErr) {
+              console.warn(`[PageAudioManager] ⚠ Failed to register cache in DB: ${id}`, cacheErr);
+            }
+
             localPath = res.uri;
             exists = true;
           } catch (err: any) {
@@ -202,6 +228,7 @@ export class PageAudioManager {
             if (msg.includes('deprecated')) {
               console.warn('[PageAudioManager] file download skipped due to deprecated FileSystem API:', msg);
             } else {
+              console.error('[PageAudioManager] ❌ Download failed:', id, err);
               this.errorListeners.forEach((l) => l(err instanceof Error ? err : new Error(String(err))));
             }
             completed++;
@@ -220,9 +247,11 @@ export class PageAudioManager {
       }
 
       // final
+      console.log(`[PageAudioManager] 📊 Download complete: ${cacheHits} cache hits, ${downloads} downloads, ${total} total`);
       this.downloadProgressListeners.forEach((l) => l(100));
       return this.audioFiles;
     } catch (error) {
+      console.error('[PageAudioManager] ❌ downloadPageAudio failed:', error);
       this.errorListeners.forEach((l) => l(error as Error));
       throw error;
     }
@@ -321,7 +350,7 @@ export class PageAudioManager {
     // lifecycle which has its own repeat/loop logic.
     // Manager-level control: create an AbortController to cancel waiting for finish
     if (this.playbackAbortController) {
-      try { this.playbackAbortController.abort(); } catch (_) {}
+      try { this.playbackAbortController.abort(); } catch (_) { }
       this.playbackAbortController = null;
     }
 
@@ -329,8 +358,8 @@ export class PageAudioManager {
     const { signal } = this.playbackAbortController;
 
     // Ensure global audio is initialized and shared players are stopped
-    await stopAudio().catch(() => {});
-    await initializeAudio().catch(() => {});
+    await stopAudio().catch(() => { });
+    await initializeAudio().catch(() => { });
 
     // Allocate a local sound and set it as currentSound for manager control
     const sound = new Audio.Sound();
@@ -370,7 +399,7 @@ export class PageAudioManager {
               await sound.stopAsync();
               await sound.unloadAsync();
             }
-          } catch (_) {}
+          } catch (_) { }
           // Resolve (not reject) — stop() / abort should be considered a normal exit
           // so that the sequential player stops without raising an error.
           return resolve();
@@ -380,7 +409,7 @@ export class PageAudioManager {
       await sound.playAsync();
       await waitForFinish;
 
-      try { await sound.unloadAsync(); } catch (_) {}
+      try { await sound.unloadAsync(); } catch (_) { }
       console.log('[PageAudioManager] ✅ Audio finished');
 
     } catch (error: any) {
@@ -388,14 +417,14 @@ export class PageAudioManager {
       const msg = typeof error?.message === 'string' ? error.message : String(error);
       if (msg.includes('Playback aborted') || msg.toLowerCase().includes('aborted') || msg.includes('AbortError')) {
         console.info('[PageAudioManager] ⚪ playAudioFile aborted, treating as normal stop:', msg);
-        try { await sound.unloadAsync(); } catch (_) {}
+        try { await sound.unloadAsync(); } catch (_) { }
         if (this.currentSound === sound) this.currentSound = null;
         // Resolve quietly — caller will observe isPlaying/state and act accordingly.
         return;
       }
 
       console.error('[PageAudioManager] ❌ playAudioFile error:', error);
-      try { await sound.unloadAsync(); } catch (_) {}
+      try { await sound.unloadAsync(); } catch (_) { }
       // Ensure currentSound is cleared for safety
       if (this.currentSound === sound) this.currentSound = null;
       throw error;
@@ -403,7 +432,7 @@ export class PageAudioManager {
       if (this.currentSound === sound) this.currentSound = null;
       // release abort controller after completion
       if (this.playbackAbortController) {
-        try { this.playbackAbortController = null; } catch (_) {}
+        try { this.playbackAbortController = null; } catch (_) { }
       }
     }
   }
@@ -418,10 +447,10 @@ export class PageAudioManager {
       } catch (e) {
         // Fallback to shared stop if local pause fails
         console.warn('[PageAudioManager] pause failed locally, falling back to shared stop', e);
-        await stopAudio().catch(() => {});
+        await stopAudio().catch(() => { });
       }
     } else {
-      await stopAudio().catch(() => {});
+      await stopAudio().catch(() => { });
     }
     this.updateState();
   }
@@ -450,7 +479,7 @@ export class PageAudioManager {
         const trace = new Error('stop() called — aborting playback').stack;
         console.debug('[PageAudioManager] stop(): aborting playback \n', trace);
         this.playbackAbortController.abort();
-      } catch (_) {}
+      } catch (_) { }
       this.playbackAbortController = null;
     }
 
@@ -462,13 +491,13 @@ export class PageAudioManager {
           await this.currentSound.unloadAsync();
         }
       } catch (e) {
-        try { await this.currentSound.unloadAsync(); } catch (_) {}
+        try { await this.currentSound.unloadAsync(); } catch (_) { }
       }
       this.currentSound = null;
     }
 
     // Also stop any shared global player
-    await stopAudio().catch(() => {});
+    await stopAudio().catch(() => { });
 
     this.reset();
   }

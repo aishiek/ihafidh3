@@ -15,18 +15,31 @@ export class FastingApiService {
   static async getHijriCalendar(
     year: number,
     month: number,
-    location?: FastingLocation
+    location?: FastingLocation,
+    adjustment: number = 0
   ): Promise<{ gregorian: GregorianDate; hijri: HijriDate }[]> {
-    const cacheKey = `hijri-${year}-${month}-${location?.country || 'default'}`;
+    const cacheKey = `hijri-${year}-${month}-${location?.country || 'default'}-adj${adjustment}`;
     const cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) return cached.data;
 
     try {
       let url = `${this.BASE_URL}/gToHCalendar/${month}/${year}`;
+      const params: string[] = [];
+
       if (location?.latitude && location?.longitude) {
-        url += `?latitude=${location.latitude}&longitude=${location.longitude}`;
+        params.push(`latitude=${location.latitude}`);
+        params.push(`longitude=${location.longitude}`);
       } else if (location?.city && location?.country) {
-        url += `?city=${encodeURIComponent(location.city)}&country=${encodeURIComponent(location.country)}`;
+        params.push(`city=${encodeURIComponent(location.city)}`);
+        params.push(`country=${encodeURIComponent(location.country)}`);
+      }
+
+      if (adjustment !== 0) {
+        params.push(`adjustment=${adjustment}`);
+      }
+
+      if (params.length > 0) {
+        url += `?${params.join('&')}`;
       }
 
       const response = await fetch(url);
@@ -43,18 +56,30 @@ export class FastingApiService {
   }
 
   /** Get current Hijri date */
-  static async getCurrentHijriDate(location?: FastingLocation): Promise<{ gregorian: GregorianDate; hijri: HijriDate }> {
+  static async getCurrentHijriDate(location?: FastingLocation, adjustment: number = 0): Promise<{ gregorian: GregorianDate; hijri: HijriDate }> {
     const now = new Date();
-    const cacheKey = `current-hijri-${now.toDateString()}-${location?.country || 'default'}`;
+    const cacheKey = `current-hijri-${now.toDateString()}-${location?.country || 'default'}-adj${adjustment}`;
     const cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) return cached.data;
 
     try {
       let url = `${this.BASE_URL}/gToH/${now.getDate()}-${now.getMonth() + 1}-${now.getFullYear()}`;
+      const params: string[] = [];
+
       if (location?.latitude && location?.longitude) {
-        url += `?latitude=${location.latitude}&longitude=${location.longitude}`;
+        params.push(`latitude=${location.latitude}`);
+        params.push(`longitude=${location.longitude}`);
       } else if (location?.city && location?.country) {
-        url += `?city=${encodeURIComponent(location.city)}&country=${encodeURIComponent(location.country)}`;
+        params.push(`city=${encodeURIComponent(location.city)}`);
+        params.push(`country=${encodeURIComponent(location.country)}`);
+      }
+
+      if (adjustment !== 0) {
+        params.push(`adjustment=${adjustment}`);
+      }
+
+      if (params.length > 0) {
+        url += `?${params.join('&')}`;
       }
 
       const response = await fetch(url);

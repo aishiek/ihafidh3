@@ -107,35 +107,16 @@ export default function SettingsScreen() {
     const emailBody = 'Hello iHafidh Team,\n\nI would like to share my feedback:\n\n';
     const mailtoUrl = `mailto:iHafidhapp@gmail.com?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
 
-    Linking.canOpenURL(mailtoUrl)
-      .then((supported) => {
-        if (supported) {
-          return Linking.openURL(mailtoUrl);
-        } else {
-          // Fallback: show the email address
-          Alert.alert(
-            'Send Feedback',
-            'Please send your feedback and suggestions to:\n\niHafidhapp@gmail.com',
-            [
-              {
-                text: 'Copy Email', onPress: () => {
-                  // Note: Clipboard would need to be imported for this to work
-                  Alert.alert('Email Address', 'iHafidhapp@gmail.com');
-                }
-              },
-              { text: 'OK' }
-            ]
-          );
-        }
-      })
-      .catch((err) => {
-        console.error('Error opening email:', err);
-        Alert.alert(
-          'Send Feedback',
-          'Please send your feedback and suggestions to:\n\niHafidhapp@gmail.com',
-          [{ text: 'OK' }]
-        );
-      });
+    // Try to open the native email client using mailto: which works on iOS & Android
+    Linking.openURL(mailtoUrl).catch((err) => {
+      console.error('Error opening email client:', err);
+      // Fallback: inform the user with the address (no automatic copying)
+      Alert.alert(
+        'Send Feedback',
+        'Unable to open your email app. Please send your feedback to:\n\n\niHafidhapp@gmail.com',
+        [{ text: 'OK' }]
+      );
+    });
   };
 
   const handleLocationChange = async (location: FastingLocation) => {
@@ -909,7 +890,7 @@ export default function SettingsScreen() {
 
         {/* App version label */}
         <View style={styles.versionRow}>
-          <Text style={styles.versionText}>Ver-2.0.2</Text>
+          <Text style={styles.versionText}>Ver-2.0.3</Text>
         </View>
       </ScrollView>
 

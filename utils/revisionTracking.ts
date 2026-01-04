@@ -1,5 +1,6 @@
 import { useProgressStore } from '@/store/progressStore';
 import { PageProgress, RevisionGoals } from '@/types/revision';
+import { formatDate } from '@/utils/dateUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const GOALS_KEY = '@revision_goals_v2';
@@ -46,11 +47,11 @@ export async function trackPageProgress(
 ): Promise<void> {
   try {
     // Compose a pageId which is unique per surah + start/end
-    const pageId = `${pageInfo.surahNumber}_${pageInfo.startAyah}_${pageInfo.endAyah}`;
+    const pageId = `${pageInfo.surahNumber}_${pageInfo.startAyah}_${pageInfo.endAyah} `;
 
     const progress: PageProgress = {
       id: `${pageId}_${Date.now()}`,
-      date: new Date().toISOString().split('T')[0],
+      date: formatDate(new Date()),
       action,
       pageId,
       surahNumber: pageInfo.surahNumber,

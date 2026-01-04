@@ -1,11 +1,14 @@
 import { initDatabase, logBasicStats, runIntegrityCheck } from '@/assets/database/QuranDatabase';
+import AnnouncementModal, { AnnouncementConfig } from '@/components/AnnouncementModal';
 import CelebrationModal from '@/components/CelebrationModal';
 import { FastingCalendarProvider } from '@/components/fasting/context/FastingCalendarContext';
 import UpdateModal from '@/components/UpdateModal';
 import { LATEST_VERSION, MIN_SUPPORTED_VERSION } from '@/constants/appConfig';
 import { CelebrationProvider, useCelebration } from '@/contexts/CelebrationContext';
+import { AnnouncementService } from '@/services/AnnouncementService';
 import { FastingNotificationService } from '@/services/fasting/notificationService';
 import { AyahNotificationService, EnhancedNotificationService, RevisionReminderService, initializeNotifications, requestNotificationPermissions } from '@/services/NotificationService';
+import { PushNotificationService } from '@/services/PushNotificationService';
 import type { Badge } from '@/store/badgeStore';
 import { useProgressStore } from '@/store/progressStore';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -15,8 +18,8 @@ import { initGlobalErrorHandlers } from '@/utils/globalErrorHandlers';
 import { fetchRemoteVersionConfig, getEffectiveVersionConfig, type RemoteVersionConfig } from '@/utils/remoteVersion';
 import { runTurboModuleProbe } from '@/utils/turboModuleProbe';
 import { getCurrentVersion, isVersionLower } from '@/utils/versionUtils';
+import notifee, { EventType } from '@notifee/react-native';
 import * as Font from 'expo-font';
-import * as Notifications from 'expo-notifications';
 import { Stack, router } from 'expo-router';
 import React, { Component, ReactNode } from 'react';
 import { ActivityIndicator, AppState, AppStateStatus, Platform, Text, View } from 'react-native';
@@ -124,7 +127,9 @@ function RootLayoutContent() {
   const [forceContinue, setForceContinue] = React.useState(false);
   const [showUpdatePrompt, setShowUpdatePrompt] = React.useState(false);
   const [forcedUpdate, setForcedUpdate] = React.useState(false);
-  const [currentVersion, setCurrentVersion] = React.useState<string>('0.0.0');
+  const [showAnnouncement, setShowAnnouncement] = React.useState(false);
+  const [announcement, setAnnouncement] = React.useState<AnnouncementConfig | null>(null);
+  const [currentVersion, setCurrentVersion] = React.useState<string>('2.0.3');
   const [latestVersion, setLatestVersion] = React.useState<string | null>(null);
   const [releaseNotes, setReleaseNotes] = React.useState<string[] | undefined>(undefined);
   const [iosAppIdOverride, setIosAppIdOverride] = React.useState<string | null>(null);
@@ -164,6 +169,29 @@ function RootLayoutContent() {
   // Initialize audio session early to honor iOS background audio settings
   React.useEffect(() => {
     initializeAudio().catch(e => console.log('[audio] init failed', e));
+    let mounted = true;
+
+    const checkForAnnouncements = async () => {
+      try {
+        // Small startup delay to avoid interrupting initial animation/flow
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        if (!mounted) return;
+
+        const ann = await AnnouncementService.getAnnouncementToDisplay();
+        if (ann && mounted) {
+          setAnnouncement(ann);
+          setShowAnnouncement(true);
+          console.log('[App] Showing announcement:', ann.id);
+        }
+      } catch (e) {
+        console.error('[App] Announcement check failed:', e);
+      }
+    };
+
+    checkForAnnouncements();
+
+    return () => { mounted = false; };
+
   }, []);
 
   // Initialize unified notification system ONCE at app startup
@@ -191,6 +219,17 @@ function RootLayoutContent() {
       runTurboModuleProbe().catch(e => console.log('[probe] unexpected failure', e));
     }, 500); // allow initial bridge setup
     return () => clearTimeout(t);
+  }, []);
+
+  // Initialize Firebase Cloud Messaging for push notifications
+  React.useEffect(() => {
+    // Initialize push notifications after a short delay to avoid blocking app startup
+    const timer = setTimeout(() => {
+      PushNotificationService.initialize().catch(e =>
+        console.log('[Push] Initialization failed:', e)
+      );
+    }, 1000);
+    return () => clearTimeout(timer);
   }, []);
 
   // Sync daily Ayah notification schedule with settings
@@ -347,147 +386,125 @@ function RootLayoutContent() {
     return () => { try { sub.remove(); } catch { } };
   }, []);
 
+  const lastDismissedVersion = useSettingsStore(s => s.lastDismissedVersion);
+  const setLastDismissedVersion = useSettingsStore(s => s.setLastDismissedVersion);
+
   const applyRemoteVersion = React.useCallback((remote: RemoteVersionConfig, version: string) => {
     try {
       console.log('[version] Applying remote - current:', version, 'min:', remote.min_supported, 'latest:', remote.latest, 'force:', remote.force);
 
-      setLatestVersion(remote.latest || LATEST_VERSION);
+      const latest = remote.latest || LATEST_VERSION;
+      setLatestVersion(latest);
       setReleaseNotes(remote.release_notes);
       setIosAppIdOverride(remote.ios_app_id_override ?? null);
       setAndroidPkgOverride(remote.android_package_id_override ?? null);
 
-      const mustUpdate = isVersionLower(version, remote.min_supported || MIN_SUPPORTED_VERSION) || !!remote.force;
-      const softUpdate = !mustUpdate && isVersionLower(version, remote.latest || LATEST_VERSION);
+      const isUpdate = isVersionLower(version, latest);
+      const isForce = !!remote.force;
 
-      console.log('[version] Remote check - mustUpdate:', mustUpdate, 'softUpdate:', softUpdate);
+      // Critical update: Current < Min Supported OR (Current < Latest AND Force=True)
+      // Critical updates are blocking and cannot be dismissed permanently (usually)
+      const isCritical = isVersionLower(version, remote.min_supported || MIN_SUPPORTED_VERSION) || (isUpdate && isForce);
 
-      // Only show modal if there's actually an update needed
-      if (mustUpdate || softUpdate) {
-        setForcedUpdate(mustUpdate);
+      // Announcement: Current == Latest AND Force=True (Billboard mode)
+      const isAnnouncement = !isUpdate && isForce;
+
+      console.log('[version] Check:', { isUpdate, isCritical, isAnnouncement, lastDismissed: lastDismissedVersion, latest });
+
+      if (isCritical) {
+        // Always show critical updates (blocking)
+        setForcedUpdate(true);
         setShowUpdatePrompt(true);
+      } else if (isUpdate) {
+        // Optional update: Show if not dismissed for this version
+        if (lastDismissedVersion !== latest) {
+          setForcedUpdate(false);
+          setShowUpdatePrompt(true);
+        } else {
+          setShowUpdatePrompt(false);
+        }
+      } else if (isAnnouncement) {
+        // Announcement: Show if not dismissed for this version
+        if (lastDismissedVersion !== latest) {
+          setForcedUpdate(true); // Use forced style for visibility, but it's dismissible in UpdateModal if versions match
+          setShowUpdatePrompt(true);
+        } else {
+          setShowUpdatePrompt(false);
+        }
       } else {
-        // Hide modal when versions match
+        // No update, no announcement
         setShowUpdatePrompt(false);
       }
     } catch (e) {
       console.log('[version] apply remote failed', e);
     }
+  }, [lastDismissedVersion]);
+
+  // Handle notification interactions (Deep Linking)
+  const handleNotificationInteraction = React.useCallback((data: any) => {
+    if (!data) return;
+    console.log('[NotificationInteraction] Handling:', data);
+
+    switch (data.type) {
+      case 'daily_ayah':
+      case 'daily-ayah': {
+        if (data.target === 'index' || data.highlightAyah) {
+          const surahId = data.surahId || getTodayCardVerse(new Date()).surahId;
+          const verseId = data.verseNumber || getTodayCardVerse(new Date()).verseNumber;
+          const qs = `?highlightAyah=1&surahId=${surahId}&verseId=${verseId}`;
+          try { router.replace(`/${qs}`); } catch { router.push(`/${qs}`); }
+        } else {
+          const today = getTodayCardVerse(new Date());
+          try { router.replace(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); } catch { router.push(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); }
+        }
+        break;
+      }
+      case 'daily-verse-reminder':
+        try { router.replace('/(tabs)/read'); } catch { router.push('/(tabs)/read'); }
+        break;
+      case 'weekly-surah-reminder':
+        try { router.replace('/(tabs)/stats'); } catch { router.push('/(tabs)/stats'); }
+        break;
+      case 'hifdh-overdue':
+        try { router.replace('/(tabs)/index'); } catch { router.push('/(tabs)/index'); }
+        break;
+      case 'revision-needed':
+        try { router.replace('/(tabs)/stats'); } catch { router.push('/(tabs)/stats'); }
+        break;
+      default:
+        console.log('[NotificationInteraction] Unknown type:', data.type);
+    }
   }, []);
 
-  // Deep-link when user taps on a daily ayah notification
+  // Foreground Event Listener (Interactions & Delivered)
   React.useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      try {
-        const data: any = response?.notification?.request?.content?.data || {};
-
-        // Handle all notification types
-        switch (data?.type) {
-          case 'daily_ayah':
-          case 'daily-ayah': {
-            // If notification payload requested highlighting on the homepage, send user to index
-            if (data?.target === 'index' || data?.highlightAyah) {
-              const surahId = data?.surahId || getTodayCardVerse(new Date()).surahId;
-              const verseId = data?.verseNumber || getTodayCardVerse(new Date()).verseNumber;
-              // Navigate to the app root and include query params for highlight handling.
-              const qs = `?highlightAyah=1&surahId=${surahId}&verseId=${verseId}`;
-              try { router.replace(`/${qs}`); } catch { router.push(`/${qs}`); }
-            } else {
-              const today = getTodayCardVerse(new Date());
-              try { router.replace(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); } catch { router.push(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); }
-            }
-            break;
-          }
-          case 'daily-verse-reminder':
-            try { router.replace('/(tabs)/read'); } catch { router.push('/(tabs)/read'); }
-            break;
-          case 'weekly-surah-reminder':
-            try { router.replace('/(tabs)/stats'); } catch { router.push('/(tabs)/stats'); }
-            break;
-          case 'hifdh-overdue':
-            try { router.replace('/(tabs)/index'); } catch { router.push('/(tabs)/index'); }
-            break;
-          case 'revision-needed':
-            // User tapped on revision reminder - go to stats/revision page
-            try { router.replace('/(tabs)/stats'); } catch { router.push('/(tabs)/stats'); }
-            break;
-          default:
-            console.log('[NotificationDeepLink] Unknown type:', data?.type);
-        }
-      } catch (e) {
-        console.log('[NotificationDeepLink] deep link failed', e);
+    const unsubscribe = notifee.onForegroundEvent(({ type, detail }) => {
+      if (type === EventType.PRESS) {
+        handleNotificationInteraction(detail.notification?.data);
       }
     });
-    // Also handle the case where the app was cold-started by a notification tap.
-    // Expo stores the last notification response which we can retrieve on startup.
+    return unsubscribe;
+  }, [handleNotificationInteraction]);
+
+  // Cold Start Handling
+  React.useEffect(() => {
     (async () => {
       try {
-        const last = await Notifications.getLastNotificationResponseAsync();
-        if (last) {
-          // If a notification launched the app, process it the same way as the listener
-          const data: any = last?.notification?.request?.content?.data || {};
-          // Reuse same deep link handling logic
-          switch (data?.type) {
-            case 'daily_ayah':
-            case 'daily-ayah': {
-              if (data?.target === 'index' || data?.highlightAyah) {
-                const surahId = data?.surahId || getTodayCardVerse(new Date()).surahId;
-                const verseId = data?.verseNumber || getTodayCardVerse(new Date()).verseNumber;
-                const qs = `?highlightAyah=1&surahId=${surahId}&verseId=${verseId}`;
-                try { router.replace(`/${qs}`); } catch { router.push(`/${qs}`); }
-              } else {
-                const today = getTodayCardVerse(new Date());
-                try { router.replace(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); } catch { router.push(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); }
-              }
-              break;
-            }
-            case 'daily-verse-reminder':
-              try { router.replace('/(tabs)/read'); } catch { router.push('/(tabs)/read'); }
-              break;
-            case 'weekly-surah-reminder':
-              try { router.replace('/(tabs)/stats'); } catch { router.push('/(tabs)/stats'); }
-              break;
-            case 'hifdh-overdue':
-              try { router.replace('/'); } catch { router.push('/'); }
-              break;
-            case 'revision-needed':
-              try { router.replace('/(tabs)/stats'); } catch { router.push('/(tabs)/stats'); }
-              break;
-            default:
-              break;
-          }
+        const initialNotification = await notifee.getInitialNotification();
+        if (initialNotification) {
+          console.log('[NotificationColdStart] App opened from notification:', initialNotification);
+          handleNotificationInteraction(initialNotification.notification.data);
         }
       } catch (e) {
-        console.log('[NotificationColdStart] getLastNotificationResponseAsync failed', e);
+        console.log('[NotificationColdStart] Failed:', e);
       }
     })();
+  }, [handleNotificationInteraction]);
 
-    return () => { try { sub.remove(); } catch { } };
-  }, []);
-
-  // Background notification handler - executes when notifications fire (even if app is backgrounded)
-  React.useEffect(() => {
-    const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
-      try {
-        const data: any = notification?.request?.content?.data || {};
-
-        // Handle revision check notification
-        if (data?.type === 'revision-check' && data?.action === 'check-and-notify') {
-          console.log('[RevisionReminder] Daily check triggered at 9 PM');
-
-          // Get current threshold from settings
-          const settings = useSettingsStore.getState();
-          const daysThreshold = settings.revisionReminderSettings?.daysThreshold || 3;
-
-          // Execute the actual check and send notification if needed
-          await RevisionReminderService.checkAndNotifyRevisionNeeded(daysThreshold);
-        }
-      } catch (e) {
-        console.error('[NotificationReceived] Handler failed:', e);
-      }
-    });
-
-    return () => { try { subscription.remove(); } catch { } };
-  }, []);
+  // Background Event Handler is usually set in index.js, but for simple deep linking,
+  // the OS launches the app and getInitialNotification catches it.
+  // For actions that don't open the app, we need a background handler in index.js.
+  // We'll assume standard press-to-open behavior for now.
 
   // Persistence guard and DB lifecycle management
   React.useEffect(() => {
@@ -542,14 +559,28 @@ function RootLayoutContent() {
               <Stack.Screen name="(tabs)" />
             </Stack>
             <UpdateModal
-              visible={showUpdatePrompt}
+              visible={showUpdatePrompt && !showAnnouncement}
               forced={forcedUpdate}
               currentVersion={currentVersion}
               latestVersion={latestVersion}
-              onClose={() => setShowUpdatePrompt(false)}
+              onClose={() => {
+                if (latestVersion) {
+                  setLastDismissedVersion(latestVersion);
+                }
+                setShowUpdatePrompt(false);
+              }}
               releaseNotes={releaseNotes}
               iosAppIdOverride={iosAppIdOverride}
               androidPackageIdOverride={androidPkgOverride}
+            />
+            <AnnouncementModal
+              visible={showAnnouncement}
+              announcement={announcement}
+              onClose={async () => {
+                if (announcement) await AnnouncementService.markAsSeen(announcement.id);
+                setShowAnnouncement(false);
+                setAnnouncement(null);
+              }}
             />
             <CelebrationModal
               visible={celebrationVisible}

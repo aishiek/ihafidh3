@@ -1,0 +1,20 @@
+name = "ihafdih-notify"
+main = "./worker.js"
+compatibility_date = "2025-12-03"
+
+# Bind a KV namespace named PUSH_TOKENS
+kv_namespaces = [
+  # Replace id with the value returned when you create a KV namespace (wrangler will print it)
+  { binding = "PUSH_TOKENS", id = "your_kv_namespace_id_here" }
+]
+
+# You can set environment specific variables here, e.g. production and staging
+# To use the FCM server key for the optional /notify path add a secret using:
+#   npx wrangler secret put FCM_SERVER_KEY
+#
+# NOTE: The worker currently uses the legacy FCM server key (Authorization: key=<server_key>)
+# for /notify. For a more secure production approach you should switch to FCM HTTP v1
+# using a Firebase service account + OAuth access token (we can help set that up if you prefer).
+
+# Example:
+# env = "production" # not required

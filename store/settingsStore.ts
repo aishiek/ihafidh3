@@ -74,6 +74,9 @@ export interface SettingsState extends AppSettings {
   // Daily Ayah notification controls
   ayahDailyNotificationsEnabled?: boolean;
   setAyahDailyNotificationsEnabled?: (enabled: boolean) => void;
+  // Version update tracking
+  lastDismissedVersion: string | null;
+  setLastDismissedVersion: (version: string) => void;
 }
 
 // Initialize store with values from AsyncStorage
@@ -211,6 +214,8 @@ export const useSettingsStore = create<SettingsState>()(
           const clamped = Math.max(3, Math.min(20, Math.floor(v) || 3));
           set({ defaultVersesPerPage: clamped });
         },
+        lastDismissedVersion: null,
+        setLastDismissedVersion: (version) => set({ lastDismissedVersion: version }),
       };
     },
     {
@@ -275,6 +280,8 @@ export const useSettingsStore = create<SettingsState>()(
           // Ensure persisted default verses per page exists
           // @ts-ignore - extend persisted state
           (state as any).defaultVersesPerPage = (state as any).defaultVersesPerPage || 15;
+          // @ts-ignore - extend persisted state
+          (state as any).lastDismissedVersion = (state as any).lastDismissedVersion || null;
         }
       },
     }

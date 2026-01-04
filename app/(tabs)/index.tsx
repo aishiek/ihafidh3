@@ -11,6 +11,7 @@ import { useProgressStore } from '@/store/progressStore';
 import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { calculateCurrentBadge } from '@/utils/badgeUtils';
+import { formatDate } from '@/utils/dateUtils';
 import { calculateJuzProgress, calculateOverallJuzStats } from '@/utils/juzCalculator';
 import { saveLastRead } from '@/utils/lastReadUtils';
 import { safeNavigation } from '@/utils/navigationUtils';
@@ -19,16 +20,16 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
-    Award,
-    BookOpen,
-    Calendar,
-    CheckCircle,
-    Clock,
-    Info,
-    Play,
-    RotateCcw,
-    Target,
-    XCircle
+  Award,
+  BookOpen,
+  Calendar,
+  CheckCircle,
+  Clock,
+  Info,
+  Play,
+  RotateCcw,
+  Target,
+  XCircle
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Dimensions, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -247,6 +248,11 @@ export default function HomeScreen() {
       if (!mounted) return;
 
       try {
+      if (__DEV__) {
+        console.log('=== WEEKLY SURAHS DEBUG ===');
+        console.log('weeklyRevisedVerses (raw):', weeklyRevisedVerses);
+        console.log('revisionSchedule.surahsPerWeek:', revisionSchedule?.surahsPerWeek);
+      }
         // Initialize manager first
         const mgr = initializeActiveTimeManager();
 
@@ -455,12 +461,24 @@ export default function HomeScreen() {
   const allJuzInfo = useMemo(() => { const arr = [] as any[]; for (let j = 1; j <= 30; j++) { const p = calculateJuzProgress(j, memorizedVerses); arr.push({ juz: j, ...p }); } return arr; }, [memorizedVerses]); // eslint-disable-line
 
   const stats = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = formatDate(new Date());
     const todayTimeSpent = Math.max(1, Math.round(getTimeSpentToday() / 60));
-    const startOfWeek = new Date(); startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
-    const weekStart = startOfWeek.toISOString().split('T')[0];
+
+    const startOfWeek = new Date();
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+
     const todayRevised = dailyRevisedVerses.filter(r => r.date === today).length;
-    const thisWeekRevised = weeklyRevisedVerses.filter(r => r.date >= weekStart).length;
+    const thisWeekRevised = weeklyRevisedVerses.filter(r => {
+      if (!r?.date) return false;
+      const parts = r.date.split('-');
+      if (parts.length !== 3) return false;
+      // store dates as YYYY-MM-DD (ISO-like)
+      const [yyyy, mm, dd] = parts.map(p => Number(p));
+      if (!dd || !mm || !yyyy) return false;
+      const d = new Date(yyyy, mm - 1, dd);
+      return d >= startOfWeek;
+    }).length;
     const weeklyTarget = revisionSchedule.surahsPerWeek.length || 2;
     const versesInProgress = calculateInProgressVerses();
     const surahsInProgress = calculateInProgressSurahs();
@@ -907,32 +925,32 @@ export default function HomeScreen() {
     if (years >= 1) {
       const remainingMonths = Math.floor((days % 365) / 30);
       if (remainingMonths > 0) {
-        return `${years}y ${remainingMonths}mo`;
+        return `${years}Y ${remainingMonths}M`;
       }
-      return `${years}y`;
+      return `${years}Y`;
     }
 
     // Months (30+ days)
     if (months >= 1) {
       const remainingDays = days % 30;
       if (remainingDays > 0) {
-        return `${months}mo ${remainingDays}d`;
+        return `${months}M ${remainingDays}D`;
       }
-      return `${months}mo`;
+      return `${months}M`;
     }
 
     // Weeks (7+ days)
     if (weeks >= 1) {
       const remainingDays = days % 7;
       if (remainingDays > 0) {
-        return `${weeks}w ${remainingDays}d`;
+        return `${weeks}W ${remainingDays}D`;
       }
-      return `${weeks}w`;
+      return `${weeks}W`;
     }
 
     // Days (1+ day)
     if (days >= 1) {
-      let result = `${days}d`;
+      let result = `${days}D`;
       if (hours > 0) result += ` ${hours}h`;
       if (minutes > 0) result += ` ${minutes}m`;
       return result;
@@ -963,23 +981,161 @@ export default function HomeScreen() {
   // revisionSchedule, dailyRevisedVerses, etc. are already destructured at the top of the component
   const [revisionGoalType, setRevisionGoalType] = useState<'verses' | 'pages'>('verses');
 
+  const { pageMarks } = useProgressStore();
+
   const dailyVersesTarget = revisionSchedule?.versesPerDay || 5;
   const weeklySurahsTarget = revisionSchedule?.surahsPerWeek?.length || 0;
 
   const dailyPagesTarget = revisionSchedule?.pagesPerDay || 1;
   const weeklyPagesTarget = revisionSchedule?.pagesPerWeek || 5;
 
-  const dailyVersesProgress = completedToday?.length || 0;
-  const weeklySurahsProgress = weeklyRevisedSurahsCompleted?.length || 0;
+  // Calculate Daily Verses Progress (unique verses only)
+  // progressStore uses formatDate(...) which produces DD-MM-YYYY strings
+  const todayStr = formatDate(new Date());
+  const dailyVersesProgress = useMemo(() => {
+    try {
+      const today = todayStr;
+      // Ensure we count unique verseIds revised today
+      const ids = dailyRevisedVerses
+        .filter(rv => rv?.date === today && typeof rv?.verseId === 'number')
+        .map(rv => rv.verseId);
 
-  const dailyPagesProgress = revisionSchedule?.completedPagesToday?.length || 0;
-  const weeklyPagesProgress = revisionSchedule?.completedPagesThisWeek?.length || 0;
+      return new Set(ids).size;
+    } catch (e) {
+      console.error('[dailyVersesProgress] compute failed', e);
+      return 0;
+    }
+  }, [dailyRevisedVerses, todayStr]);
 
-  const dailyVersesPercentage = Math.min(100, (dailyVersesProgress / dailyVersesTarget) * 100);
+  // Calculate Weekly Surahs Progress
+  // Require 100% of verses in target surah to be revised this week to count as completed
+  const weeklySurahsProgress = useMemo(() => {
+    const targetSurahs = revisionSchedule?.surahsPerWeek || [];
+    if (!targetSurahs || targetSurahs.length === 0) return 0;
+
+    try {
+      const now = new Date();
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - now.getDay());
+      weekStart.setHours(0, 0, 0, 0);
+
+      // parseYmd: parse YYYY-MM-DD (progress store uses ISO-style YYYY-MM-DD)
+      const parseYmd = (d?: string | null) => {
+        if (!d) return null;
+        const parts = d.split('-');
+        if (parts.length !== 3) return null;
+        const [yyyy, mm, dd] = parts.map(p => Number(p));
+        if (!dd || !mm || !yyyy) return null;
+        return new Date(yyyy, mm - 1, dd);
+      };
+
+      // Filter weeklyRevisedVerses to only include entries within the current week
+      const thisWeekRevised = weeklyRevisedVerses.filter(rv => {
+        if (!rv || !rv.date) return false;
+        const d = parseYmd(rv.date);
+        if (!d) return false;
+        const isThisWeek = d >= weekStart;
+        if (__DEV__) console.log(`rv: verseId=${rv.verseId} date=${rv.date} => ${d} isThisWeek=${isThisWeek}`);
+        return isThisWeek;
+      });
+
+      if (__DEV__) console.log('Verses revised this week (count):', thisWeekRevised.length, 'list:', thisWeekRevised.map(r => `${r.verseId}@${r.date}`));
+
+      // Build a Set of verseIds revised this week for quick lookup
+      const revisedVerseIdsThisWeek = new Set<number>(thisWeekRevised.map(r => r.verseId));
+
+      // Helper to compute global start id for a given surah
+      const getSurahStartId = (surahId: number) => {
+        let acc = 0;
+        for (let i = 1; i < surahId; i++) acc += surahVerseCounts[i - 1] || 0;
+        return acc + 1;
+      };
+
+      let completedCount = 0;
+      for (const surahId of targetSurahs) {
+        const versesCount = surahVerseCounts[(surahId - 1)];
+        if (!versesCount) continue;
+
+        const startId = getSurahStartId(surahId);
+        const endId = startId + versesCount - 1;
+
+        // Check if all verseIds for this surah are in the this-week set
+        let allRevised = true;
+        for (let v = startId; v <= endId; v++) {
+          if (!revisedVerseIdsThisWeek.has(v)) {
+            allRevised = false;
+            break;
+          }
+        }
+
+        if (allRevised) completedCount++;
+        if (__DEV__) {
+          // Count how many verses from this surah were revised this week for logging
+          let revisedInCount = 0;
+          for (let v = startId; v <= endId; v++) if (revisedVerseIdsThisWeek.has(v)) revisedInCount++;
+          if (__DEV__) console.log(`Surah ${surahId} allRevised=${allRevised} (${revisedInCount}/${versesCount})`);
+        }
+      }
+
+      return completedCount;
+    } catch (e) {
+      console.error('[weeklySurahsProgress] compute failed', e);
+      return 0;
+    }
+  }, [weeklyRevisedVerses, revisionSchedule?.surahsPerWeek]);
+
+  // Calculate Page Progress from pageMarks
+  const dailyPagesProgress = useMemo(() => {
+    try {
+      return pageMarks.filter(m => m?.type === 'revised' && m?.markedDate === todayStr).length;
+    } catch (e) {
+      console.error('[dailyPagesProgress] compute failed', e);
+      return 0;
+    }
+  }, [pageMarks, todayStr]);
+
+  const weeklyPagesProgress = useMemo(() => {
+    try {
+      if (__DEV__) {
+        console.log('=== WEEKLY PAGES DEBUG ===');
+        console.log('pageMarks (raw):', pageMarks);
+      }
+      const now = new Date();
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - now.getDay());
+      weekStart.setHours(0, 0, 0, 0);
+
+      // pageMarks.markedDate is formatted as YYYY-MM-DD (formatDate) — parse it safely
+      const parseYmd = (d?: string | null) => {
+        if (!d) return null;
+        const parts = d.split('-');
+        if (parts.length !== 3) return null;
+        const [yyyy, mm, dd] = parts.map(p => Number(p));
+        if (!dd || !mm || !yyyy) return null;
+        return new Date(yyyy, mm - 1, dd);
+      };
+
+      const revised = pageMarks.filter(m => {
+        if (!m || m.type !== 'revised' || !m.markedDate) return false;
+        const marked = parseYmd(m.markedDate);
+        if (!marked) return false;
+        const isThisWeek = marked >= weekStart;
+        if (__DEV__) console.log(`page ${m.scope}-${m.entityId}-${m.pageIndex} date=${m.markedDate} => ${marked} isThisWeek=${isThisWeek}`);
+        return isThisWeek;
+      }).length;
+      if (__DEV__) console.log('Pages revised this week:', revised);
+      return revised;
+    } catch (e) {
+      console.error('[weeklyPagesProgress] compute failed', e);
+      return 0;
+    }
+  }, [pageMarks]);
+
+  const dailyVersesPercentage = dailyVersesTarget > 0 ? Math.min(100, (dailyVersesProgress / dailyVersesTarget) * 100) : 0;
   const weeklySurahsPercentage = weeklySurahsTarget > 0 ? Math.min(100, (weeklySurahsProgress / weeklySurahsTarget) * 100) : 0;
 
-  const dailyPagesPercentage = Math.min(100, (dailyPagesProgress / dailyPagesTarget) * 100);
-  const weeklyPagesPercentage = Math.min(100, (weeklyPagesProgress / weeklyPagesTarget) * 100);
+  const dailyPagesPercentage = dailyPagesTarget > 0 ? Math.min(100, (dailyPagesProgress / dailyPagesTarget) * 100) : 0;
+  const weeklyPagesPercentage = weeklyPagesTarget > 0 ? Math.min(100, (weeklyPagesProgress / weeklyPagesTarget) * 100) : 0;
 
   // Get deep-link params (e.g. highlightAyah when navigating from Ayah notification)
   const params = useLocalSearchParams() as { highlightAyah?: string; surahId?: string; verseId?: string };
@@ -1001,7 +1157,7 @@ export default function HomeScreen() {
         setTimeout(() => setAyahHighlight(false), 2500);
       }, 300); // small delay to allow container layout
     }
-  // We want this effect to run when the component mounts and when params change
+    // We want this effect to run when the component mounts and when params change
   }, [params?.highlightAyah]);
 
   return (
@@ -1067,7 +1223,7 @@ export default function HomeScreen() {
               <View style={styles.revisionItem}>
                 <View style={styles.revisionHeader}>
                   <Text style={styles.revisionTitle}>Daily Verses</Text>
-                  {dailyVersesProgress > 0 && dailyVersesProgress >= dailyVersesTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
+                  {dailyVersesTarget > 0 && dailyVersesProgress >= dailyVersesTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
                 </View>
                 <Text style={styles.revisionProgress}>{dailyVersesProgress} / {dailyVersesTarget} verses</Text>
                 <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${dailyVersesPercentage}%`, backgroundColor: dailyVersesProgress >= dailyVersesTarget ? '#4CAF50' : '#2196F3' }]} /></View>
@@ -1075,7 +1231,7 @@ export default function HomeScreen() {
               <View style={styles.revisionItem}>
                 <View style={styles.revisionHeader}>
                   <Text style={styles.revisionTitle}>Weekly Surahs</Text>
-                  {weeklySurahsProgress > 0 && weeklySurahsProgress >= weeklySurahsTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
+                  {weeklySurahsTarget > 0 && weeklySurahsProgress >= weeklySurahsTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
                 </View>
                 <Text style={styles.revisionProgress}>{weeklySurahsProgress} / {weeklySurahsTarget} surahs</Text>
                 <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${weeklySurahsPercentage}%`, backgroundColor: weeklySurahsProgress >= weeklySurahsTarget ? '#4CAF50' : '#2196F3' }]} /></View>
@@ -1086,7 +1242,7 @@ export default function HomeScreen() {
               <View style={styles.revisionItem}>
                 <View style={styles.revisionHeader}>
                   <Text style={styles.revisionTitle}>Daily Pages</Text>
-                  {dailyPagesProgress > 0 && dailyPagesProgress >= dailyPagesTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
+                  {dailyPagesTarget > 0 && dailyPagesProgress >= dailyPagesTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
                 </View>
                 <Text style={styles.revisionProgress}>{dailyPagesProgress} / {dailyPagesTarget} pages</Text>
                 <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${dailyPagesPercentage}%`, backgroundColor: dailyPagesProgress >= dailyPagesTarget ? '#4CAF50' : '#2196F3' }]} /></View>
@@ -1094,7 +1250,7 @@ export default function HomeScreen() {
               <View style={styles.revisionItem}>
                 <View style={styles.revisionHeader}>
                   <Text style={styles.revisionTitle}>Weekly Pages</Text>
-                  {weeklyPagesProgress > 0 && weeklyPagesProgress >= weeklyPagesTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
+                  {weeklyPagesTarget > 0 && weeklyPagesProgress >= weeklyPagesTarget ? <CheckCircle size={16} color="#4CAF50" /> : <XCircle size={16} color="#F44336" />}
                 </View>
                 <Text style={styles.revisionProgress}>{weeklyPagesProgress} / {weeklyPagesTarget} pages</Text>
                 <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${weeklyPagesPercentage}%`, backgroundColor: weeklyPagesProgress >= weeklyPagesTarget ? '#4CAF50' : '#2196F3' }]} /></View>

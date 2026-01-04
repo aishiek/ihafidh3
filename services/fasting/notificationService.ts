@@ -2,11 +2,16 @@
  * Notification Service for FastingCalendar
  * Handles scheduling and managing fasting reminders
  * 
- * FIXED VERSION - Safe drop-in replacement
+ * MIGRATED TO NOTIFEE
  */
 
 import { CalendarDay, FastingNotificationSettings, FastingType } from '@/types/fasting';
-import * as Notifications from 'expo-notifications';
+import notifee, {
+  AndroidImportance,
+  AndroidVisibility,
+  TimestampTrigger,
+  TriggerType
+} from '@notifee/react-native';
 import { Platform } from 'react-native';
 
 export class FastingNotificationService {
@@ -23,36 +28,17 @@ export class FastingNotificationService {
     }
 
     try {
-      // Configure notification handler (MUST be set before scheduling)
-      try {
-        Notifications.setNotificationHandler({
-          handleNotification: async () => ({
-            shouldShowBanner: true,
-            shouldShowList: true,
-            shouldPlaySound: true,
-            shouldSetBadge: false,
-          }),
-        });
-      } catch (error) {
-        console.warn('⚠️ Could not set notification handler:', error);
-      }
       // Request permissions
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-      
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-      
-      if (finalStatus !== 'granted') {
-        console.warn('❌ Notification permission not granted. Status:', finalStatus);
+      const settings = await notifee.requestPermission();
+
+      if (settings.authorizationStatus < 1) {
+        console.warn('❌ Notification permission not granted. Status:', settings.authorizationStatus);
         this.isInitialized = true;
         this.hasPermission = false;
         return false;
       }
 
-      // Configure Android notification channel (CRITICAL for Android)
+      // Configure Android notification channel
       if (Platform.OS === 'android') {
         await this.setupAndroidChannel();
       }
@@ -70,25 +56,24 @@ export class FastingNotificationService {
   }
 
   /**
-   * Setup Android notification channel (required for Android 8.0+)
+   * Setup Android notification channel
    */
   private static async setupAndroidChannel(): Promise<void> {
     if (Platform.OS !== 'android') return;
 
     try {
-      await Notifications.setNotificationChannelAsync('fasting-reminders', {
+      await notifee.createChannel({
+        id: 'fasting-reminders',
         name: 'Fasting Reminders',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
+        importance: AndroidImportance.HIGH,
+        visibility: AndroidVisibility.PUBLIC,
         lightColor: '#FFD700',
+        vibration: true,
         sound: 'default',
-        enableVibrate: true,
-        showBadge: true,
       });
       console.log('✅ Android notification channel configured');
     } catch (error) {
       console.error('❌ Error setting up Android channel:', error);
-      // Don't throw - allow iOS to continue working
     }
   }
 
@@ -114,7 +99,7 @@ export class FastingNotificationService {
     try {
       // Cancel existing notifications first
       await this.cancelFastingNotifications();
-      
+
       const scheduledNotifications: string[] = [];
       const failedNotifications: string[] = [];
       const now = new Date();
@@ -130,7 +115,7 @@ export class FastingNotificationService {
           const fastingDate = new Date(day.date);
           const notificationDate = new Date(fastingDate);
           notificationDate.setDate(notificationDate.getDate() - (typeSettings.beforeDays || notificationSettings.defaultBeforeDays));
-          
+
           const [hours, minutes] = (typeSettings.time || notificationSettings.defaultTime).split(':').map(Number);
           notificationDate.setHours(hours, minutes, 0, 0);
 
@@ -194,51 +179,39 @@ export class FastingNotificationService {
       const daysUntil = beforeDays;
       const dayLabel = daysUntil === 0 ? 'Today' : daysUntil === 1 ? 'Tomorrow' : `in ${daysUntil} days`;
 
-      // Prepare notification content
-      const notificationContent: Notifications.NotificationContentInput = {
-        title: `🌙 ${fastingInfo.name} Reminder`,
-        body: `${fastingInfo.name} fasting day is ${dayLabel}. ${fastingInfo.description}`,
-        data: { 
-          type: 'fasting_reminder', 
-          fastingType, 
-          date: day.date, 
-          hijriDate: day.hijriDate.date 
+      const trigger: TimestampTrigger = {
+        type: TriggerType.TIMESTAMP,
+        timestamp: notificationDate.getTime(),
+      };
+
+      await notifee.createTriggerNotification(
+        {
+          id: identifier,
+          title: `🌙 ${fastingInfo.name} Reminder`,
+          body: `${fastingInfo.name} fasting day is ${dayLabel}. ${fastingInfo.description}`,
+          data: {
+            type: 'fasting_reminder',
+            fastingType,
+            date: day.date,
+            hijriDate: day.hijriDate.date
+          },
+          android: {
+            channelId: 'fasting-reminders',
+            pressAction: {
+              id: 'default',
+            },
+          },
+          ios: {
+            sound: 'default',
+          },
         },
-        sound: true,
-      };
-
-      // Add Android-specific channel via trigger (channelId belongs on trigger / channel-aware triggers)
-
-      // Prepare trigger - use date-based trigger
-      const trigger: Notifications.NotificationTriggerInput = {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: notificationDate,
-        ...(Platform.OS === 'android' && { channelId: 'fasting-reminders' }),
-      };
-
-      // Schedule the notification
-      const scheduledId = await Notifications.scheduleNotificationAsync({
-        identifier,
-        content: notificationContent,
-        trigger: trigger,
-      });
-
-      if (!scheduledId) {
-        console.error(`❌ Failed to schedule notification: ${identifier}`);
-        return null;
-      }
+        trigger,
+      );
 
       console.log(`✅ Scheduled: ${identifier} at ${notificationDate.toLocaleString()}`);
-      return scheduledId;
+      return identifier;
     } catch (error) {
       console.error(`❌ Error scheduling notification for ${fastingType}:`, error);
-      // Log full error details for debugging
-      if (error instanceof Error) {
-        console.error('Error details:', {
-          message: error.message,
-          name: error.name,
-        });
-      }
       return null;
     }
   }
@@ -248,21 +221,10 @@ export class FastingNotificationService {
    */
   private static async verifyScheduledNotifications(): Promise<void> {
     try {
-      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-      const fastingNotifications = scheduled.filter(
-        n => n.identifier.startsWith('fasting_') || n.content.data?.type === 'fasting_reminder'
-      );
-      
-      console.log(`📋 Verification: ${fastingNotifications.length} fasting notifications scheduled`);
-      
-      // Log details of each notification for debugging
-      if (fastingNotifications.length > 0 && fastingNotifications.length <= 10) {
-        fastingNotifications.forEach((n, index) => {
-          const trigger = n.trigger as any;
-          const triggerDate = trigger?.value || trigger?.date || 'unknown';
-          console.log(`  ${index + 1}. ${n.identifier} -> ${triggerDate}`);
-        });
-      }
+      const ids = await notifee.getTriggerNotificationIds();
+      const fastingIds = ids.filter(id => id.startsWith('fasting_'));
+
+      console.log(`📋 Verification: ${fastingIds.length} fasting notifications scheduled`);
     } catch (error) {
       console.warn('⚠️ Could not verify scheduled notifications:', error);
     }
@@ -273,24 +235,21 @@ export class FastingNotificationService {
    */
   static async cancelFastingNotifications(): Promise<void> {
     try {
-      const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
-      const fastingNotifications = scheduledNotifications.filter(
-        notification =>
-          notification.identifier.startsWith('fasting_') ||
-          notification.content.data?.type === 'fasting_reminder'
-      );
+      const ids = await notifee.getTriggerNotificationIds();
+      const fastingIds = ids.filter(id => id.startsWith('fasting_'));
 
       let cancelledCount = 0;
-      for (const notification of fastingNotifications) {
+      for (const id of fastingIds) {
         try {
-          await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+          await notifee.cancelNotification(id);
+          await notifee.cancelTriggerNotification(id);
           cancelledCount++;
         } catch (error) {
-          console.error(`Failed to cancel notification ${notification.identifier}:`, error);
+          console.error(`Failed to cancel notification ${id}:`, error);
         }
       }
 
-      console.log(`✅ Cancelled ${cancelledCount} of ${fastingNotifications.length} fasting notifications`);
+      console.log(`✅ Cancelled ${cancelledCount} of ${fastingIds.length} fasting notifications`);
     } catch (error) {
       console.error('❌ Error cancelling fasting notifications:', error);
     }
@@ -301,7 +260,7 @@ export class FastingNotificationService {
    */
   static async cancelAllNotifications(): Promise<void> {
     try {
-      await Notifications.cancelAllScheduledNotificationsAsync();
+      await notifee.cancelAllNotifications();
       console.log('✅ Cancelled all notifications');
     } catch (error) {
       console.error('❌ Error cancelling all notifications:', error);
@@ -310,15 +269,12 @@ export class FastingNotificationService {
 
   /**
    * Get scheduled fasting notifications
+   * Returns IDs only now
    */
-  static async getScheduledFastingNotifications(): Promise<Notifications.NotificationRequest[]> {
+  static async getScheduledFastingNotifications(): Promise<string[]> {
     try {
-      const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
-      return scheduledNotifications.filter(
-        notification =>
-          notification.identifier.startsWith('fasting_') ||
-          notification.content.data?.type === 'fasting_reminder'
-      );
+      const ids = await notifee.getTriggerNotificationIds();
+      return ids.filter(id => id.startsWith('fasting_'));
     } catch (error) {
       console.error('❌ Error getting scheduled notifications:', error);
       return [];
@@ -327,7 +283,6 @@ export class FastingNotificationService {
 
   /**
    * Test notification (for debugging)
-   * This sends an immediate notification to verify the setup works
    */
   static async sendTestNotification(): Promise<boolean> {
     try {
@@ -337,27 +292,22 @@ export class FastingNotificationService {
         return false;
       }
 
-      const notificationContent: Notifications.NotificationContentInput = {
+      await notifee.displayNotification({
         title: '🌙 Fasting Calendar Test',
         body: 'This is a test notification. If you see this, notifications are working!',
         data: { type: 'test' },
-        sound: true,
-      };
-
-      // For immediate scheduling with Android channel, pass channel via trigger
-
-      await Notifications.scheduleNotificationAsync({
-        content: notificationContent,
-        trigger: null, // Immediate notification
+        android: {
+          channelId: 'fasting-reminders',
+          pressAction: {
+            id: 'default',
+          },
+        },
       });
 
       console.log('✅ Test notification sent');
       return true;
     } catch (error) {
       console.error('❌ Error sending test notification:', error);
-      if (error instanceof Error) {
-        console.error('Error details:', error.message);
-      }
       return false;
     }
   }
@@ -367,8 +317,8 @@ export class FastingNotificationService {
    */
   static async getPermissionStatus(): Promise<string> {
     try {
-      const { status } = await Notifications.getPermissionsAsync();
-      return status;
+      const settings = await notifee.getNotificationSettings();
+      return settings.authorizationStatus.toString();
     } catch (error) {
       console.error('❌ Error getting permission status:', error);
       return 'unknown';
@@ -380,43 +330,43 @@ export class FastingNotificationService {
    */
   private static getFastingTypeInfo(fastingType: FastingType): { name: string; description: string } {
     const fastingTypeMap = {
-      [FastingType.AYYAMUL_BIDH]: { 
-        name: 'Ayyamul Bidh', 
-        description: '13th, 14th, 15th of Hijri month' 
+      [FastingType.AYYAMUL_BIDH]: {
+        name: 'Ayyamul Bidh',
+        description: '13th, 14th, 15th of Hijri month'
       },
-      [FastingType.MONDAY_THURSDAY]: { 
-        name: 'Monday & Thursday', 
-        description: 'Sunnah fasting days' 
+      [FastingType.MONDAY_THURSDAY]: {
+        name: 'Monday & Thursday',
+        description: 'Sunnah fasting days'
       },
-      [FastingType.MUHARRAM]: { 
-        name: 'Muharram', 
-        description: 'Sacred month fasting' 
+      [FastingType.MUHARRAM]: {
+        name: 'Muharram',
+        description: 'Sacred month fasting'
       },
-      [FastingType.ASHURA]: { 
-        name: 'Ashura', 
-        description: '10th of Muharram' 
+      [FastingType.ASHURA]: {
+        name: 'Ashura',
+        description: '10th of Muharram'
       },
-      [FastingType.ARAFAH]: { 
-        name: 'Arafah', 
-        description: '9th of Dhul Hijjah' 
+      [FastingType.ARAFAH]: {
+        name: 'Arafah',
+        description: '9th of Dhul Hijjah'
       },
-      [FastingType.SHAWWAL]: { 
-        name: 'Shawwal', 
-        description: '6 days of Shawwal' 
+      [FastingType.SHAWWAL]: {
+        name: 'Shawwal',
+        description: '6 days of Shawwal'
       },
-      [FastingType.DHUL_HIJJAH_FIRST_TEN]: { 
-        name: 'First 10 of Dhul Hijjah', 
-        description: 'First 10 days of Dhul Hijjah' 
+      [FastingType.DHUL_HIJJAH_FIRST_TEN]: {
+        name: 'First 10 of Dhul Hijjah',
+        description: 'First 10 days of Dhul Hijjah'
       },
-      [FastingType.RAMADAN]: { 
-        name: 'Ramadan', 
-        description: 'Holy month of fasting' 
+      [FastingType.RAMADAN]: {
+        name: 'Ramadan',
+        description: 'Holy month of fasting'
       },
     };
 
-    return fastingTypeMap[fastingType] || { 
-      name: 'Unknown', 
-      description: 'Unknown fasting type' 
+    return fastingTypeMap[fastingType] || {
+      name: 'Unknown',
+      description: 'Unknown fasting type'
     };
   }
 
@@ -428,23 +378,20 @@ export class FastingNotificationService {
     console.log('Platform:', Platform.OS);
     console.log('Initialized:', this.isInitialized);
     console.log('Has Permission:', this.hasPermission);
-    
+
     try {
       const status = await this.getPermissionStatus();
       console.log('Permission Status:', status);
-      
-      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-      console.log('Total Scheduled Notifications:', scheduled.length);
-      
-      const fasting = await this.getScheduledFastingNotifications();
-      console.log('Fasting Notifications:', fasting.length);
-      
-      if (fasting.length > 0 && fasting.length <= 10) {
-        fasting.forEach((n, i) => {
-          const trigger = n.trigger as any;
-          console.log(`  ${i + 1}. ${n.identifier}`);
-          console.log(`     Trigger:`, trigger);
-          console.log(`     Content:`, n.content.title);
+
+      const ids = await notifee.getTriggerNotificationIds();
+      console.log('Total Scheduled Notifications:', ids.length);
+
+      const fastingIds = await this.getScheduledFastingNotifications();
+      console.log('Fasting Notifications:', fastingIds.length);
+
+      if (fastingIds.length > 0 && fastingIds.length <= 10) {
+        fastingIds.forEach((id, i) => {
+          console.log(`  ${i + 1}. ${id}`);
         });
       }
     } catch (error) {

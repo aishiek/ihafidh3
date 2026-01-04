@@ -3,7 +3,7 @@
  * Handles calendar generation and fasting day calculations
  */
 
-import { CalendarDay, FastingType, FastingInfo, FastingLocation, HijriDate, GregorianDate } from '@/types/fasting';
+import { CalendarDay, FastingInfo, FastingLocation, FastingType, HijriDate } from '@/types/fasting';
 import { FastingApiService } from './apiService';
 
 export class FastingCalendarService {
@@ -80,7 +80,7 @@ export class FastingCalendarService {
       const monthIndex = month.getMonth();
 
       // Get Hijri calendar data for the month
-      const hijriData = await FastingApiService.getHijriCalendar(year, monthIndex + 1, location);
+      const hijriData = await FastingApiService.getHijriCalendar(year, monthIndex + 1, location, hijriAdjustment);
 
       const calendarDays: CalendarDay[] = [];
       const today = new Date();
@@ -91,18 +91,15 @@ export class FastingCalendarService {
         const gregorianDate = new Date(dayData.gregorian.date);
         gregorianDate.setHours(0, 0, 0, 0);
 
-        // Apply Hijri adjustment
-        const adjustedHijriDate = this.adjustHijriDate(dayData.hijri, hijriAdjustment);
-
         // Determine fasting types for this day
         const fastingTypes = this.determineFastingTypes(
           gregorianDate,
-          adjustedHijriDate
+          dayData.hijri
         );
 
         const calendarDay: CalendarDay = {
           date: dayData.gregorian.date,
-          hijriDate: adjustedHijriDate,
+          hijriDate: dayData.hijri,
           gregorianDate: dayData.gregorian,
           fastingTypes,
           isToday: gregorianDate.getTime() === today.getTime(),
@@ -138,7 +135,7 @@ export class FastingCalendarService {
       // Generate basic fasting types (Monday/Thursday only)
       const fastingTypes: FastingType[] = [];
       const dayOfWeek = gregorianDate.getDay();
-      
+
       if (dayOfWeek === 1 || dayOfWeek === 4) {
         fastingTypes.push(FastingType.MONDAY_THURSDAY);
       }
@@ -202,7 +199,7 @@ export class FastingCalendarService {
     // Muharram (1st month of Hijri calendar)
     if (hijriDate.month.number === 1) {
       fastingTypes.push(FastingType.MUHARRAM);
-      
+
       // Ashura (10th of Muharram)
       if (hijriDay === 10) {
         fastingTypes.push(FastingType.ASHURA);
@@ -215,7 +212,7 @@ export class FastingCalendarService {
       if (hijriDay <= 10) {
         fastingTypes.push(FastingType.DHUL_HIJJAH_FIRST_TEN);
       }
-      
+
       // Arafah (9th of Dhul Hijjah)
       if (hijriDay === 9) {
         fastingTypes.push(FastingType.ARAFAH);
@@ -235,22 +232,7 @@ export class FastingCalendarService {
     return fastingTypes;
   }
 
-  /**
-   * Apply Hijri date adjustment
-   */
-  private static adjustHijriDate(hijriDate: HijriDate, adjustment: number): HijriDate {
-    if (adjustment === 0) {
-      return hijriDate;
-    }
 
-    // Create adjusted date
-    const adjustedDay = parseInt(hijriDate.day) + adjustment;
-    
-    return {
-      ...hijriDate,
-      day: Math.max(1, adjustedDay).toString(),
-    };
-  }
 
   /**
    * Get fasting info for a specific type

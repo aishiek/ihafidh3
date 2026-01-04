@@ -1,4 +1,11 @@
-import * as Notifications from 'expo-notifications';
+import notifee, {
+  AndroidImportance,
+  AndroidVisibility,
+  EventType,
+  RepeatFrequency,
+  TimestampTrigger,
+  TriggerType
+} from '@notifee/react-native';
 import { Platform } from 'react-native';
 
 // ============================================================================
@@ -14,75 +21,81 @@ export async function initializeNotifications(): Promise<void> {
   }
 
   try {
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        // Newer expo-notifications expects explicit banner/list flags
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-      }),
-    });
-
+    // Create Android Channels
     if (Platform.OS === 'android') {
-      await Promise.all([
-        Notifications.setNotificationChannelAsync('default', {
-          name: 'Default Notifications',
-          importance: Notifications.AndroidImportance.HIGH,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#FFD700',
-        }),
-        Notifications.setNotificationChannelAsync('fasting', {
-          name: 'Fasting Reminders',
-          importance: Notifications.AndroidImportance.HIGH,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#FFD700',
-        }),
-        Notifications.setNotificationChannelAsync('ayah', {
-          name: 'Daily Ayah',
-          importance: Notifications.AndroidImportance.HIGH,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#FFD700',
-        }),
-        Notifications.setNotificationChannelAsync('revision', {
-          name: 'Revision Reminders',
-          importance: Notifications.AndroidImportance.HIGH,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#FFD700',
-        }),
-        Notifications.setNotificationChannelAsync('planner', {
-          name: 'Hifdh Planner',
-          importance: Notifications.AndroidImportance.HIGH,
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#FFD700',
-        }),
-      ]);
+      await notifee.createChannel({
+        id: 'default',
+        name: 'Default Notifications',
+        importance: AndroidImportance.HIGH,
+        visibility: AndroidVisibility.PUBLIC,
+        lightColor: '#FFD700',
+        vibration: true,
+      });
+
+      await notifee.createChannel({
+        id: 'fasting',
+        name: 'Fasting Reminders',
+        importance: AndroidImportance.HIGH,
+        visibility: AndroidVisibility.PUBLIC,
+        lightColor: '#FFD700',
+        vibration: true,
+      });
+
+      await notifee.createChannel({
+        id: 'ayah',
+        name: 'Daily Ayah',
+        importance: AndroidImportance.HIGH,
+        visibility: AndroidVisibility.PUBLIC,
+        lightColor: '#FFD700',
+        vibration: true,
+      });
+
+      await notifee.createChannel({
+        id: 'revision',
+        name: 'Revision Reminders',
+        importance: AndroidImportance.HIGH,
+        visibility: AndroidVisibility.PUBLIC,
+        lightColor: '#FFD700',
+        vibration: true,
+      });
+
+      await notifee.createChannel({
+        id: 'planner',
+        name: 'Hifdh Planner',
+        importance: AndroidImportance.HIGH,
+        visibility: AndroidVisibility.PUBLIC,
+        lightColor: '#FFD700',
+        vibration: true,
+      });
+
       console.log('[NotificationService] Android channels created');
     }
 
-    // Setup notification received listener for foreground handling
-    Notifications.addNotificationReceivedListener(async (notification) => {
-      const data = notification.request.content.data as any;
+    // Request permissions on init (optional, usually better to request on demand)
+    // But for migration parity, we can leave it to the explicit request function.
 
-      // Handle weekly Friday check
-      if (data.type === 'weekly-surah-check') {
-        const today = new Date().getDay();
-        if (today === 5) { // Only on Friday
-          await Notifications.scheduleNotificationAsync({
-            content: {
+    // Setup foreground listener for immediate actions (like weekly check trigger)
+    notifee.onForegroundEvent(async ({ type, detail }) => {
+      if (type === EventType.DELIVERED) {
+        const data = detail.notification?.data;
+
+        // Handle weekly Friday check
+        if (data?.type === 'weekly-surah-check') {
+          const today = new Date().getDay();
+          if (today === 5) { // Only on Friday
+            await notifee.displayNotification({
               title: '📅 Weekly Surah Check-in',
               body: 'Time to review your weekly Surah progress. Stay consistent! 🌟',
               data: { type: 'weekly-surah-reminder' },
-              sound: true,
-            },
-            trigger: Platform.OS === 'android' ? { channelId: 'revision' } : null,
-          });
+              android: { channelId: 'revision' },
+            });
+          }
         }
-      }
 
-      // Handle daily revision check
-      if (data.type === 'revision-check-trigger') {
-        await RevisionReminderService.checkAndNotifyRevisionNeeded(3);
+        // Handle daily revision check
+        if (data?.type === 'revision-check-trigger') {
+          await RevisionReminderService.checkAndNotifyRevisionNeeded(3);
+        }
       }
     });
 
@@ -96,21 +109,15 @@ export async function initializeNotifications(): Promise<void> {
 
 export async function requestNotificationPermissions(): Promise<boolean> {
   try {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
+    const settings = await notifee.requestPermission();
 
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
+    if (settings.authorizationStatus >= 1) { // 1 = AUTHORIZED, 2 = PROVISIONAL
+      console.log('[NotificationService] Permission granted');
+      return true;
     }
 
-    if (finalStatus !== 'granted') {
-      console.log('[NotificationService] Permission denied');
-      return false;
-    }
-
-    console.log('[NotificationService] Permission granted');
-    return true;
+    console.log('[NotificationService] Permission denied');
+    return false;
   } catch (error) {
     console.error('[NotificationService] Permission request failed:', error);
     return false;
@@ -146,25 +153,33 @@ export async function scheduleNotificationAtDate({
       return null;
     }
 
-    await cancelNotification(id);
+    // Create a time-based trigger
+    const trigger: TimestampTrigger = {
+      type: TriggerType.TIMESTAMP,
+      timestamp: date.getTime(),
+    };
 
-    const notificationId = await Notifications.scheduleNotificationAsync({
-      identifier: id,
-      content: {
+    await notifee.createTriggerNotification(
+      {
+        id,
         title,
         body,
         data,
-        sound: true,
+        android: {
+          channelId,
+          pressAction: {
+            id: 'default',
+          },
+        },
+        ios: {
+          sound: 'default',
+        },
       },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date,
-        ...(Platform.OS === 'android' && { channelId }),
-      },
-    });
+      trigger,
+    );
 
     console.log('[NotificationService] Scheduled:', id, 'at', date.toISOString());
-    return notificationId;
+    return id;
   } catch (error) {
     console.error('[NotificationService] Schedule failed:', error);
     return null;
@@ -196,27 +211,47 @@ export async function scheduleDailyNotification({
       return null;
     }
 
-    await cancelNotification(id);
+    // Calculate next occurrence
+    const now = new Date();
+    const date = new Date(now);
+    date.setHours(hour, minute, 0, 0);
 
-    const notificationId = await Notifications.scheduleNotificationAsync({
-      identifier: id,
-      content: {
-        title,
-        body,
+    if (date.getTime() <= now.getTime()) {
+      date.setDate(date.getDate() + 1);
+    }
+
+    const trigger: TimestampTrigger = {
+      type: TriggerType.TIMESTAMP,
+      timestamp: date.getTime(),
+      repeatFrequency: RepeatFrequency.DAILY,
+    };
+
+    await notifee.createTriggerNotification(
+      {
+        id,
+        title: silent ? undefined : title, // Silent notifications often have no title/body visible
+        body: silent ? undefined : body,
         data,
-        sound: !silent,
+        android: {
+          channelId,
+          pressAction: {
+            id: 'default',
+          },
+          // For silent background triggers
+          ...(silent && {
+            importance: AndroidImportance.MIN,
+            visibility: AndroidVisibility.SECRET,
+          }),
+        },
+        ios: {
+          sound: silent ? undefined : 'default',
+        },
       },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
-        hour,
-        minute,
-        repeats: true,
-        ...(Platform.OS === 'android' && { channelId }),
-      },
-    });
+      trigger,
+    );
 
     console.log('[NotificationService] Scheduled daily:', id, `at ${hour}:${minute}`);
-    return notificationId;
+    return id;
   } catch (error) {
     console.error('[NotificationService] Daily schedule failed:', error);
     return null;
@@ -225,7 +260,8 @@ export async function scheduleDailyNotification({
 
 export async function cancelNotification(id: string): Promise<void> {
   try {
-    await Notifications.cancelScheduledNotificationAsync(id);
+    await notifee.cancelNotification(id);
+    await notifee.cancelTriggerNotification(id); // Ensure trigger is also cancelled
   } catch (error) {
     // Silent fail
   }
@@ -233,16 +269,17 @@ export async function cancelNotification(id: string): Promise<void> {
 
 export async function cancelAllNotifications(): Promise<void> {
   try {
-    await Notifications.cancelAllScheduledNotificationsAsync();
+    await notifee.cancelAllNotifications();
     console.log('[NotificationService] All notifications cancelled');
   } catch (error) {
     console.error('[NotificationService] Cancel all failed:', error);
   }
 }
 
-export async function getScheduledNotifications(): Promise<Notifications.NotificationRequest[]> {
+export async function getScheduledNotifications(): Promise<string[]> {
   try {
-    return await Notifications.getAllScheduledNotificationsAsync();
+    const ids = await notifee.getTriggerNotificationIds();
+    return ids;
   } catch (error) {
     console.error('[NotificationService] Get scheduled failed:', error);
     return [];
@@ -251,14 +288,16 @@ export async function getScheduledNotifications(): Promise<Notifications.Notific
 
 export async function sendTestNotification(): Promise<void> {
   try {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '🧪 Test Notification',
-        body: 'If you see this, notifications are working!',
-        data: { type: 'test' },
-        sound: true,
+    await notifee.displayNotification({
+      title: '🧪 Test Notification',
+      body: 'If you see this, notifications are working!',
+      data: { type: 'test' },
+      android: {
+        channelId: 'default',
+        pressAction: {
+          id: 'default',
+        },
       },
-      trigger: null,
     });
     console.log('[NotificationService] Test notification sent');
   } catch (error) {
@@ -327,17 +366,22 @@ export class FastingNotificationService {
 
   static async cancelAllFastingReminders(): Promise<void> {
     try {
-      const scheduled = await getScheduledNotifications();
-      const fastingNotifications = scheduled.filter(n => n.identifier.startsWith('fasting_'));
+      const ids = await getScheduledNotifications();
+      const fastingIds = ids.filter(id => id.startsWith('fasting_'));
 
-      for (const notification of fastingNotifications) {
-        await cancelNotification(notification.identifier);
+      for (const id of fastingIds) {
+        await cancelNotification(id);
       }
 
       console.log('[FastingNotificationService] Cancelled all fasting reminders');
     } catch (error) {
       console.error('[FastingNotificationService] Cancel failed:', error);
     }
+  }
+
+  // Initialize placeholder for compatibility with _layout.tsx
+  static async initialize(): Promise<void> {
+    // No-op for Notifee as channels are created in main init
   }
 }
 
@@ -398,7 +442,7 @@ export class AyahNotificationService {
             verseNumber: todayVerse.verseNumber,
           },
         });
-        
+
       } catch (innerErr) {
         // Fallback — schedule a simple daily ayah reminder if fetching fails
         await cancelNotification(this.DAILY_AYAH_ID);
@@ -507,8 +551,6 @@ export class RevisionNotificationService {
 
   /**
    * Schedule intelligent page revision reminder
-   * Combines daily and weekly page goals into a single notification
-   * Only sends if targets are missed
    */
   static async schedulePageReminder(
     dailyIncomplete: boolean,
@@ -605,12 +647,16 @@ export class EnhancedNotificationService {
 
   static async scheduleWeeklySurahReminder(): Promise<void> {
     try {
-      // Schedule DAILY silent notification at 6 PM
-      // The notification received listener checks if it's Friday
+      // With Notifee, we can schedule a true weekly notification!
+      // But for now, to keep logic similar to before (Friday check), 
+      // we can use a weekly trigger if we know the date.
+      // Or we can stick to the "Daily Silent Check" pattern which is robust.
+      // Let's stick to Daily Silent Check for simplicity of migration.
+
       await scheduleDailyNotification({
         id: 'weekly-surah-check',
-        title: '', // Silent
-        body: '',
+        title: 'Weekly Check', // Title needed for Notifee even if silent?
+        body: 'Checking...',
         hour: 18,
         minute: 0,
         channelId: 'revision',
@@ -630,17 +676,14 @@ export class EnhancedNotificationService {
     try {
       if (overdueItems.length === 0) return;
 
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: '⏰ Hifdh Reminder',
-          body: `You have ${overdueItems.length} overdue memorization ${overdueItems.length === 1 ? 'task' : 'tasks'}. 📋`,
-          data: {
-            type: 'hifdh-overdue',
-            overdueCount: overdueItems.length,
-          },
-          sound: true,
+      await notifee.displayNotification({
+        title: '⏰ Hifdh Reminder',
+        body: `You have ${overdueItems.length} overdue memorization ${overdueItems.length === 1 ? 'task' : 'tasks'}. 📋`,
+        data: {
+          type: 'hifdh-overdue',
+          overdueCount: overdueItems.length,
         },
-        trigger: Platform.OS === 'android' ? { channelId: 'planner' } : null,
+        android: { channelId: 'planner' },
       });
     } catch (error) {
       console.error('[EnhancedNotificationService] Planner reminder failed:', error);
@@ -648,56 +691,10 @@ export class EnhancedNotificationService {
   }
 
   static setupNotificationHandlers(navigation: any): (() => void) | undefined {
-    try {
-      const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-        const data = response.notification.request.content.data as any;
-
-        switch (data.type) {
-          case 'daily_ayah':
-          case 'daily-ayah':
-            // Navigate to home screen (root) and pass highlight param — prefer router where available
-            try { 
-              // runtime import to avoid bundling cross-file circularity
-              const { router } = require('expo-router');
-              router.replace('/?highlightAyah=1');
-            } catch {
-              // fallback to navigation object if provided
-              try { navigation?.navigate?.('/', { highlightAyah: true }); } catch {};
-            }
-            break;
-          case 'daily-verse-reminder':
-            try {
-              const { router } = require('expo-router');
-              router.replace('/read');
-            } catch {
-              try { navigation?.navigate?.('read'); } catch {}
-            }
-            break;
-          case 'weekly-surah-reminder':
-            try {
-              const { router } = require('expo-router');
-              router.replace('/stats');
-            } catch {
-              try { navigation?.navigate?.('stats'); } catch {}
-            }
-            break;
-          case 'hifdh-overdue':
-          case 'revision-needed':
-            try {
-              const { router } = require('expo-router');
-              router.replace('/');
-            } catch {
-              try { navigation?.navigate?.('/', {}); } catch {}
-            }
-            break;
-        }
-      });
-
-      console.log('[EnhancedNotificationService] Navigation handlers setup');
-      return () => subscription.remove();
-    } catch (error) {
-      console.error('[EnhancedNotificationService] Handler setup failed:', error);
-    }
+    // Notifee handles this via onForegroundEvent and getInitialNotification in _layout.tsx
+    // This method is kept for backward compatibility if called, but does nothing or logs warning.
+    console.log('[EnhancedNotificationService] setupNotificationHandlers is deprecated. Handled in _layout.tsx');
+    return () => { };
   }
 
   static async cancelDailyVerseReminder(): Promise<void> {
@@ -723,37 +720,54 @@ export class RevisionReminderService {
 
   /**
    * Schedule daily silent notification at 9 PM that triggers revision check
-   * The actual check happens in the notification received listener
+   */
+  /**
+   * Schedule generic daily revision reminders for the next 30 days.
+   * This ensures reliability even if the app isn't opened for weeks.
    */
   static async scheduleDailyRevisionCheck(): Promise<void> {
     try {
-      console.log('[RevisionReminder] Scheduling daily revision check trigger at 9 PM');
+      console.log('[RevisionReminder] Scheduling 30 days of generic revision reminders at 9 PM');
 
-      await cancelNotification(this.REVISION_CHECK_TRIGGER_ID);
+      // Cancel existing to prevent duplicates
+      await this.cancelRevisionReminders();
 
-      // Schedule SILENT daily notification that triggers the check
-      await scheduleDailyNotification({
-        id: this.REVISION_CHECK_TRIGGER_ID,
-        title: '', // Silent
-        body: '',
-        hour: 21,
-        minute: 0,
-        channelId: 'revision',
-        data: {
-          type: 'revision-check-trigger',
-        },
-        silent: true,
-      });
+      const baseDate = new Date();
+      baseDate.setHours(21, 0, 0, 0); // 9 PM
 
-      console.log('[RevisionReminder] Daily check trigger scheduled');
+      // If 9 PM has passed today, start from tomorrow
+      if (baseDate <= new Date()) {
+        baseDate.setDate(baseDate.getDate() + 1);
+      }
+
+      // Schedule for next 30 days
+      for (let i = 0; i < 30; i++) {
+        const date = new Date(baseDate);
+        date.setDate(baseDate.getDate() + i);
+
+        const id = `daily-revision-habit-${i}`;
+
+        await scheduleNotificationAtDate({
+          id,
+          title: '📖 Time to Revise',
+          body: 'Consistency is key! Take 10 minutes to review your Hifdh.',
+          date: date,
+          channelId: 'revision',
+          data: {
+            type: 'daily_revision_habit',
+          },
+        });
+      }
+
+      console.log('[RevisionReminder] Batch scheduling complete');
     } catch (error) {
       console.error('[RevisionReminder] Scheduling failed:', error);
     }
   }
 
   /**
-   * Check for surahs needing revision and send notification if found
-   * Called by notification received listener
+   * Check for surahs needing revision and send notification if found.
+   * This is called on app foreground to provide specific "smart" alerts.
    */
   static async checkAndNotifyRevisionNeeded(daysThreshold: number = 3): Promise<void> {
     try {
@@ -778,20 +792,17 @@ export class RevisionReminderService {
         ? `${oldestSurah.surahName} hasn't been revised in ${oldestSurah.daysSince} days. 💪`
         : `${count} surahs need revision. ${oldestSurah.surahName} hasn't been reviewed in ${oldestSurah.daysSince} days! 💪`;
 
-      // Send ACTUAL notification with results
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title,
-          body,
-          data: {
-            type: 'revision-needed',
-            count,
-            oldestDays: oldestSurah.daysSince,
-            surahId: oldestSurah.surahId,
-          },
-          sound: true,
+      // Send ACTUAL notification with results (Immediate display)
+      await notifee.displayNotification({
+        title,
+        body,
+        data: {
+          type: 'revision-needed',
+          count,
+          oldestDays: oldestSurah.daysSince,
+          surahId: oldestSurah.surahId,
         },
-        trigger: Platform.OS === 'android' ? { channelId: 'revision' } : null,
+        android: { channelId: 'revision' },
       });
 
       console.log('[RevisionReminder] Sent notification for', count, 'surahs');
@@ -801,6 +812,12 @@ export class RevisionReminderService {
   }
 
   static async cancelRevisionReminders(): Promise<void> {
+    // Cancel the old trigger ID if it exists
     await cancelNotification(this.REVISION_CHECK_TRIGGER_ID);
+
+    // Cancel the new batch IDs
+    for (let i = 0; i < 30; i++) {
+      await cancelNotification(`daily-revision-habit-${i}`);
+    }
   }
 }

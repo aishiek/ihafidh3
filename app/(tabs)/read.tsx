@@ -3,6 +3,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import type { FlashListRef } from '@shopify/flash-list';
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, ArrowRight, Check, Pause, Play, RefreshCw, Search, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -110,6 +111,29 @@ export default function ReadScreen() {
   const [currentRepeat, setCurrentRepeat] = useState<number>(1);
   const [totalRepeats, setTotalRepeats] = useState<number>(1);
   const pagePlayAbortRef = useRef({ aborted: false });
+
+  // Keep screen awake during audio playback to prevent auto-lock issues on Android
+  useEffect(() => {
+    let isActive = false;
+    const manageKeepAwake = async () => {
+      // If either single-verse audio or page-mode audio is playing, keep screen on.
+      if (isPlayingAudio || isPlayingPage) {
+        await activateKeepAwakeAsync();
+        isActive = true;
+      } else {
+        await deactivateKeepAwake();
+        isActive = false;
+      }
+    };
+
+    manageKeepAwake();
+
+    return () => {
+      // Cleanup: revert to normal screen behavior when component unmounts
+      if (isActive) deactivateKeepAwake();
+    };
+  }, [isPlayingAudio, isPlayingPage]);
+
   // Page-audio manager persistent singleton will be initialized on mount
   const pageAudioManagerRef = useRef<PageAudioManager | null>(null);
   const [isPageDownloading, setIsPageDownloading] = useState(false);
@@ -306,18 +330,24 @@ export default function ReadScreen() {
         const v = Math.max(0, p - 1);
         if (selectedSurah) void saveLastPageFor('surah', selectedSurah.id, v);
         // stop page playback and reset highlights when navigating pages
+        pagePlayAbortRef.current.aborted = true;
         try { pageAudioManagerRef.current?.stop(); } catch (e) { /* ignore */ }
         setPlayingVerseIndex(null);
         setCompletedVerses(new Set());
+        setIsPlayingPage(false);
+        setIsPagePaused(false);
         return v;
       });
     } else if (pageModeScope === 'juz' && juzPages) {
       setCurrentPageIndex((p) => {
         const v = Math.max(0, p - 1);
         if (selectedJuz != null) void saveLastPageFor('juz', selectedJuz, v);
+        pagePlayAbortRef.current.aborted = true;
         try { pageAudioManagerRef.current?.stop(); } catch (e) { /* ignore */ }
         setPlayingVerseIndex(null);
         setCompletedVerses(new Set());
+        setIsPlayingPage(false);
+        setIsPagePaused(false);
         return v;
       });
     }
@@ -329,18 +359,24 @@ export default function ReadScreen() {
       setCurrentPageIndex((p) => {
         const v = Math.min((surahPages.length - 1), p + 1);
         if (selectedSurah) void saveLastPageFor('surah', selectedSurah.id, v);
+        pagePlayAbortRef.current.aborted = true;
         try { pageAudioManagerRef.current?.stop(); } catch (e) { /* ignore */ }
         setPlayingVerseIndex(null);
         setCompletedVerses(new Set());
+        setIsPlayingPage(false);
+        setIsPagePaused(false);
         return v;
       });
     } else if (pageModeScope === 'juz' && juzPages) {
       setCurrentPageIndex((p) => {
         const v = Math.min((juzPages.length - 1), p + 1);
         if (selectedJuz != null) void saveLastPageFor('juz', selectedJuz, v);
+        pagePlayAbortRef.current.aborted = true;
         try { pageAudioManagerRef.current?.stop(); } catch (e) { /* ignore */ }
         setPlayingVerseIndex(null);
         setCompletedVerses(new Set());
+        setIsPlayingPage(false);
+        setIsPagePaused(false);
         return v;
       });
     }
@@ -348,14 +384,18 @@ export default function ReadScreen() {
 
   // Exit page mode
   const exitPageMode = useCallback(() => {
+    // Stop infinite loop
+    pagePlayAbortRef.current.aborted = true;
     // Ensure page audio manager is torn down when exiting Page Mode
     try { pageAudioManagerRef.current?.cleanup(); } catch { }
     setIsPageModeActive(false);
     setCurrentPageIndex(0);
     setSurahPages(null);
     setJuzPages(null);
-    pagePlayAbortRef.current.aborted = true;
     setIsPlayingPage(false);
+    setIsPagePaused(false);
+    setIsPageDownloading(false);
+    setPageDownloadProgress(0);
     // close modal and show quick feedback
     try { setPageModeVisible(false); } catch { }
     // Do not show an exit toast to avoid confusion — keep only the entering toast
@@ -482,19 +522,31 @@ export default function ReadScreen() {
   }, [pageModeScope, surahPages, juzPages, currentPageIndex]);
 
   // Subscribe to store.pageMarks so UI updates reactively when page marks change
-  const isCurrentPageMemorized = useProgressStore((state) => {
-    if (!isPageModeActive || !currentPageVerses.length) return false;
-    const entityId = pageModeScope === 'surah' ? selectedSurah?.id : selectedJuz;
-    if (!entityId) return false;
-    return state.pageMarks.some((m) => m.scope === pageModeScope && m.entityId === entityId && m.pageIndex === currentPageIndex && m.type === 'memorized');
-  });
+  const pageMarks = useProgressStore((state) => state.pageMarks);
 
-  const isCurrentPageRevised = useProgressStore((state) => {
+  const isCurrentPageMemorized = useMemo(() => {
     if (!isPageModeActive || !currentPageVerses.length) return false;
     const entityId = pageModeScope === 'surah' ? selectedSurah?.id : selectedJuz;
     if (!entityId) return false;
-    return state.pageMarks.some((m) => m.scope === pageModeScope && m.entityId === entityId && m.pageIndex === currentPageIndex && m.type === 'revised');
-  });
+    return pageMarks.some((m) =>
+      m.scope === pageModeScope &&
+      m.entityId === entityId &&
+      m.pageIndex === currentPageIndex &&
+      m.type === 'memorized'
+    );
+  }, [pageMarks, isPageModeActive, currentPageVerses.length, pageModeScope, selectedSurah?.id, selectedJuz, currentPageIndex]);
+
+  const isCurrentPageRevised = useMemo(() => {
+    if (!isPageModeActive || !currentPageVerses.length) return false;
+    const entityId = pageModeScope === 'surah' ? selectedSurah?.id : selectedJuz;
+    if (!entityId) return false;
+    return pageMarks.some((m) =>
+      m.scope === pageModeScope &&
+      m.entityId === entityId &&
+      m.pageIndex === currentPageIndex &&
+      m.type === 'revised'
+    );
+  }, [pageMarks, isPageModeActive, currentPageVerses.length, pageModeScope, selectedSurah?.id, selectedJuz, currentPageIndex]);
 
   const isSurahMemorizedGlobally = useMemo(() => {
     if (!selectedSurah) return false;
@@ -699,7 +751,12 @@ export default function ReadScreen() {
               setIsPlayingAudio(true);
               setCurrentlyPlayingVerse({ surahId: surahNum, verseNumber: verseNum });
             }
-            if (status?.didJustFinish && !infinite && (status.repeatCount ?? 0) >= (status.maxRepeats ?? 1)) {
+            // Fix: Check for exact completion conditions or explicit stop
+            // When audioUtils calls stopAudio(), it sends { isPlaying: false, currentUrl: '' }
+            const isStopped = status?.isPlaying === false && !status?.isPaused;
+            const isFinished = status?.didJustFinish && !infinite && (status.repeatCount ?? 0) >= (status.maxRepeats ?? 1);
+
+            if (isStopped || isFinished || status?.error) {
               setIsPlayingAudio(false);
               setCurrentlyPlayingVerse(null);
             }
@@ -852,8 +909,6 @@ export default function ReadScreen() {
       id: v.id || v.verse_id || undefined,
     }));
 
-    // persistent UI listeners (set up on mount) will reflect download/state updates
-
     try {
       pagePlayAbortRef.current.aborted = false;
       setIsPageDownloading(true);
@@ -862,7 +917,7 @@ export default function ReadScreen() {
       // Ensure caches checked before download; manager will skip cached files
       await mgr.downloadPageAudio(versesToDownload, useSettingsStore.getState().reciterIdentifier || 'ar.alafasy');
 
-      // Download finished - play sequentially
+      // Download finished - start infinite loop playback
       setIsPageDownloading(false);
       setPageDownloadProgress(100);
       setIsPlayingPage(true);
@@ -871,12 +926,41 @@ export default function ReadScreen() {
       setPlayingVerseIndex(null);
       setCompletedVerses(new Set());
 
-      // Play with repeat = settings repeat mode, but if the global infinite-loop
-      // toggle is enabled then pass `0` so manager will treat it as infinite.
       const settings = useSettingsStore.getState();
-      const repeat = settings.infiniteLoop ? 0 : (settings.repeatMode || 1);
-      await mgr.playPage(repeat);
-      // UI state will be updated by persistent listeners on completion
+      const repeatPerVerse = settings.infiniteLoop ? 0 : (settings.repeatMode || 1);
+
+      // NEW: Infinite page looping for Page Mode ONLY
+      // This runs independently and won't affect Surah mode which uses different handlers
+      const playPageLoop = async () => {
+        while (!pagePlayAbortRef.current.aborted) {
+          try {
+            await mgr.playPage(repeatPerVerse);
+
+            // Page completed one full cycle, check if we should continue
+            if (pagePlayAbortRef.current.aborted) break;
+
+            // Reset visual indicators for next loop
+            setPlayingVerseIndex(null);
+            setCompletedVerses(new Set());
+
+            // Small delay before next loop (300ms break between cycles)
+            await new Promise(resolve => setTimeout(resolve, 300));
+          } catch (err) {
+            console.error('[read] Page loop playback error:', err);
+            break;
+          }
+        }
+
+        // Cleanup after loop exits (user pressed stop or error occurred)
+        setIsPlayingPage(false);
+        setIsPagePaused(false);
+        setPlayingVerseIndex(null);
+        setCompletedVerses(new Set());
+      };
+
+      // Start the infinite loop (non-blocking)
+      playPageLoop();
+
     } catch (e) {
       console.error('[read] Page playback failed', e);
       setIsPageDownloading(false);
@@ -884,7 +968,7 @@ export default function ReadScreen() {
       setIsPlayingPage(false);
       // Persistent listeners will handle UI state; no per-call cleanup needed
     }
-  }, [isPlayingPage, getCurrentPageVerses]);
+  }, [isPlayingPage, isPagePaused, getCurrentPageVerses]);
 
   // Auto-scroll & page-mode verse tracking
   const scrollToVerse = useCallback((verseIndex: number) => {
@@ -975,20 +1059,20 @@ export default function ReadScreen() {
       if (allMarked) {
         // Unmark page and verses
         await bulkMarkVersesMemorized(ids, false);
-        ids.forEach((id: number) => unmarkVerseAsMemorized(id));
+        // bulkMarkVersesMemorized handles store update for verses
         unmarkPageAsMemorized(pageModeScope, entityId, currentPageIndex);
         try { showToast('Page unmarked'); } catch { }
       } else {
         // Mark page and verses
         await bulkMarkVersesMemorized(ids, true);
-        ids.forEach((id: number) => markVerseAsMemorized(id));
+        // bulkMarkVersesMemorized handles store update for verses
         markPageAsMemorized(pageModeScope, entityId, currentPageIndex, pageModeSessionVpp, ids);
         try { showToast('Page memorized'); } catch { }
       }
     } catch (e) {
       console.error('[read] Failed mark page memorized', e);
     }
-  }, [getCurrentPageVerses, pageModeScope, selectedSurah, selectedJuz, currentPageIndex, memorizedVerses, bulkMarkVersesMemorized, markVerseAsMemorized, unmarkVerseAsMemorized, markPageAsMemorized, unmarkPageAsMemorized, pageModeSessionVpp, showToast]);
+  }, [getCurrentPageVerses, pageModeScope, selectedSurah, selectedJuz, currentPageIndex, memorizedVerses, bulkMarkVersesMemorized, markPageAsMemorized, unmarkPageAsMemorized, pageModeSessionVpp, showToast]);
 
   const handleMarkPageRevised = useCallback(async () => {
     const pageVerses = getCurrentPageVerses();
@@ -1004,20 +1088,20 @@ export default function ReadScreen() {
     try {
       if (allMarked) {
         // Unmark page and verses
-        ids.forEach((id: number) => unmarkVerseAsRevised(id));
+        ids.forEach((id: number) => unmarkVerseAsRevised(id)); // No bulk unmark action available yet?
         unmarkPageAsRevised(pageModeScope, entityId, currentPageIndex);
         try { showToast('Page unrevised'); } catch { }
       } else {
         // Mark page and verses
         await bulkMarkVersesRevised(ids);
-        ids.forEach((id: number) => markVerseAsRevised(id));
+        // bulkMarkVersesRevised handles store update for verses
         markPageAsRevised(pageModeScope, entityId, currentPageIndex, pageModeSessionVpp, ids);
         try { showToast('Page revised'); } catch { }
       }
     } catch (e) {
       console.error('[read] Failed mark page revised', e);
     }
-  }, [getCurrentPageVerses, pageModeScope, selectedSurah, selectedJuz, currentPageIndex, revisedVerses, bulkMarkVersesRevised, markVerseAsRevised, unmarkVerseAsRevised, markPageAsRevised, unmarkPageAsRevised, pageModeSessionVpp, showToast]);
+  }, [getCurrentPageVerses, pageModeScope, selectedSurah, selectedJuz, currentPageIndex, revisedVerses, bulkMarkVersesRevised, unmarkVerseAsRevised, markPageAsRevised, unmarkPageAsRevised, pageModeSessionVpp, showToast]);
 
   const handleSurahPress = (surah: Surah) => {
     setNavigationSource('surahList');
@@ -1998,7 +2082,17 @@ export default function ReadScreen() {
               </View>
             </View>
           ) : (
-            <Text style={styles.headerTitle}>Recite Qur'an in measured and rhythmic tone!</Text>
+            <View style={styles.headerTitleContainer}>
+              <AutoSizeText
+                numberOfLines={2}
+                mode={ResizeTextMode.min_font_size}
+                fontSize={18}
+                minFontSize={14}
+                style={[styles.headerTitle, { paddingHorizontal: 16, textAlign: 'center', lineHeight: 24 }]}
+              >
+                Recite Qur'an in measured and rhythmic tone!
+              </AutoSizeText>
+            </View>
           )}
         </View>
 
@@ -2015,31 +2109,27 @@ export default function ReadScreen() {
                       borderColor: isCurrentPageMemorized ? '#4CAF50' : '#444444',
                       borderWidth: isCurrentPageMemorized ? 2 : 1,
                       opacity: (!currentPageVerses.length || pressed) ? 0.7 : 1,
-                      shadowColor: isCurrentPageMemorized ? '#4CAF50' : 'transparent',
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.3,
-                      shadowRadius: 4,
-                      elevation: isCurrentPageMemorized ? 3 : 0,
+                      elevation: isCurrentPageMemorized ? 2 : 0,
                     }
                   ]}
                   onPress={handleMarkPageMemorized}
                   disabled={!currentPageVerses.length}
                 >
-                  <Check size={16} color="#ffffff" />
-                  <Text style={[styles.actionButtonText, { marginLeft: 6 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                  <Check size={14} color="#ffffff" />
+                  <Text style={styles.actionButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
                     {isCurrentPageMemorized ? 'Page Memorized' : 'Mark Page'}
                   </Text>
                   <View style={{
                     marginLeft: 4,
-                    padding: 4,
-                    borderRadius: 12,
+                    padding: 2,
+                    borderRadius: 10,
                     backgroundColor: isCurrentPageMemorized ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
-                    width: 22,
-                    height: 22,
+                    width: 20,
+                    height: 20,
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}>
-                    {isCurrentPageMemorized && <ArrowLeft size={14} color="#ffffff" />}
+                    {isCurrentPageMemorized && <ArrowLeft size={12} color="#ffffff" />}
                   </View>
                 </Pressable>
 
@@ -2051,31 +2141,27 @@ export default function ReadScreen() {
                       borderColor: isCurrentPageRevised ? '#FF9800' : '#444444',
                       borderWidth: isCurrentPageRevised ? 2 : 1,
                       opacity: (!currentPageVerses.length || pressed) ? 0.7 : 1,
-                      shadowColor: isCurrentPageRevised ? '#FF9800' : 'transparent',
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.3,
-                      shadowRadius: 4,
-                      elevation: isCurrentPageRevised ? 3 : 0,
+                      elevation: isCurrentPageRevised ? 2 : 0,
                     }
                   ]}
                   onPress={handleMarkPageRevised}
                   disabled={!currentPageVerses.length}
                 >
-                  <RefreshCw size={16} color="#ffffff" />
-                  <Text style={[styles.actionButtonText, { marginLeft: 6 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-                    {isCurrentPageRevised ? 'Page Revised' : 'Mark Page Revised'}
+                  <RefreshCw size={14} color="#ffffff" />
+                  <Text style={styles.actionButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                    {isCurrentPageRevised ? 'Page Revised' : 'Mark Revised'}
                   </Text>
                   <View style={{
                     marginLeft: 4,
-                    padding: 4,
-                    borderRadius: 12,
+                    padding: 2,
+                    borderRadius: 10,
                     backgroundColor: isCurrentPageRevised ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
-                    width: 22,
-                    height: 22,
+                    width: 20,
+                    height: 20,
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}>
-                    {isCurrentPageRevised && <ArrowLeft size={14} color="#ffffff" />}
+                    {isCurrentPageRevised && <ArrowLeft size={12} color="#ffffff" />}
                   </View>
                 </Pressable>
               </>
@@ -2380,16 +2466,20 @@ export default function ReadScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1a1a1a' },
-  headerContainer: { paddingTop: 12, paddingBottom: 12, paddingHorizontal: 16, backgroundColor: '#1a1a1a' },
-  headerTopRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  headerTitleContainer: { flex: 1, marginLeft: 12 },
-  headerTitle: { fontSize: 20, fontWeight: '600', color: '#ffffff' },
-  headerSubtitle: { fontSize: 16, color: '#888888', marginTop: 2 },
-  headerActions: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4, paddingHorizontal: 8 },
-  actionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#505050', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, marginHorizontal: 4 },
+  // Slightly larger top padding to avoid overlap with navigation / status bars
+  headerContainer: { paddingTop: 20, paddingBottom: 12, paddingHorizontal: 16, backgroundColor: '#1a1a1a' },
+  headerTopRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, justifyContent: 'space-between', position: 'relative' },
+  // Make title container a normal flex child so it occupies center space and does not overlap other items
+  headerTitleContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 4 },
+  headerTitle: { fontSize: 20, fontWeight: '600', color: '#ffffff', textAlign: 'center' },
+  headerSubtitle: { fontSize: 14, color: '#888888', marginTop: 2, textAlign: 'center' },
+  // Move header action buttons further down so they don't overlap the title
+  // Ensure header action buttons sit below the title (avoid overlapping small screens)
+  headerActions: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16, paddingHorizontal: 8 },
+  actionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#505050', paddingVertical: 8, paddingHorizontal: 4, borderRadius: 8, marginHorizontal: 4 },
   actionButtonActive: { backgroundColor: '#4CAF50' },
   actionButtonRevised: { backgroundColor: '#FF9800' },
-  actionButtonText: { color: '#ffffff', marginLeft: 8, fontSize: 14, fontWeight: '500' },
+  actionButtonText: { color: '#ffffff', marginLeft: 4, fontSize: 11, fontWeight: '600' },
   versesContainer: { flex: 1, backgroundColor: '#1a1a1a' },
   versesContent: { padding: 16 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1a1a1a' },

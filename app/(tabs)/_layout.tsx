@@ -1,8 +1,10 @@
 import { EnhancedHamburgerMenu } from '@/components/EnhancedHamburgerMenu';
+import OccasionHeaderIcon from '@/components/OccasionHeaderIcon';
 import { useThemeColor } from "@/utils/useThemeColor";
 import { Tabs } from "expo-router";
 import { BarChart, BookOpen, Brain, Home, RefreshCw, Settings as SettingsIcon } from "lucide-react-native";
 import React from "react";
+import { View } from 'react-native';
 
 export default function TabLayout() {
   const { primary } = useThemeColor();
@@ -21,7 +23,13 @@ export default function TabLayout() {
             backgroundColor: "#1a1a1a",
           },
           headerTintColor: "#ffffff",
-          headerRight: () => <EnhancedHamburgerMenu inline />,
+          headerRight: () => (
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingRight: 8 }}>
+              {/* Dynamic occasion icon placed between title and hamburger; centered vertically */}
+              <OccasionHeaderIcon />
+              <EnhancedHamburgerMenu inline />
+            </View>
+          ),
         }}
       >
         <Tabs.Screen

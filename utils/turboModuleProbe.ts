@@ -5,12 +5,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Font from 'expo-font';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
+import { openDatabaseSync } from 'expo-sqlite';
+import { Platform } from 'react-native';
 // expo-notifications is optional in this project (we use Firebase + Notifee).
 // Load at runtime if present to avoid plugin resolution/build-time errors when the module is not installed.
 let Notifications: any = null;
 try { Notifications = require('expo-notifications'); } catch (e) { /* not installed or not available in this build */ }
-import { openDatabaseSync } from 'expo-sqlite';
-import { Platform } from 'react-native';
 // Optional modules (may not be installed) loaded via dynamic require to avoid build-time errors
 let SecureStore: any; try { SecureStore = require('expo-secure-store'); } catch {}
 let FileSystem: any; try { FileSystem = require('expo-file-system'); } catch {}

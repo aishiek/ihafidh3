@@ -19,6 +19,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import TajweedVerse from 'rn-tajweed-verse';
 import TafsirModal from './TafsirModal';
+// Direct import to avoid Suspense conflicts with FlashList
+import SajdahIcon from '@/assets/svg/islamic-patterns/SajdahIcon';
+import { isSajdah } from '@/utils/isSajdah';
 
 interface VerseItemProps {
   verse: Verse;
@@ -79,14 +82,14 @@ const VerseItem = ({
   const { primary } = useThemeColor();
 
   // ============ SETTINGS STORE ============
-  const { 
-    fontSizeArabic, 
-    fontSizeTransliteration, 
-    fontSizeTranslation, 
-    arabicFont, 
-    showTranslation, 
-    showTransliteration, 
-    repeatMode, 
+  const {
+    fontSizeArabic,
+    fontSizeTransliteration,
+    fontSizeTranslation,
+    arabicFont,
+    showTranslation,
+    showTransliteration,
+    repeatMode,
     playbackSpeed,
     infiniteLoop,
     translationLanguage
@@ -148,15 +151,15 @@ const VerseItem = ({
       translation: null,
     });
     setLocalDataError(null);
-    
+
     // Reset loading flags to allow fresh data load
     loadingStartedRef.current = false;
-    
+
     // Abort any pending async operations from previous verse
     transliterationAbortRef.current?.abort();
     translationAbortRef.current?.abort();
     localDbAbortRef.current?.abort();
-    
+
   }, [verse.id, verse.surahId, verse.verseNumber, repeatMode]);
 
   // ============ DERIVED STATE ============
@@ -164,6 +167,11 @@ const VerseItem = ({
   const memorized = useMemo(() => memorizedVerses.includes(verse.id), [memorizedVerses, verse.id]);
   const revised = useMemo(() => revisedVerses.some((v: any) => v.verseId === verse.id), [revisedVerses, verse.id]);
   const bookmarked = useMemo(() => bookmarksSet.has(verse.id), [bookmarksSet, verse.id]);
+
+  // Memoize sajdah check to avoid recalculating on every render
+  const isSajdahVerse = useMemo(() => {
+    return isSajdah(surahId || 0, verse.verseNumber);
+  }, [surahId, verse.verseNumber]);
 
   const memorizedDate = useMemo(() => {
     const date = memorizedVerseDates?.[verse.id];
@@ -207,16 +215,16 @@ const VerseItem = ({
     return arabicText || '';
   }, [localData.arabic, arabicText]);
 
-  // Simplified: prefer remote (English) transliteration when available, then local cache.
+  // Simplified: prefer remote (English) transliteration when available, then local cache, then prop.
   const displayedTransliteration = useMemo(() => {
     if (remoteTransliteration != null) return remoteTransliteration;
     if (localData.transliteration) return localData.transliteration;
-    return null;
-  }, [remoteTransliteration, localData.transliteration]);
+    return verse.transliteration || null;
+  }, [remoteTransliteration, localData.transliteration, verse.transliteration]);
 
   const displayedTranslation = useMemo(() => {
-    return remoteTranslation || localData.translation || defaultTranslation;
-  }, [remoteTranslation, localData.translation]);
+    return remoteTranslation || localData.translation || verse.translation || defaultTranslation;
+  }, [remoteTranslation, localData.translation, verse.translation, defaultTranslation]);
 
   // ============ CONTAINER STYLE ============
   const containerStyle = useMemo(() => {
@@ -334,7 +342,7 @@ const VerseItem = ({
     if (bookmarkBusyRef.current) return;
     try {
       bookmarkBusyRef.current = true;
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
 
       if (!bookmarked) {
         const arabicSnippet = (verse.arabicText || '').slice(0, 50);
@@ -342,7 +350,7 @@ const VerseItem = ({
         // Normalize source: 'juzList' -> 'juz', 'surahList' -> 'surah'
         const normalizedSource = source === 'juzList' ? 'juz' : 'surah';
         const juzNum = source === 'juzList' ? verse.juzNumber : undefined;
-        
+
         await useBookmarkStore.getState().addBookmark(
           verse.id,
           surahId || 0,
@@ -439,10 +447,10 @@ const VerseItem = ({
   // Load verse data from local DB
   useEffect(() => {
     if (!surahId || loadingStartedRef.current) return;
-    
+
     isMountedRef.current = true;
     loadingStartedRef.current = true;
-    
+
     const controller = new AbortController();
     localDbAbortRef.current = controller;
 
@@ -471,7 +479,7 @@ const VerseItem = ({
         const row = await getVerseFromLocalDB(surahId, verse.verseNumber);
 
         if (!isMountedRef.current || controller.signal.aborted) return;
-        
+
         if (!row) {
           setLocalDataError('Verse not found in local DB');
           setLocalData({
@@ -613,6 +621,7 @@ const VerseItem = ({
       setRepeatCount(repeatMode);
     }
   }, [repeatMode, repeatCount]);
+
   // Get Surah name for Juz mode
   const getSurahName = () => {
     if (source === 'juzList') {
@@ -622,18 +631,18 @@ const VerseItem = ({
       // prefer englishName, then name; avoid undefined showing in UI
       const surahName = surah ? (surah.englishName || surah.name) : undefined;
       const surahInfo = surahName ? `${chapterId}: ${surahName}` : `Surah ${chapterId}`;
-      
+
       // Add sequence number if available (using != null to catch both null and undefined)
       if (juzSequenceNumber != null && totalJuzVerses != null) {
         return `${surahInfo} • ${juzSequenceNumber}/${totalJuzVerses}`;
       }
       return surahInfo;
     }
-    
+
     // For Surah mode, show Juz and page number instead of redundant surah info
     const juz = verse.juzNumber;
     const page = verse.pageNumber;
-    
+
     if (juz && page) {
       return `Juz:${juz} pg:${page}`;
     } else if (juz) {
@@ -641,18 +650,25 @@ const VerseItem = ({
     } else if (page) {
       return `pg:${page}`;
     }
-    
+
     // Fallback to surah name if juz/page not available
     const surahName = (verse as any).surahName || verse.surah?.englishName || `Surah ${surahId || ''}`;
     return surahName;
   };
 
+  // Compute number string info for responsive sizing (prevents wrapping for 3-digit numbers)
+  const verseNumberStr = String(verse.verseNumber ?? '');
+  const isThreeDigits = verseNumberStr.length >= 3;
+
   return (
     <Pressable ref={forwardedRef as any} style={[styles.container, containerStyle]}>
       <View style={styles.header}>
-        <View style={[styles.verseNumber, { backgroundColor: primary, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }]}> 
-          <Text style={[styles.verseNumberText, { color: '#ffffff' }]}> 
-            {verse.verseNumber} 
+        <View style={[
+          styles.verseNumber,
+          { backgroundColor: primary, flexDirection: 'row', alignItems: 'center', paddingHorizontal: isThreeDigits ? 8 : 6, minWidth: isThreeDigits ? 36 : 28 },
+        ]}>
+          <Text style={[styles.verseNumberText, { color: '#ffffff', fontSize: isThreeDigits ? 8 : styles.verseNumberText.fontSize, textAlign: 'center' }]} numberOfLines={1}>
+            {verse.verseNumber}
           </Text>
           {pageIsCompleted && (
             <View style={{ marginLeft: 6, backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center' }}>
@@ -661,76 +677,76 @@ const VerseItem = ({
           )}
         </View>
 
-        <View style={styles.verseInfo}> 
-          <Text 
-            style={[styles.verseInfoText, { color: '#ffffff' }]} 
-            numberOfLines={1} 
+        <View style={styles.verseInfo}>
+          <Text
+            style={[styles.verseInfoText, { color: '#ffffff' }]}
+            numberOfLines={1}
             ellipsizeMode="tail"
             adjustsFontSizeToFit={true}
             minimumFontScale={0.75}
-          > 
+          >
             {getSurahName()}
-          </Text> 
+          </Text>
         </View>
 
         {/* Right-aligned controls group with minimal spacing */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 'auto' }}>
-          <TouchableOpacity 
-            accessibilityRole="button" 
-            accessibilityLabel="Open tafsir" 
-            style={[styles.controlButton, styles.subtleGoldBg, { marginLeft: 4 }]} 
-            onPress={() => setShowTafsirModal(true)} 
-          > 
-            <BookOpen size={18} color="#FFD700" /> 
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Open tafsir"
+            style={[styles.controlButton, styles.subtleGoldBg, { marginLeft: 4 }]}
+            onPress={() => setShowTafsirModal(true)}
+          >
+            <BookOpen size={18} color="#FFD700" />
           </TouchableOpacity>
 
-          <Pressable 
-            style={({ pressed }) => [ 
-              styles.bookmarkButton, 
-              bookmarked && { backgroundColor: '#333333' }, 
+          <Pressable
+            style={({ pressed }) => [
+              styles.bookmarkButton,
+              bookmarked && { backgroundColor: '#333333' },
               pressed && { opacity: 0.6 },
               { marginLeft: 4 }
-            ]} 
-            onPress={handleToggleBookmark} 
-            accessibilityRole="button" 
-            accessibilityLabel={bookmarked ? 'Remove bookmark' : 'Add bookmark'} 
-          > 
-            <BookmarkIcon size={16} color={bookmarked ? '#FFD700' : '#888888'} fill={bookmarked ? '#FFD700' : 'transparent'} /> 
+            ]}
+            onPress={handleToggleBookmark}
+            accessibilityRole="button"
+            accessibilityLabel={bookmarked ? 'Remove bookmark' : 'Add bookmark'}
+          >
+            <BookmarkIcon size={16} color={bookmarked ? '#FFD700' : '#888888'} fill={bookmarked ? '#FFD700' : 'transparent'} />
           </Pressable>
 
-          <Pressable 
-            style={({ pressed }) => [ 
-              styles.audioButton, 
-              { 
+          <Pressable
+            style={({ pressed }) => [
+              styles.audioButton,
+              {
                 backgroundColor: isCurrentlyPlaying ? '#666666' : primary,
                 marginLeft: 4,
                 opacity: pressed ? 0.7 : 1,
-              } 
-            ]} 
-            onPress={handlePlayAudio} 
-            accessibilityRole="button" 
+              }
+            ]}
+            onPress={handlePlayAudio}
+            accessibilityRole="button"
             accessibilityLabel={isCurrentlyPlaying ? 'Playing verse audio' : 'Play verse audio'}
             disabled={isCurrentlyPlaying}
-          > 
-            <Play size={16} color="#ffffff" fill={isCurrentlyPlaying ? '#ffffff' : 'transparent'} /> 
+          >
+            <Play size={16} color="#ffffff" fill={isCurrentlyPlaying ? '#ffffff' : 'transparent'} />
           </Pressable>
 
           {/* Repeat Mode Button */}
-          <Pressable 
-            style={({ pressed }) => [ 
-              styles.repeatButton, 
-              { 
+          <Pressable
+            style={({ pressed }) => [
+              styles.repeatButton,
+              {
                 backgroundColor: 'rgba(255, 215, 0, 0.15)',
                 borderColor: 'rgba(255, 215, 0, 0.3)',
                 borderWidth: 1,
                 marginLeft: 4,
                 opacity: pressed ? 0.7 : 1,
-              } 
-            ]} 
-            onPress={() => setShowPlaybackModal(true)} 
-            accessibilityRole="button" 
+              }
+            ]}
+            onPress={() => setShowPlaybackModal(true)}
+            accessibilityRole="button"
             accessibilityLabel="Playback settings"
-          > 
+          >
             {infiniteLoop ? (
               <InfinityIcon size={14} color="#FFD700" />
             ) : (
@@ -746,13 +762,15 @@ const VerseItem = ({
         {/* Go-to-verse UI removed from per-verse item; centralized in Surah header */}
       </View>
 
-          {/* Arabic / Tajweed rendering */}
-          {pageIsPlaying && (
-            <View style={{ marginTop: 8, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8, backgroundColor: '#1E3A8A', borderColor: '#3B82F6', borderWidth: 1, alignSelf: 'flex-start' }}>
-              <Text style={{ color: '#e6f0ff', fontWeight: '700' }}>🔊 Playing{pageRepeatInfo ? ` ${pageRepeatInfo}` : ''}</Text>
-            </View>
-          )}
+      {pageIsPlaying && (
+        <View style={{ marginTop: 8, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8, backgroundColor: '#1E3A8A', borderColor: '#3B82F6', borderWidth: 1, alignSelf: 'flex-start' }}>
+          <Text style={{ color: '#e6f0ff', fontWeight: '700' }}>🔊 Playing{pageRepeatInfo ? ` ${pageRepeatInfo}` : ''}</Text>
+        </View>
+      )}
 
+      {/* Inline container so we can place an inline sajdah icon at the end of the verse */}
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'flex-end' }}>
+        <View style={{ flex: 1 }}>
           {shouldUseTajweed ? (
             <TajweedVerse
               verse={normalizedTajweedText || displayedArabic}
@@ -768,7 +786,7 @@ const VerseItem = ({
               }}
             />
           ) : (
-            <Text 
+            <Text
               allowFontScaling={false}
               style={[{
                 color: '#ffffff',
@@ -778,12 +796,27 @@ const VerseItem = ({
                 ...arabicTypography,
                 lineHeight: arabicTypography.lineHeight || Math.round(fontSizeArabic * 2.0),
               }]}
-            > 
+            >
               {displayedArabic}
             </Text>
           )}
+        </View>
 
-      {showTransliteration && displayedTransliteration && (
+        {/* Visual indicator for Sajdah verses - no interaction to prevent freezing */}
+        {isSajdahVerse && !!displayedArabic && (
+          <View
+            accessibilityLabel="Sajdah verse"
+            style={{
+              paddingLeft: 8,
+              paddingTop: 2,
+            }}
+          >
+            <SajdahIcon size={18} color="#FFD700" />
+          </View>
+        )}
+      </View>
+
+      {showTransliteration && !!displayedTransliteration && (
         <Text style={{
           color: '#FFD700',
           fontSize: fontSizeTransliteration,
@@ -793,7 +826,7 @@ const VerseItem = ({
         </Text>
       )}
 
-      {showTranslation && displayedTranslation && (
+      {showTranslation && !!displayedTranslation && (
         <Text style={{
           color: '#ffffff',
           fontSize: fontSizeTranslation,
@@ -805,7 +838,7 @@ const VerseItem = ({
 
       <View style={styles.datesRow}>
         <View style={[styles.dateCol, { opacity: (memorized || surahMemorizedGlobally) ? 1 : 0.5 }]}>
-          {memorized && memorizedDate && (
+          {memorized && !!memorizedDate && (
             <Text style={[styles.memorizedDateText]}>Memorized: {memorizedDate}</Text>
           )}
           {surahMemorizedGlobally && !memorized && (
@@ -817,7 +850,7 @@ const VerseItem = ({
         </View>
 
         <View style={[styles.dateCol, { opacity: (revised || surahRevisedGlobally) ? 1 : 0.5 }]}>
-          {revised && revisedDate && (
+          {revised && !!revisedDate && (
             <Text style={[styles.revisedDateText]}>Revised: {revisedDate}</Text>
           )}
           {surahRevisedGlobally && !revised && (
@@ -859,9 +892,9 @@ const VerseItem = ({
             {memorized ? 'Memorized' : 'Mark Memorized'}
           </Text>
           {memorized && (
-            <View style={{ 
-              marginLeft: 4, 
-              padding: 4, 
+            <View style={{
+              marginLeft: 4,
+              padding: 4,
               borderRadius: 12,
               backgroundColor: 'rgba(255, 255, 255, 0.2)',
               width: 20,
@@ -903,9 +936,9 @@ const VerseItem = ({
             {revised ? 'Revised' : 'Mark Revision'}
           </Text>
           {revised && (
-            <View style={{ 
-              marginLeft: 4, 
-              padding: 4, 
+            <View style={{
+              marginLeft: 4,
+              padding: 4,
               borderRadius: 12,
               backgroundColor: 'rgba(255, 255, 255, 0.2)',
               width: 20,
@@ -1099,14 +1132,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   verseNumber: {
-    width: 28,
+    minWidth: 28,
     height: 28,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   verseNumberText: {
-    fontSize: 12,
+    fontSize: 9,
     fontWeight: 'bold',
   },
   verseInfo: {

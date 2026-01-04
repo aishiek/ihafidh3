@@ -263,6 +263,7 @@ export const useProgressStore = create<ProgressState>()(
         logVerseMemorization(verseId).catch(() => { });
 
         set((s) => {
+          if (__DEV__) console.log('[markVerseAsMemorized] marking verse', verseId);
           if (s.memorizedVerses.includes(verseId)) return {};
           const memorizedVerses = [...s.memorizedVerses, verseId];
           const memorizedVerseDates = { ...s.memorizedVerseDates, [verseId]: formatDate(new Date()) };
@@ -327,8 +328,13 @@ export const useProgressStore = create<ProgressState>()(
           if (s.revisedVerses.some((r) => r.verseId === verseId)) return {};
           const today = formatDate(new Date());
           const revisedVerses = [...s.revisedVerses, { verseId, revisionDate: today }];
-          const dailyRevisedVerses = [...s.dailyRevisedVerses, { verseId, date: today }];
-          const weeklyRevisedVerses = [...s.weeklyRevisedVerses, { verseId, date: today }];
+
+          // Avoid duplicate entries for daily/weekly arrays (same verseId + same date)
+          const alreadyInDaily = s.dailyRevisedVerses.some(r => r.verseId === verseId && r.date === today);
+          const alreadyInWeekly = s.weeklyRevisedVerses.some(r => r.verseId === verseId && r.date === today);
+
+          const dailyRevisedVerses = alreadyInDaily ? s.dailyRevisedVerses : [...s.dailyRevisedVerses, { verseId, date: today }];
+          const weeklyRevisedVerses = alreadyInWeekly ? s.weeklyRevisedVerses : [...s.weeklyRevisedVerses, { verseId, date: today }];
           const verseStatus = {
             ...s.verseStatus,
             [verseId]: {
@@ -377,6 +383,7 @@ export const useProgressStore = create<ProgressState>()(
         bulkLogRevisions(ids).catch(() => { });
 
         set((s) => {
+          if (__DEV__) console.log('[bulkMarkVersesRevised] marking verses', ids);
           const today = formatDate(new Date());
           const revisedVerses = [...s.revisedVerses];
           const dailyRevisedVerses = [...s.dailyRevisedVerses];
@@ -556,21 +563,29 @@ export const useProgressStore = create<ProgressState>()(
       },
 
       updateDailyRevisedVerses: (verseId: number) => {
-        set((s) => ({
-          dailyRevisedVerses: [
-            ...s.dailyRevisedVerses,
-            { verseId, date: formatDate(new Date()) }
-          ]
-        }));
+        set((s) => {
+          const today = formatDate(new Date());
+          if (s.dailyRevisedVerses.some(r => r.verseId === verseId && r.date === today)) {
+            if (__DEV__) console.log('[updateDailyRevisedVerses] already present', verseId, today);
+            return {};
+          }
+          return {
+            dailyRevisedVerses: [...s.dailyRevisedVerses, { verseId, date: today }]
+          };
+        });
       },
 
       updateWeeklyRevisedVerses: (verseId: number) => {
-        set((s) => ({
-          weeklyRevisedVerses: [
-            ...s.weeklyRevisedVerses,
-            { verseId, date: formatDate(new Date()) }
-          ]
-        }));
+        set((s) => {
+          const today = formatDate(new Date());
+          if (s.weeklyRevisedVerses.some(r => r.verseId === verseId && r.date === today)) {
+            if (__DEV__) console.log('[updateWeeklyRevisedVerses] already present', verseId, today);
+            return {};
+          }
+          return {
+            weeklyRevisedVerses: [...s.weeklyRevisedVerses, { verseId, date: today }]
+          };
+        });
       },
 
       updateMemorizedVerses: (ids: number[]) => {
@@ -639,18 +654,17 @@ export const useProgressStore = create<ProgressState>()(
           const pageKey = `${scope}-${entityId}-${pageIndex}`;
           const currentSchedule = s.revisionSchedule || DEFAULT_SCHEDULE;
 
-          // Check if we need to reset daily/weekly counters based on date?
-          // Ideally this reset logic should be centralized, but for now we append.
-          // The reset logic usually happens on app open or when accessing the schedule.
-          // Here we just add to the list if not present.
+          // Safely handle potentially undefined arrays (from old persistence state)
+          const todayList = currentSchedule.completedPagesToday || [];
+          const weekList = currentSchedule.completedPagesThisWeek || [];
 
-          const completedPagesToday = currentSchedule.completedPagesToday.includes(pageKey)
-            ? currentSchedule.completedPagesToday
-            : [...currentSchedule.completedPagesToday, pageKey];
+          const completedPagesToday = todayList.includes(pageKey)
+            ? todayList
+            : [...todayList, pageKey];
 
-          const completedPagesThisWeek = currentSchedule.completedPagesThisWeek.includes(pageKey)
-            ? currentSchedule.completedPagesThisWeek
-            : [...currentSchedule.completedPagesThisWeek, pageKey];
+          const completedPagesThisWeek = weekList.includes(pageKey)
+            ? weekList
+            : [...weekList, pageKey];
 
           return {
             pageMarks: [...s.pageMarks, newMark],
@@ -682,8 +696,8 @@ export const useProgressStore = create<ProgressState>()(
             ),
             revisionSchedule: {
               ...currentSchedule,
-              completedPagesToday: currentSchedule.completedPagesToday.filter(k => k !== pageKey),
-              completedPagesThisWeek: currentSchedule.completedPagesThisWeek.filter(k => k !== pageKey)
+              completedPagesToday: (currentSchedule.completedPagesToday || []).filter(k => k !== pageKey),
+              completedPagesThisWeek: (currentSchedule.completedPagesThisWeek || []).filter(k => k !== pageKey)
             }
           };
         });
@@ -829,9 +843,32 @@ export const useProgressStore = create<ProgressState>()(
         if (!Array.isArray(state.weeklyRevisedVerses)) state.weeklyRevisedVerses = [];
         if (!state.memorizedVerseDates) state.memorizedVerseDates = {};
         if (!state.verseStatus) state.verseStatus = {};
-        if (!state.revisionSchedule) state.revisionSchedule = DEFAULT_SCHEDULE;
+        if (!state.revisionSchedule) {
+          state.revisionSchedule = DEFAULT_SCHEDULE;
+        } else {
+          // Robustly ensure all fields exist (deep merge defaults)
+          state.revisionSchedule.completedToday = state.revisionSchedule.completedToday || [];
+          state.revisionSchedule.completedThisWeek = state.revisionSchedule.completedThisWeek || [];
+          state.revisionSchedule.completedPagesToday = state.revisionSchedule.completedPagesToday || [];
+          state.revisionSchedule.completedPagesThisWeek = state.revisionSchedule.completedPagesThisWeek || [];
+          // Ensure other fields
+          if (state.revisionSchedule.versesPerDay === undefined) state.revisionSchedule.versesPerDay = 5;
+          if (state.revisionSchedule.pagesPerDay === undefined) state.revisionSchedule.pagesPerDay = 1;
+        }
+
         if (!state.badges) state.badges = DEFAULT_BADGES;
         if (!state.timeSpent) state.timeSpent = DEFAULT_TIME;
+
+        // Check for daily reset
+        const today = formatDate(new Date());
+        if (state.revisionSchedule.lastResetDate !== today) {
+          console.log('[progressStore] Resetting daily revision schedule (new day)');
+          state.revisionSchedule.completedToday = [];
+          state.revisionSchedule.completedPagesToday = [];
+          state.revisionSchedule.lastResetDate = today;
+
+          // Note: Weekly reset is a bit more complex, ignoring for now to avoid side effects
+        }
 
         // Recompute aggregates
         const { memorizedCount, revisedCount } = recomputeAggregatesFromStatus(state.verseStatus);
