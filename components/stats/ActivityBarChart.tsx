@@ -20,6 +20,42 @@ interface ActivityBarChartProps {
 type Timeframe = 'daily' | 'weekly' | 'monthly' | 'yearly';
 type DataType = 'verses' | 'pages';
 
+const getScaleSettings = (maxValue: number) => {
+  let scale, step;
+
+  if (maxValue <= 500) {
+    scale = 500;
+    step = 100;
+  } else if (maxValue <= 1000) {
+    scale = 1000;
+    step = 200;
+  } else if (maxValue <= 1500) {
+    scale = 1500;
+    step = 300;
+  } else if (maxValue <= 2000) {
+    scale = 2000;
+    step = 400;
+  } else if (maxValue <= 2500) {
+    scale = 2500;
+    step = 500;
+  } else {
+    scale = Math.ceil(maxValue / 1000) * 1000;
+    step = scale / 5;
+  }
+
+  const labels = [];
+  for (let i = 0; i <= scale; i += step) {
+    if (i === 0) {
+      labels.push('0');
+    } else if (i >= 1000) {
+      labels.push(`${(i / 1000).toFixed(1).replace('.0', '')}K`);
+    } else {
+      labels.push(i.toString());
+    }
+  }
+  return { labels, scale };
+};
+
 const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) => {
   const [timeframe, setTimeframe] = useState<Timeframe>('weekly');
   const [dataType, setDataType] = useState<DataType>('verses');
@@ -27,6 +63,7 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
   const scrollViewRef = useRef<ScrollView>(null);
 
   const chartData = useMemo(() => {
+    // ... aggregated data logic (omitted for brevity but kept in actual file)
     const memMap: Record<string, number> = {};
     const revMap: Record<string, number> = {};
 
@@ -47,10 +84,6 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
     }
 
     const today = new Date();
-    const currentYear = today.getFullYear();
-    const startOfYear = new Date(currentYear, 0, 1);
-
-    // Helper function to get local date string (YYYY-MM-DD) without timezone conversion
     const getLocalDateString = (date: Date): string => {
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -63,167 +96,108 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
     let revised: number[] = [];
 
     if (timeframe === 'daily') {
-      // Show days from Jan 1st of CURRENT YEAR up to Today
-      // If today is older than Jan 1 (impossible if device date is correct), show at least today.
-
-      // We will iterate from Jan 1 to Today
-      // If that's too many days (e.g. late in the year), maybe just show last 30 days but CUT OFF at Jan 1?
-      // User request: "history data should only apply for Year tab".
-      // Let's show "Current Month" days or "Last 30 Days but capped at Jan 1".
-      // actually standard behavior is usually "This Month" or "Last 30 Days".
-      // Let's do: Days of the Current Month, OR if early in year, just Jan 1 to Today.
-      // Better yet: Just show the last 30 days, but FILTER out any date < Jan 1.
-
-      const daysToShow = 30;
-      for (let i = daysToShow - 1; i >= 0; i--) {
-        const d = new Date(today);
-        d.setDate(d.getDate() - i);
-
-        // STRICT FILTER: Ignore if before Jan 1 of current year
-        if (d.getFullYear() < currentYear) continue;
-
-        const dateStr = getLocalDateString(d);
-        labels.push(d.getDate().toString());
+      const currentMonth = today.getMonth();
+      const currentYear = today.getFullYear();
+      const lastDay = today.getDate();
+      for (let day = 1; day <= lastDay; day++) {
+        const date = new Date(currentYear, currentMonth, day);
+        const dateStr = getLocalDateString(date);
+        labels.push(day.toString());
         memorized.push(memMap[dateStr] || 0);
         revised.push(revMap[dateStr] || 0);
       }
-
     } else if (timeframe === 'weekly') {
-      // Show weeks for the current year. 
-      // Simplified: Show last 12 weeks, but cut off any week that ends before Jan 1.
-
-      const weeksToShow = 12;
-      for (let i = weeksToShow - 1; i >= 0; i--) {
+      const weeks: Array<{ start: Date; end: Date; label: string }> = [];
+      for (let i = 11; i >= 0; i--) {
         const endDate = new Date(today);
         endDate.setDate(endDate.getDate() - (i * 7));
-
         const startDate = new Date(endDate);
         startDate.setDate(startDate.getDate() - 6);
-
-        // Logic: if the WHOLE week is in previous year, skip it.
-        // If it overlaps, we include it (maybe partial data).
-        // Let's include if endDate >= Jan 1
-
-        if (endDate < startOfYear) continue;
-
         const weekLabel = `${startDate.getDate()}/${startDate.getMonth() + 1}`;
-
-        // Sum data for this week
+        weeks.push({ start: startDate, end: endDate, label: weekLabel });
+      }
+      weeks.forEach(week => {
         let memSum = 0;
         let revSum = 0;
-
-        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-          // STRICT FILTER: Only count data points in current year
-          if (d.getFullYear() === currentYear) {
-            const dateStr = getLocalDateString(d);
-            memSum += memMap[dateStr] || 0;
-            revSum += revMap[dateStr] || 0;
-          }
+        for (let d = new Date(week.start); d <= week.end; d.setDate(d.getDate() + 1)) {
+          const dateStr = getLocalDateString(d);
+          memSum += memMap[dateStr] || 0;
+          revSum += revMap[dateStr] || 0;
         }
-
-        labels.push(weekLabel);
+        labels.push(week.label);
         memorized.push(memSum);
         revised.push(revSum);
-      }
-
+      });
     } else if (timeframe === 'monthly') {
-      // Show months of CURRENT YEAR only (Jan to Current Month)
-      const currentMonthIndex = today.getMonth(); // 0-11
-
-      for (let month = 0; month <= currentMonthIndex; month++) {
+      const currentYear = today.getFullYear();
+      const currentMonth = today.getMonth();
+      for (let month = 0; month <= currentMonth; month++) {
         let memSum = 0;
         let revSum = 0;
-
-        // Iterate through all data keys to find matches for this month/year
-        // (More efficient might be to iterate days of month, but this is fine for small dataset)
         Object.keys(memMap).forEach((dateStr) => {
           const [yStr, mStr] = dateStr.split('-');
           const year = parseInt(yStr, 10);
           const m = parseInt(mStr, 10) - 1;
-
-          if (year === currentYear && m === month) {
-            memSum += memMap[dateStr];
-          }
+          if (year === currentYear && m === month) memSum += memMap[dateStr];
         });
-
         Object.keys(revMap).forEach((dateStr) => {
           const [yStr, mStr] = dateStr.split('-');
           const year = parseInt(yStr, 10);
           const m = parseInt(mStr, 10) - 1;
-
-          if (year === currentYear && m === month) {
-            revSum += revMap[dateStr];
-          }
+          if (year === currentYear && m === month) revSum += revMap[dateStr];
         });
-
         const monthDate = new Date(currentYear, month, 1);
         labels.push(monthDate.toLocaleDateString('en', { month: 'short' }));
         memorized.push(memSum);
         revised.push(revSum);
       }
-
     } else if (timeframe === 'yearly') {
-      // Show last 3 years (History allowed here)
       for (let i = 2; i >= 0; i--) {
         const year = today.getFullYear() - i;
         let memSum = 0;
         let revSum = 0;
-
         Object.keys(memMap).forEach((dateStr) => {
           const [yStr] = dateStr.split('-');
           const dYear = parseInt(yStr, 10);
-
-          if (dYear === year) {
-            memSum += memMap[dateStr];
-          }
+          if (dYear === year) memSum += memMap[dateStr];
         });
-
         Object.keys(revMap).forEach((dateStr) => {
           const [yStr] = dateStr.split('-');
           const dYear = parseInt(yStr, 10);
-
-          if (dYear === year) {
-            revSum += revMap[dateStr];
-          }
+          if (dYear === year) revSum += revMap[dateStr];
         });
-
         labels.push(year.toString());
         memorized.push(memSum);
         revised.push(revSum);
       }
     }
-
     return { labels, memorized, revised };
   }, [data, pageData, timeframe, dataType]);
 
-  // Calculate max value for auto-scaling BUT ensure minimums
-  const calculatedMax = Math.max(...chartData.memorized, ...chartData.revised, 1);
-  // Round up to nearest 5 or 10 for cleaner grid
-  const maxValue = Math.ceil(calculatedMax / 5) * 5;
+  const rawMaxValue = Math.max(...chartData.memorized, ...chartData.revised, 1);
+  const { labels: yAxisLabels, scale: maxValue } = useMemo(() => getScaleSettings(rawMaxValue), [rawMaxValue]);
 
   const totalMemorized = chartData.memorized.reduce((a, b) => a + b, 0);
   const totalRevised = chartData.revised.reduce((a, b) => a + b, 0);
 
   const screenWidth = Dimensions.get('window').width;
 
-  // Calculate bar width based on number of items
   const getBarWidth = () => {
     switch (timeframe) {
       case 'daily': return 24;
       case 'weekly': return 40;
       case 'monthly': return 40;
-      case 'yearly': return 60;
+      case 'yearly': return 80;
       default: return 40;
     }
   };
 
   const barWidth = getBarWidth();
   const chartContentWidth = Math.max(
-    screenWidth - 60, // Minimum width (padding accounted)
-    chartData.labels.length * (barWidth + 12) // Space for bars + gap
+    screenWidth - (40 + 20 + 20 + 4), // screenWidth - (yAxisWidth + paddingHorizontal*2 + margin)
+    chartData.labels.length * (barWidth + 8)
   );
 
-  // Auto-scroll to end when data or timeframe changes
   React.useEffect(() => {
     requestAnimationFrame(() => {
       scrollViewRef.current?.scrollToEnd({ animated: false });
@@ -232,18 +206,9 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
 
   return (
     <View style={[styles.container, { backgroundColor: colors.card }]}>
-
-      {/* 
-        LAYOUT FIX: Stacked Header 
-        Row 1: Title
-        Row 2: Toggle (Verses/Pages) 
-        Row 3: Time Tabs 
-      */}
-      <View style={styles.headerStack}>
-        <Text style={[styles.title, { color: colors.text }]}>📊 Activity Overview</Text>
-
-        <View style={styles.controlsContainer}>
-          {/* Toggle */}
+      <View style={styles.header}>
+        <View style={styles.headerTopRow}>
+          <Text style={[styles.title, { color: colors.text }]}>📊 Activity Overview</Text>
           {pageData && (
             <View style={styles.toggleContainer}>
               <TouchableOpacity
@@ -272,46 +237,44 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
               </TouchableOpacity>
             </View>
           )}
+        </View>
 
-          {/* Timeframe Tabs */}
-          <View style={[styles.timeframeSelector, { backgroundColor: colors.background }]}>
-            {(['daily', 'weekly', 'monthly', 'yearly'] as Timeframe[]).map((tf) => {
-              const getLabel = (timeframe: Timeframe) => {
-                switch (timeframe) {
-                  case 'daily': return 'Day';
-                  case 'weekly': return 'Week';
-                  case 'monthly': return 'Month';
-                  case 'yearly': return 'Year';
-                  default: return timeframe;
-                }
-              };
+        <View style={[styles.timeframeSelector, { backgroundColor: colors.background }]}>
+          {(['daily', 'weekly', 'monthly', 'yearly'] as Timeframe[]).map((tf) => {
+            const getLabel = (timeframe: Timeframe) => {
+              switch (timeframe) {
+                case 'daily': return 'Day';
+                case 'weekly': return 'Week';
+                case 'monthly': return 'Month';
+                case 'yearly': return 'Year';
+                default: return timeframe;
+              }
+            };
 
-              return (
-                <TouchableOpacity
-                  key={tf}
-                  onPress={() => setTimeframe(tf)}
+            return (
+              <TouchableOpacity
+                key={tf}
+                onPress={() => setTimeframe(tf)}
+                style={[
+                  styles.timeframeButton,
+                  timeframe === tf && { backgroundColor: colors.primary },
+                ]}
+              >
+                <Text
                   style={[
-                    styles.timeframeButton,
-                    timeframe === tf && { backgroundColor: colors.primary },
+                    styles.timeframeText,
+                    { color: timeframe === tf ? '#1a1a1a' : colors.textSecondary },
                   ]}
+                  numberOfLines={1}
                 >
-                  <Text
-                    style={[
-                      styles.timeframeText,
-                      { color: timeframe === tf ? '#1a1a1a' : colors.textSecondary },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {getLabel(tf)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+                  {getLabel(tf)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
-      {/* Summary Stats */}
       <View style={styles.summaryContainer}>
         <View style={[styles.summaryCard, { backgroundColor: colors.background }]}>
           <View style={[styles.summaryBar, { backgroundColor: '#4ECDC4' }]} />
@@ -330,24 +293,15 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
         </View>
       </View>
 
-      {/* Chart Container */}
       <View style={styles.chartContainer}>
-        {/* Fixed Y-axis labels */}
         <View style={styles.yAxisContainer}>
-          {[
-            maxValue,
-            Math.floor(maxValue * 0.75),
-            Math.floor(maxValue * 0.5),
-            Math.floor(maxValue * 0.25),
-            0
-          ].map((val, i) => (
+          {[...yAxisLabels].reverse().map((label, i) => (
             <Text key={i} style={[styles.yAxisText, { color: colors.textSecondary }]}>
-              {val}
+              {label}
             </Text>
           ))}
         </View>
 
-        {/* Scrollable Bar Chart */}
         <ScrollView
           ref={scrollViewRef}
           horizontal
@@ -360,11 +314,9 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
           }}
         >
           <View style={{ width: chartContentWidth, height: 220 }}>
-            {/* Chart area */}
             <View style={styles.chartWrapper}>
-              {/* Grid lines */}
               <View style={styles.gridContainer}>
-                {[0, 1, 2, 3, 4].map((i) => (
+                {yAxisLabels.map((_, i) => (
                   <View
                     key={i}
                     style={[
@@ -375,11 +327,10 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
                 ))}
               </View>
 
-              {/* Bars container */}
               <View style={styles.barsWrapper}>
                 {chartData.labels.map((label, i) => {
-                  const memHeight = maxValue > 0 ? (chartData.memorized[i] / maxValue) * 180 : 0;
-                  const revHeight = maxValue > 0 ? (chartData.revised[i] / maxValue) * 180 : 0;
+                  const memHeight = (chartData.memorized[i] / maxValue) * 180;
+                  const revHeight = (chartData.revised[i] / maxValue) * 180;
 
                   return (
                     <View key={i} style={[styles.barColumn, { width: barWidth }]}>
@@ -420,7 +371,6 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
         </ScrollView>
       </View>
 
-      {/* Legend */}
       <View style={styles.legend}>
         <View style={styles.legendItem}>
           <View style={[styles.legendColor, { backgroundColor: '#4ECDC4' }]} />
@@ -438,26 +388,29 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
 const styles = StyleSheet.create({
   container: {
     borderRadius: 16,
-    padding: 20,
+    padding: 16, // Reduced padding for better small screen fit
     marginBottom: 20,
   },
-  headerStack: {
+  header: {
     marginBottom: 16,
-    gap: 12,
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    flexWrap: 'wrap', // Added wrap for tab overflow
+    gap: 8,
   },
   title: {
-    fontSize: 20,
+    fontSize: 18, // Slightly smaller title
     fontWeight: 'bold',
-  },
-  controlsContainer: {
-    gap: 8,
   },
   toggleContainer: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 8,
     padding: 2,
-    alignSelf: 'flex-start',
   },
   toggleButton: {
     paddingVertical: 4,
@@ -465,7 +418,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   toggleText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
   },
   timeframeSelector: {
@@ -477,38 +430,38 @@ const styles = StyleSheet.create({
   timeframeButton: {
     flex: 1,
     paddingVertical: 8,
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   timeframeText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
   },
   summaryContainer: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
     marginBottom: 20,
   },
   summaryCard: {
     flex: 1,
-    padding: 16,
+    padding: 12,
     borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
   summaryBar: {
-    width: 4,
+    width: 6,
     height: 32,
-    borderRadius: 2,
+    borderRadius: 3,
   },
   summaryContent: {
     flex: 1,
   },
   summaryLabel: {
-    fontSize: 12,
+    fontSize: 11,
     marginBottom: 2,
   },
   summaryValue: {
@@ -520,16 +473,17 @@ const styles = StyleSheet.create({
     height: 220,
   },
   yAxisContainer: {
-    width: 36,
+    width: 40,
     height: 180,
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    paddingRight: 6,
+    paddingRight: 8,
     marginRight: 4,
   },
   yAxisText: {
     fontSize: 10,
-    fontWeight: '500',
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
   },
   scrollView: {
     flex: 1,
@@ -552,7 +506,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     height: 180,
-    gap: 12,
+    gap: 8,
     paddingRight: 20,
   },
   barColumn: {
@@ -575,27 +529,26 @@ const styles = StyleSheet.create({
   },
   bar: {
     flex: 1,
-    maxWidth: 24,
+    maxWidth: 20,
     borderTopLeftRadius: 4,
     borderTopRightRadius: 4,
-    minWidth: 4,
   },
   barLabel: {
     fontSize: 10,
     marginTop: 6,
-    fontWeight: '500',
+    fontWeight: '600',
     textAlign: 'center',
   },
   legend: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 24,
+    gap: 20,
     marginTop: 16,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   legendColor: {
     width: 12,
@@ -603,7 +556,8 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   legendText: {
-    fontSize: 13,
+    fontSize: 12,
+    fontWeight: '500',
   },
 });
 

@@ -2,9 +2,10 @@ import { surahsData } from '@/data/surahs';
 import { usePlannerStore } from '@/store/plannerStore';
 import { useProgressStore } from '@/store/progressStore';
 import { LinearGradient } from 'expo-linear-gradient';
-import { X } from 'lucide-react-native';
+import { FileText, X } from 'lucide-react-native';
 import React, { useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import NotePopup from './NotePopup';
 import SurahRangePicker from './SurahRangePicker';
 
 function formatDMY(d: Date): string { const dd = String(d.getDate()).padStart(2, '0'); const mm = String(d.getMonth() + 1).padStart(2, '0'); const yyyy = d.getFullYear(); return `${dd}-${mm}-${yyyy}`; }
@@ -26,6 +27,12 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
   const plansByDate = usePlannerStore(s => s.plansByDate);
   const addPlan = usePlannerStore(s => s.addPlan);
   const removePlan = usePlannerStore(s => s.removePlan);
+  const updatePlan = usePlannerStore(s => s.updatePlan);
+
+  const [noteVisible, setNoteVisible] = useState(false);
+  const [currentNote, setCurrentNote] = useState('');
+  const [currentNoteTitle, setCurrentNoteTitle] = useState('');
+  const [currentEntryId, setCurrentEntryId] = useState<string | null>(null);
 
   const memorized = useProgressStore(s => s.memorizedVerses);
   const revised = useProgressStore(s => s.revisedVerses);
@@ -125,7 +132,12 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
                   {!!p.note && (
                     <TouchableOpacity
                       style={styles.noteBtn}
-                      onPress={() => Alert.alert('My Note', p.note)}
+                      onPress={() => {
+                        setCurrentNote(p.note || '');
+                        setCurrentNoteTitle(s?.englishName || `Surah ${p.surahId}`);
+                        setCurrentEntryId(p.id);
+                        setNoteVisible(true);
+                      }}
                     >
                       <FileText size={16} color="#e2e8f0" />
                     </TouchableOpacity>
@@ -269,6 +281,27 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
             Overlapping ranges are handled smartly and won’t be double-counted.
           </Text>
         </View>
+
+        <NotePopup
+          visible={noteVisible}
+          onClose={() => {
+            setNoteVisible(false);
+            setCurrentEntryId(null);
+            setCurrentNoteTitle('');
+          }}
+          title={currentNoteTitle}
+          noteText={currentNote}
+          onSave={(newNote) => {
+            if (dateISO && currentEntryId) {
+              updatePlan(dateISO, currentEntryId, { note: newNote });
+            }
+          }}
+          onDelete={() => {
+            if (dateISO && currentEntryId) {
+              updatePlan(dateISO, currentEntryId, { note: undefined });
+            }
+          }}
+        />
       </View>
     </Modal>
   );

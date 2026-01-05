@@ -2,7 +2,7 @@
   "expo": {
     "name": "iHafidh",
     "slug": "ihafidh2",
-    "version": "2.0.3",
+    "version": "2.0.5",
     "orientation": "default",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
@@ -17,6 +17,8 @@
       "assets/**/*"
     ],
     "plugins": [
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
       "expo-router",
       "expo-sqlite",
       [
@@ -33,12 +35,18 @@
             "deploymentTarget": "16.0"
           }
         }
-      ]
+      ],
+      "expo-audio",
+      "expo-web-browser"
     ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ihafidh",
-      "buildNumber": "24",
+      "entitlements": {
+        "aps-environment": "development"
+      },
+      "buildNumber": "25",
+      "googleServicesFile": "./ios/GoogleService-Info.plist",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app needs access to your location to determine Qibla direction and to enhance fasting calendar accuracy.",
         "ITSAppUsesNonExemptEncryption": false,
@@ -47,7 +55,8 @@
         "NSPhotoLibraryUsageDescription": "Allows selecting or saving images related to your progress.",
         "UIBackgroundModes": [
           "audio",
-          "fetch"
+          "fetch",
+          "remote-notification"
         ],
         "NSAppTransportSecurity": {
           "NSExceptionDomains": {
@@ -85,7 +94,7 @@
     },
     "android": {
       "package": "com.ihafidh",
-      "versionCode": 31,
+      "versionCode": 33,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",

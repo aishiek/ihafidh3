@@ -6,7 +6,7 @@ import { useProgressStore } from '@/store/progressStore';
 import { calculateJuzProgress, getJuzVerseRange } from '@/utils/juzCalculator';
 import { useCustomColors } from '@/utils/themeUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
-import { ArrowLeft } from 'lucide-react-native';
+import { ArrowLeft, Check, RefreshCw } from 'lucide-react-native';
 import React, { useCallback, useMemo } from 'react';
 import { FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -22,7 +22,7 @@ type Props = {
 export default function JuzMemorization({ onOpenJuz }: Props) {
   const { primary } = useThemeColor();
   const colors = useCustomColors();
-  const { memorizedVerses, bulkMarkVersesMemorized, updateBadges } = useProgressStore();
+  const { memorizedVerses, revisedVerses, bulkMarkVersesMemorized, bulkMarkVersesRevised, updateBadges } = useProgressStore();
 
   const {
     modalVisible,
@@ -37,17 +37,19 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
   } = useBulkProgressModal();
 
   const memorizedSet = useMemo(() => new Set(memorizedVerses), [memorizedVerses]);
+  const revisedSet = useMemo(() => new Set((revisedVerses || []).map(r => r.verseId)), [revisedVerses]);
 
   const data = useMemo(() => Array.from({ length: 30 }, (_, i) => i + 1), []);
 
-  // Precompute progress for all 30 Juz once per memorizedVerses change
+  // Precompute progress for all 30 Juz once per memorized/revised change
   const juzProgressData = useMemo(() => {
-    const map: Record<number, { progress: number; total: number; memorized: number }> = {};
+    const map: Record<number, { progress: number; total: number; memorized: number; revised: number }> = {};
+    const revIds = (revisedVerses || []).map(r => r.verseId);
     for (let j = 1; j <= 30; j++) {
-      map[j] = calculateJuzProgress(j, memorizedVerses);
+      map[j] = calculateJuzProgress(j, memorizedVerses, revIds);
     }
     return map;
-  }, [memorizedVerses]);
+  }, [memorizedVerses, revisedVerses]);
 
   const bulkToggleJuz = useCallback(async (juz: number, enable: boolean) => {
     if (isProcessing) return;
@@ -99,13 +101,62 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
     }
   }, [memorizedSet, bulkMarkVersesMemorized, updateBadges, startBulkOperation, animateProgress, closeModal, progressTimerRef]);
 
+  const bulkToggleJuzRevision = useCallback(async (juz: number, enable: boolean) => {
+    if (isProcessing) return;
+
+    try {
+      const range = getJuzVerseRange(juz);
+      if (!range.totalVerses) return;
+
+      const startId = Math.max(1, range.startVerseId);
+      const endId = Math.max(startId, range.endVerseId);
+
+      const juzIds: number[] = [];
+      for (let id = startId; id <= endId; id++) juzIds.push(id);
+
+      const idsToApply = enable ? juzIds.filter(id => !revisedSet.has(id)) : juzIds.filter(id => revisedSet.has(id));
+      if (idsToApply.length === 0) return;
+
+      startBulkOperation(enable ? `Marking Juz ${juz} as revised...` : `Unmarking Juz ${juz}...`, idsToApply.length);
+
+      // Animate progress
+      let currentProgress = 0;
+      const animationDuration = 1000;
+      const updateInterval = 30;
+      const steps = animationDuration / updateInterval;
+      const increment = idsToApply.length / steps;
+
+      progressTimerRef.current = setInterval(() => {
+        currentProgress += increment;
+        if (currentProgress >= idsToApply.length) {
+          currentProgress = idsToApply.length;
+          if (progressTimerRef.current) { clearInterval(progressTimerRef.current); progressTimerRef.current = null; }
+        }
+        animateProgress(Math.floor(currentProgress), idsToApply.length);
+      }, updateInterval);
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await bulkMarkVersesRevised(idsToApply, enable);
+      await new Promise(resolve => setTimeout(resolve, animationDuration + 100));
+
+      if (progressTimerRef.current) { clearInterval(progressTimerRef.current); progressTimerRef.current = null; }
+      animateProgress(idsToApply.length, idsToApply.length);
+      await new Promise(resolve => setTimeout(resolve, 400));
+      closeModal();
+    } catch (e) {
+      console.error('Error toggling Juz revision:', e);
+      if (progressTimerRef.current) { clearInterval(progressTimerRef.current); progressTimerRef.current = null; }
+      closeModal();
+    }
+  }, [revisedSet, bulkMarkVersesRevised, startBulkOperation, animateProgress, closeModal, progressTimerRef]);
+
   const renderItem = ({ item: juz }: { item: number }) => {
     const info = JUZ_MAPPING[juz];
-    const { progress, total, memorized } = juzProgressData[juz] || { progress: 0, total: 0, memorized: 0 };
-    const enabled = total > 0 && memorized === total;
-    const startText = info.start.replace(':', ':');
-    const endText = info.end.replace(':', ':');
+    const { progress, total, memorized, revised } = juzProgressData[juz] || { progress: 0, total: 0, memorized: 0, revised: 0 };
+    const memorizedDone = total > 0 && memorized === total;
+    const revisedDone = total > 0 && revised === total;
     const inProgress = memorized > 0 && memorized < total;
+    const revInProgress = revised > 0 && revised < total;
 
     return (
       <TouchableOpacity
@@ -114,38 +165,58 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
         activeOpacity={0.7}
         disabled={isProcessing}
       >
-        {/* Top-right action button (Complete) */}
-        {/* Action button (top-right) - toggles mark/unmark */}
-        <TouchableOpacity
-          style={[
-            styles.completeBtn,
-            {
-              opacity: isProcessing ? 0.6 : 1,
-              backgroundColor: enabled ? '#4CAF50' : primary,
-              flexDirection: 'row',
-              alignItems: 'center',
-            }
-          ]}
-          onPress={() => bulkToggleJuz(juz, !enabled)}
-          disabled={isProcessing}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.completeBtnText}>{enabled ? '✓ Memorized' : inProgress ? 'Complete' : 'Mark All'}</Text>
-          {enabled && (
-            <View style={{ 
-              marginLeft: 6, 
-              padding: 4, 
-              borderRadius: 12,
-              backgroundColor: 'rgba(255, 255, 255, 0.2)',
-              width: 22,
-              height: 22,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              <ArrowLeft size={14} color="#ffffff" />
-            </View>
-          )}
-        </TouchableOpacity>
+        <View style={styles.actionRow}>
+          {/* Memorized Toggle Button - FIRST */}
+          <TouchableOpacity
+            style={[
+              styles.actionBtn,
+              {
+                backgroundColor: memorizedDone ? '#4CAF50' : primary,
+                flexDirection: 'row',
+                alignItems: 'center',
+              }
+            ]}
+            onPress={() => bulkToggleJuz(juz, !memorizedDone)}
+            disabled={isProcessing}
+            activeOpacity={0.8}
+          >
+            <Check size={14} color="#ffffff" style={{ marginRight: 4 }} />
+            <Text style={styles.actionBtnText}>
+              {memorizedDone ? 'Memorized' : 'Mark Juz'}
+            </Text>
+            {memorizedDone && (
+              <View style={styles.toggleBackIcon}>
+                <ArrowLeft size={10} color="#ffffff" />
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {/* Revised Toggle Button - SECOND */}
+          <TouchableOpacity
+            style={[
+              styles.actionBtn,
+              {
+                backgroundColor: revisedDone ? '#4CAF50' : '#FF9800',
+                opacity: revisedDone ? 1 : 0.9,
+                flexDirection: 'row',
+                alignItems: 'center',
+              }
+            ]}
+            onPress={() => bulkToggleJuzRevision(juz, !revisedDone)}
+            disabled={isProcessing}
+            activeOpacity={0.8}
+          >
+            <RefreshCw size={14} color="#ffffff" style={{ marginRight: 4 }} />
+            <Text style={styles.actionBtnText}>
+              {revisedDone ? 'Revised' : 'Revise Juz'}
+            </Text>
+            {revisedDone && (
+              <View style={styles.toggleBackIcon}>
+                <ArrowLeft size={10} color="#ffffff" />
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.leftContent}>
           <View style={[styles.juzLabel, { backgroundColor: primary }]}><Text style={styles.juzLabelText}>Juz {juz}</Text></View>
@@ -175,7 +246,10 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
           })()}
 
           <View style={styles.statsRow}>
-            <Text style={styles.verseCount}>{`📖 ${memorized}/${total} verses`}</Text>
+            <View>
+              <Text style={styles.verseCount}>{`📖 ${memorized}/${total} memorized`}</Text>
+              {revised > 0 && <Text style={[styles.verseCount, { color: '#FF9800', marginTop: 2 }]}>{`🔄 ${revised}/${total} revised`}</Text>}
+            </View>
             <Text style={[styles.percentage, { color: primary }]}>{`${progress}%`}</Text>
           </View>
 
@@ -183,12 +257,12 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
             <View style={[styles.progressBar, { width: `${Math.max(2, progress)}%`, backgroundColor: primary }]} />
           </View>
         </View>
-  </TouchableOpacity>
+      </TouchableOpacity>
     );
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}> 
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Juz verses are handled by parent via onOpenJuz */}
       <FlatList
         data={data}
@@ -238,21 +312,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
-  badgeText: { 
-    color: '#fff', 
-    fontWeight: '700', 
-    fontSize: 18 
+  badgeText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 18
   },
-  info: { 
+  info: {
     flex: 1,
   },
-  title: { 
-    fontSize: 18, 
+  title: {
+    fontSize: 18,
     fontWeight: '700',
     marginBottom: 4,
   },
-  subtitle: { 
-    fontSize: 14, 
+  subtitle: {
+    fontSize: 14,
     marginBottom: 6,
     opacity: 0.8,
   },
@@ -262,7 +336,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 6,
   },
-  progressText: { 
+  progressText: {
     fontSize: 13,
     fontWeight: '500',
   },
@@ -284,17 +358,44 @@ const styles = StyleSheet.create({
   leftContent: {
     flex: 1,
   },
-  completeBtn: {
+  actionRow: {
     position: 'absolute',
-    top: 12,
-    right: 12,
+    top: 10,
+    right: 10,
+    flexDirection: 'row',
+    gap: 8,
+    zIndex: 1,
+  },
+  actionBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    minWidth: 85,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    color: '#fff',
+  },
+  toggleBackIcon: {
+    marginLeft: 6,
+    padding: 3,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  completeBtn: {
+    // Legacy mapping to actionBtn
     paddingVertical: 10,
     paddingHorizontal: 18,
     borderRadius: 10,
     backgroundColor: '#2563eb',
-    shadowColor: '#2563eb',
-    shadowOpacity: 0.25,
-    elevation: 4,
   },
   completeBtnText: {
     color: '#fff',
@@ -400,14 +501,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
-  modalOverlay: { 
-    flex: 1, 
-    backgroundColor: 'rgba(0,0,0,0.7)', 
-    alignItems: 'center', 
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
   },
-  modalCard: { 
+  modalCard: {
     padding: 28,
     borderRadius: 16,
     minWidth: 280,
@@ -420,18 +521,18 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: 'center',
   },
-  progressBarContainer: { 
+  progressBarContainer: {
     width: '100%',
     marginTop: 8,
   },
-  progressBarBackground: { 
-    height: 8, 
-    borderRadius: 4, 
+  progressBarBackground: {
+    height: 8,
+    borderRadius: 4,
     overflow: 'hidden',
     width: '100%',
   },
-  progressBarFill: { 
-    height: '100%', 
+  progressBarFill: {
+    height: '100%',
     borderRadius: 4,
     minWidth: 8,
   },

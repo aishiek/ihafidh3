@@ -8,16 +8,25 @@ import { View } from 'react-native';
 
 export default function TabLayout() {
   const { primary } = useThemeColor();
-  
+
   return (
     <>
       <Tabs
         screenOptions={{
           tabBarActiveTintColor: primary,
           tabBarInactiveTintColor: "#888888",
+          tabBarAllowFontScaling: false, // Prevent labels from growing too large
+          tabBarLabelStyle: {
+            fontSize: 10,
+            fontWeight: '600',
+            marginTop: -4,
+            marginBottom: 4,
+          },
           tabBarStyle: {
             backgroundColor: "#1a1a1a",
             borderTopColor: "#333333",
+            height: 60,
+            paddingBottom: 8,
           },
           headerStyle: {
             backgroundColor: "#1a1a1a",
@@ -36,42 +45,42 @@ export default function TabLayout() {
           name="index"
           options={{
             title: "Home",
-            tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
+            tabBarIcon: ({ color, size }) => <Home size={22} color={color} />,
           }}
         />
         <Tabs.Screen
           name="read"
           options={{
             title: "Recite",
-            tabBarIcon: ({ color, size }) => <BookOpen size={size} color={color} />,
+            tabBarIcon: ({ color, size }) => <BookOpen size={22} color={color} />,
           }}
         />
         <Tabs.Screen
           name="quiz"
           options={{
             title: "Quiz",
-            tabBarIcon: ({ color, size }) => <Brain size={size} color={color} />,
+            tabBarIcon: ({ color, size }) => <Brain size={22} color={color} />,
           }}
         />
         <Tabs.Screen
           name="revision"
           options={{
-            title: "Revision",
-            tabBarIcon: ({ color, size }) => <RefreshCw size={size} color={color} />,
+            title: "Revise",
+            tabBarIcon: ({ color, size }) => <RefreshCw size={22} color={color} />,
           }}
         />
         <Tabs.Screen
           name="stats"
           options={{
             title: "Stats",
-            tabBarIcon: ({ color, size }) => <BarChart size={size} color={color} />,
+            tabBarIcon: ({ color, size }) => <BarChart size={22} color={color} />,
           }}
         />
         <Tabs.Screen
           name="settings"
           options={{
-            title: "Settings",
-            tabBarIcon: ({ color, size }) => <SettingsIcon size={size} color={color} />,
+            title: "Setup",
+            tabBarIcon: ({ color, size }) => <SettingsIcon size={22} color={color} />,
           }}
         />
         <Tabs.Screen

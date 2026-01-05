@@ -45,15 +45,15 @@ class VerseProgressErrorBoundary extends React.Component<
 
 function formatDate(d: Date) {
   const yyyy = d.getFullYear();
-  const mm = String(d.getMonth()+1).padStart(2,'0');
-  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function startOfDay(d: Date){ return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
-function addDays(d: Date, n: number){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+function startOfDay(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function addDays(d: Date, n: number) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 
-export default function VerseProgressCard(){
+export default function VerseProgressCard() {
   const { theme } = useUnifiedTheme();
   const { memorizedVerses, revisedVerses, verseStatus } = useProgressStore();
   const dayKey = useDayKey();
@@ -76,7 +76,7 @@ export default function VerseProgressCard(){
   const loadData = async (r: TimeRange) => {
     const requestId = `${r}-${Date.now()}`;
     currentRequestRef.current = requestId;
-    
+
     if (!loading) {
       setLoading(true);
     }
@@ -91,7 +91,7 @@ export default function VerseProgressCard(){
       const currentMemorized = Object.values(verseStatus).filter(v => v.status === 'memorized').length;
       const currentRevised = Object.values(verseStatus).filter(v => v.status === 'revised').length;
 
-      if (r === 'day'){
+      if (r === 'day') {
         const items: VerseProgressData[] = [{
           date: new Date(today),
           label: 'Today',
@@ -104,16 +104,16 @@ export default function VerseProgressCard(){
         return;
       }
 
-      if (r === 'week'){
+      if (r === 'week') {
         const currentDay = today.getDay();
         const weekStart = addDays(today, -currentDay);
         const weekEnd = today;
-        
+
         // Fetch activity data for the week
         const rows = await getVerseActivitiesBetween(formatDate(weekStart), formatDate(weekEnd));
-        
+
         if (currentRequestRef.current !== requestId) return;
-        
+
         // Build activity map by date
         const activityMap: Record<string, { memorized: number; revised: number }> = {};
         rows.forEach(r => {
@@ -125,13 +125,13 @@ export default function VerseProgressCard(){
           activityMap[r.activityDate].memorized += r.count;
         });
 
-        const days = Array.from({length: 7}, (_, i) => addDays(weekStart, i));
+        const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
         const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        
+
         const items: VerseProgressData[] = days.map((d, i) => {
           const dateKey = formatDate(d);
           const isToday = d.getTime() === today.getTime();
-          
+
           // Only show cumulative data for days up to today
           if (d <= today) {
             // For today, use current authoritative counts
@@ -165,22 +165,22 @@ export default function VerseProgressCard(){
             };
           }
         });
-        
+
         setGraphData(items);
         setTotal(Math.min(currentMemorized + currentRevised, TOTAL_VERSES));
         return;
       }
 
-      if (r === 'month'){
+      if (r === 'month') {
         const currentMonth = today.getMonth();
         const currentYear = today.getFullYear();
         const monthStart = new Date(currentYear, currentMonth, 1);
         const monthEnd = new Date(currentYear, currentMonth + 1, 0);
-        
+
         const rows = await getVerseActivitiesBetween(formatDate(monthStart), formatDate(monthEnd));
-        
+
         if (currentRequestRef.current !== requestId) return;
-        
+
         const activityMap: Record<string, { memorized: number; revised: number }> = {};
         rows.forEach(r => {
           if (!activityMap[r.activityDate]) {
@@ -190,12 +190,12 @@ export default function VerseProgressCard(){
         });
 
         const daysInMonth = monthEnd.getDate();
-        const days = Array.from({length: daysInMonth}, (_, i) => new Date(currentYear, currentMonth, i + 1));
-        
+        const days = Array.from({ length: daysInMonth }, (_, i) => new Date(currentYear, currentMonth, i + 1));
+
         const items: VerseProgressData[] = days.map(d => {
           const dateKey = formatDate(d);
           const isToday = d.getTime() === today.getTime();
-          
+
           // Only show cumulative data for days up to today
           if (d <= today) {
             // For today, use current authoritative counts
@@ -229,21 +229,21 @@ export default function VerseProgressCard(){
             };
           }
         });
-        
+
         setGraphData(items);
         setTotal(Math.min(currentMemorized + currentRevised, TOTAL_VERSES));
         return;
       }
 
-      // Year view
-      const currentYear = today.getFullYear();
-      const yearStart = new Date(currentYear, 0, 1);
-      const yearEnd = new Date(currentYear, 11, 31);
-      
-      const rows = await getVerseActivitiesBetween(formatDate(yearStart), formatDate(yearEnd));
-      
+      // Year view - sliding 12 months
+      const slidingStart = new Date(today);
+      slidingStart.setMonth(today.getMonth() - 11);
+      slidingStart.setDate(1);
+
+      const rows = await getVerseActivitiesBetween(formatDate(slidingStart), formatDate(today));
+
       if (currentRequestRef.current !== requestId) return;
-      
+
       const activityMap: Record<string, { memorized: number; revised: number }> = {};
       rows.forEach(r => {
         if (!activityMap[r.activityDate]) {
@@ -253,54 +253,40 @@ export default function VerseProgressCard(){
       });
 
       const months: { start: Date; end: Date; label: string; current: boolean }[] = [];
-      for (let i = 0; i < 12; i++) {
-        const monthStart = new Date(currentYear, i, 1);
-        const monthEnd = new Date(currentYear, i + 1, 0);
-        const label = monthStart.toLocaleDateString(undefined, { month: 'short' });
-        const current = i === today.getMonth();
-        months.push({ start: monthStart, end: monthEnd, label, current });
+      for (let i = 11; i >= 0; i--) {
+        const mStart = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        const mEnd = new Date(today.getFullYear(), today.getMonth() - i + 1, 0);
+        const label = mStart.toLocaleDateString(undefined, { month: 'short' });
+        const current = i === 0;
+        months.push({ start: mStart, end: mEnd, label, current });
       }
-      
+
       const items: VerseProgressData[] = months.map((m, i) => {
-        const currentMonth = today.getMonth();
-        
-        // Only show cumulative data for months up to current month
-        if (i <= currentMonth) {
-          // For current month, use current authoritative counts
-          if (m.current) {
-            return {
-              date: m.end,
-              label: m.label,
-              cumulativeMemorized: currentMemorized,
-              cumulativeRevised: currentRevised,
-              isCurrentPeriod: true,
-            };
-          } else {
-            // For past months, show zero progress
-            // (since we don't have historical snapshots yet)
-            return {
-              date: m.end,
-              label: m.label,
-              cumulativeMemorized: 0,
-              cumulativeRevised: 0,
-              isCurrentPeriod: false,
-            };
-          }
-        } else {
-          // Future months show zero
+        // For months up to current, show current counts if current month
+        if (m.current) {
           return {
             date: m.end,
             label: m.label,
-            cumulativeMemorized: 0,
-            cumulativeRevised: 0,
+            cumulativeMemorized: currentMemorized,
+            cumulativeRevised: currentRevised,
+            isCurrentPeriod: true,
+          };
+        } else {
+          // For past months, we still don't have historical snapshots 
+          // but at least we show the month label now.
+          return {
+            date: m.end,
+            label: m.label,
+            cumulativeMemorized: 0, // Placeholder
+            cumulativeRevised: 0, // Placeholder
             isCurrentPeriod: false,
           };
         }
       });
-      
+
       setGraphData(items);
       setTotal(Math.min(currentMemorized + currentRevised, TOTAL_VERSES));
-      
+
     } catch (error) {
       console.error('Error loading verse activity data:', error);
       if (currentRequestRef.current === requestId) {
@@ -319,19 +305,19 @@ export default function VerseProgressCard(){
     if (changeRangeDebounced.current) {
       clearTimeout(changeRangeDebounced.current);
     }
-    
+
     Haptics.selectionAsync();
     setRange(newRange);
-    
+
     changeRangeDebounced.current = setTimeout(() => {
       loadData(newRange);
     }, 80);
   };
 
   React.useEffect(() => { loadData(range); }, []);
-  
-  React.useEffect(() => { 
-    loadData(range); 
+
+  React.useEffect(() => {
+    loadData(range);
   }, [memorizedVerses.length, revisedVerses.length]);
 
   // Refresh on calendar day change
@@ -341,7 +327,7 @@ export default function VerseProgressCard(){
 
   return (
     <VerseProgressErrorBoundary colors={colors}>
-      <View style={[styles.card, { backgroundColor: colors.background, borderColor: colors.border }]}> 
+      <View style={[styles.card, { backgroundColor: colors.background, borderColor: colors.border }]}>
         <View style={styles.headerRow}>
           <View style={styles.titleSection}>
             <Text style={[styles.title, { color: colors.text }]}>Activity</Text>
@@ -355,13 +341,13 @@ export default function VerseProgressCard(){
 
         <TimeRangeSelector value={range} onChange={handleRangeChange} colors={colors as any} />
 
-        <VerseProgressGraph 
-          key={`${range}-${graphData.length}`} 
-          timeRange={range} 
-          data={graphData} 
+        <VerseProgressGraph
+          key={`${range}-${graphData.length}`}
+          timeRange={range}
+          data={graphData}
           totalVerses={TOTAL_VERSES}
-          colors={colors} 
-          onBarPress={() => {}} 
+          colors={colors}
+          onBarPress={() => { }}
         />
       </View>
     </VerseProgressErrorBoundary>
@@ -369,12 +355,12 @@ export default function VerseProgressCard(){
 }
 
 const styles = StyleSheet.create({
-  card: { borderRadius:16, borderWidth:1, padding:20, marginBottom:24 },
-  headerRow: { flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 },
-  titleSection: { flex:1 },
-  title: { fontSize:18, fontWeight:'700', marginBottom:2 },
-  subtitle: { fontSize:13, fontWeight:'500' },
-  statsSection: { alignItems:'flex-end' },
-  total: { fontSize:32, fontWeight:'800', lineHeight:36 },
-  totalLabel: { fontSize:12, fontWeight:'600', marginTop:-2 },
+  card: { borderRadius: 16, borderWidth: 1, padding: 20, marginBottom: 24 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  titleSection: { flex: 1 },
+  title: { fontSize: 18, fontWeight: '700', marginBottom: 2 },
+  subtitle: { fontSize: 13, fontWeight: '500' },
+  statsSection: { alignItems: 'flex-end' },
+  total: { fontSize: 32, fontWeight: '800', lineHeight: 36 },
+  totalLabel: { fontSize: 12, fontWeight: '600', marginTop: -2 },
 });

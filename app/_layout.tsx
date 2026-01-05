@@ -129,7 +129,7 @@ function RootLayoutContent() {
   const [forcedUpdate, setForcedUpdate] = React.useState(false);
   const [showAnnouncement, setShowAnnouncement] = React.useState(false);
   const [announcement, setAnnouncement] = React.useState<AnnouncementConfig | null>(null);
-  const [currentVersion, setCurrentVersion] = React.useState<string>('2.0.3');
+  const [currentVersion, setCurrentVersion] = React.useState<string>('2.0.5');
   const [latestVersion, setLatestVersion] = React.useState<string | null>(null);
   const [releaseNotes, setReleaseNotes] = React.useState<string[] | undefined>(undefined);
   const [iosAppIdOverride, setIosAppIdOverride] = React.useState<string | null>(null);
@@ -412,9 +412,9 @@ function RootLayoutContent() {
       const isUpdate = isVersionLower(version, latest);
       const isForce = !!remote.force;
 
-      // Critical update: Current < Min Supported OR (Current < Latest AND Force=True)
-      // Critical updates are blocking and cannot be dismissed permanently (usually)
-      const isCritical = isVersionLower(version, remote.min_supported || MIN_SUPPORTED_VERSION) || (isUpdate && isForce);
+      // Critical update: Current < Min Supported
+      // (Removed (isUpdate && isForce) as requested, so force-updates are dismissible)
+      const isCritical = isVersionLower(version, remote.min_supported || MIN_SUPPORTED_VERSION);
 
       // Announcement: Current == Latest AND Force=True (Billboard mode)
       const isAnnouncement = !isUpdate && isForce;
@@ -422,21 +422,14 @@ function RootLayoutContent() {
       console.log('[version] Check:', { isUpdate, isCritical, isAnnouncement, lastDismissed: lastDismissedVersion, latest });
 
       if (isCritical) {
-        // Always show critical updates (blocking)
+        // Critical updates are blocking and always shown
         setForcedUpdate(true);
         setShowUpdatePrompt(true);
-      } else if (isUpdate) {
-        // Optional update: Show if not dismissed for this version
+      } else if (isUpdate || isAnnouncement) {
+        // Optional update or Announcement: Show if not dismissed for this version
         if (lastDismissedVersion !== latest) {
-          setForcedUpdate(false);
-          setShowUpdatePrompt(true);
-        } else {
-          setShowUpdatePrompt(false);
-        }
-      } else if (isAnnouncement) {
-        // Announcement: Show if not dismissed for this version
-        if (lastDismissedVersion !== latest) {
-          setForcedUpdate(true); // Use forced style for visibility, but it's dismissible in UpdateModal if versions match
+          // Announcements use the "forced" (primary) style for visibility but are dismissible
+          setForcedUpdate(isAnnouncement || isForce);
           setShowUpdatePrompt(true);
         } else {
           setShowUpdatePrompt(false);

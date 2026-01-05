@@ -83,7 +83,7 @@ export interface ProgressState {
   bulkMarkVersesMemorized: (ids: number[], isMarking?: boolean) => void;
   markVerseAsRevised: (verseId: number) => void;
   unmarkVerseAsRevised: (verseId: number) => void;
-  bulkMarkVersesRevised: (ids: number[]) => void;
+  bulkMarkVersesRevised: (ids: number[], isMarking?: boolean) => void;
   updateBadges: () => void;
   setLastReadVerse: (v: Verse | null) => void;
   updateDailyStreak: () => void;
@@ -378,31 +378,50 @@ export const useProgressStore = create<ProgressState>()(
         });
       },
 
-      bulkMarkVersesRevised: (ids: number[]) => {
+      bulkMarkVersesRevised: (ids: number[], isMarking = true) => {
         // Log bulk revision activity to the database
-        bulkLogRevisions(ids).catch(() => { });
+        if (isMarking) {
+          bulkLogRevisions(ids).catch(() => { });
+        }
 
         set((s) => {
-          if (__DEV__) console.log('[bulkMarkVersesRevised] marking verses', ids);
+          if (__DEV__) console.log('[bulkMarkVersesRevised] processing verses', ids, 'isMarking:', isMarking);
           const today = formatDate(new Date());
-          const revisedVerses = [...s.revisedVerses];
-          const dailyRevisedVerses = [...s.dailyRevisedVerses];
-          const weeklyRevisedVerses = [...s.weeklyRevisedVerses];
-          // Only add verses that aren't already marked as revised
-          ids.forEach((id) => {
-            if (!revisedVerses.some((r) => r.verseId === id)) {
-              revisedVerses.push({ verseId: id, revisionDate: today });
-              dailyRevisedVerses.push({ verseId: id, date: today });
-              weeklyRevisedVerses.push({ verseId: id, date: today });
-            }
-          });
+          let revisedVerses = [...s.revisedVerses];
+          let dailyRevisedVerses = [...s.dailyRevisedVerses];
+          let weeklyRevisedVerses = [...s.weeklyRevisedVerses];
+
+          if (isMarking) {
+            // Only add verses that aren't already marked as revised
+            ids.forEach((id) => {
+              if (!revisedVerses.some((r) => r.verseId === id)) {
+                revisedVerses.push({ verseId: id, revisionDate: today });
+                dailyRevisedVerses.push({ verseId: id, date: today });
+                weeklyRevisedVerses.push({ verseId: id, date: today });
+              }
+            });
+          } else {
+            // Remove verses
+            revisedVerses = revisedVerses.filter(r => !ids.includes(r.verseId));
+            dailyRevisedVerses = dailyRevisedVerses.filter(r => !ids.includes(r.verseId));
+            weeklyRevisedVerses = weeklyRevisedVerses.filter(r => !ids.includes(r.verseId));
+          }
+
           // Update verse status for all provided IDs
           const verseStatus = { ...s.verseStatus };
           ids.forEach((id) => {
-            verseStatus[id] = {
-              status: 'revised' as const,
-              last_updated: today
-            };
+            if (isMarking) {
+              verseStatus[id] = {
+                status: 'revised' as const,
+                last_updated: today
+              };
+            } else {
+              // Revert to memorized if it was memorized, otherwise not_started
+              verseStatus[id] = {
+                status: s.memorizedVerses.includes(id) ? 'memorized' as const : 'not_started' as const,
+                last_updated: today
+              };
+            }
           });
           const agg = recomputeAggregatesFromStatus(verseStatus);
           return {

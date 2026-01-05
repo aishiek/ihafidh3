@@ -13,6 +13,7 @@ import CircularProgress from '@/components/CircularProgress';
 import ActivityBarChart from '@/components/stats/ActivityBarChart';
 import ActivityTimeSeriesGraph from '@/components/stats/ActivityTimeSeriesGraph';
 import HeatmapCalendar from '@/components/stats/HeatmapCalendar';
+import HighestStatsCard from '@/components/stats/HighestStatsCard';
 import LifetimeProgressCard from '@/components/stats/LifetimeProgressCard';
 import VerseProgressCard from '@/components/stats/VerseProgressCard';
 import { useQuranStore } from '@/store/quranStore';
@@ -250,6 +251,26 @@ export default function StatsScreen() {
 
     return `Ahlan Wa Sahlan! Yaa, ${name}`;
   };
+
+  // Calculate highest stats
+  const highestStats = useMemo(() => {
+    let maxMem = { count: 0, date: null as string | null };
+    let maxRev = { count: 0, date: null as string | null };
+
+    activityData.memorizedVerses.forEach((d) => {
+      if (d.count > maxMem.count) {
+        maxMem = { count: d.count, date: d.date };
+      }
+    });
+
+    activityData.revisedVerses.forEach((d) => {
+      if (d.count > maxRev.count) {
+        maxRev = { count: d.count, date: d.date };
+      }
+    });
+
+    return { memorized: maxMem, revised: maxRev };
+  }, [activityData]);
 
   return (
     <ScrollView
@@ -544,6 +565,12 @@ export default function StatsScreen() {
 
       {/* Heatmap Calendar */}
       <HeatmapCalendar data={activityData} type={heatmapType} />
+
+      {/* Highest Daily Activity Card */}
+      <HighestStatsCard
+        highestMemorized={highestStats.memorized}
+        highestRevised={highestStats.revised}
+      />
 
       {/* Verse Activity Graph - Mobile pattern: positioned at bottom */}
       <VerseProgressCard />

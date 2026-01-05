@@ -1,5 +1,6 @@
 import notifee from '@notifee/react-native';
 import messaging from '@react-native-firebase/messaging';
+import { Platform } from 'react-native';
 
 // NOTE: Updated for your deployed worker name/account.
 // Replace this value if you publish under a different Cloudflare subdomain or name.
@@ -21,6 +22,22 @@ export class PushNotificationService {
      */
     static async initialize() {
         try {
+            // Register device for remote messages (Required for iOS)
+            if (Platform.OS === 'ios') {
+                try {
+                    // Modern Firebase versions use a function call, older ones use a property.
+                    // (any casting used to satisfy both patterns and avoid lint errors)
+                    const isReg = typeof (messaging() as any).isDeviceRegisteredForRemoteMessages === 'function'
+                        ? (messaging() as any).isDeviceRegisteredForRemoteMessages()
+                        : (messaging() as any).isDeviceRegisteredForRemoteMessages;
+
+                    if (!isReg) {
+                        await messaging().registerDeviceForRemoteMessages();
+                    }
+                } catch (e) {
+                    console.log('[Push] iOS Remote registration failed (expected on simulator):', e);
+                }
+            }
 
             // Request permission
             const authStatus = await messaging().requestPermission();
@@ -35,9 +52,24 @@ export class PushNotificationService {
 
             console.log('[Push] Permission granted');
 
-            // Get FCM token (useful for debugging)
-            const token = await messaging().getToken();
-            console.log('[Push] FCM Token:', token);
+            // Wait for FCM token to be ready
+            // Skip if not registered (important for simulators/missing entitlements)
+            const isRegistered = Platform.OS === 'ios'
+                ? (typeof (messaging() as any).isDeviceRegisteredForRemoteMessages === 'function'
+                    ? (messaging() as any).isDeviceRegisteredForRemoteMessages()
+                    : (messaging() as any).isDeviceRegisteredForRemoteMessages)
+                : true;
+
+            if (Platform.OS === 'ios' && !isRegistered) {
+                console.log('[Push] Device not registered for remote messages, skipping token fetch');
+            } else {
+                try {
+                    const token = await messaging().getToken();
+                    console.log('[Push] FCM Token:', token);
+                } catch (tokenError) {
+                    console.log('[Push] Failed to get token (expected on simulator):', tokenError);
+                }
+            }
 
             // Listen for token refresh
             messaging().onTokenRefresh(async (newToken) => {
@@ -81,6 +113,36 @@ export class PushNotificationService {
      */
     static async syncFastingSubscription(enabled: boolean) {
         try {
+            if (Platform.OS === 'ios') {
+                try {
+                    const isReg = typeof (messaging() as any).isDeviceRegisteredForRemoteMessages === 'function'
+                        ? (messaging() as any).isDeviceRegisteredForRemoteMessages()
+                        : (messaging() as any).isDeviceRegisteredForRemoteMessages;
+
+                    if (!isReg) {
+                        await messaging().registerDeviceForRemoteMessages();
+                    }
+
+                    const isRegPost = typeof (messaging() as any).isDeviceRegisteredForRemoteMessages === 'function'
+                        ? (messaging() as any).isDeviceRegisteredForRemoteMessages()
+                        : (messaging() as any).isDeviceRegisteredForRemoteMessages;
+
+                    if (!isRegPost) {
+                        console.log('[Push] iOS Device not registered for remote messages, skipping sync');
+                        return;
+                    }
+
+                    const apnsToken = await messaging().getAPNSToken();
+                    if (!apnsToken) {
+                        console.log('[Push] No APNS token available yet, skipping sync');
+                        return;
+                    }
+                } catch (apnsError) {
+                    console.log('[Push] APNS token fetch failed (not registered?):', apnsError);
+                    return;
+                }
+            }
+
             const offset = this.getTimezoneOffset();
             const topic = `fasting_${offset}`;
             const legacyTopic = 'fasting';
@@ -105,6 +167,36 @@ export class PushNotificationService {
      */
     static async syncAyahSubscription(enabled: boolean) {
         try {
+            if (Platform.OS === 'ios') {
+                try {
+                    const isReg = typeof (messaging() as any).isDeviceRegisteredForRemoteMessages === 'function'
+                        ? (messaging() as any).isDeviceRegisteredForRemoteMessages()
+                        : (messaging() as any).isDeviceRegisteredForRemoteMessages;
+
+                    if (!isReg) {
+                        await messaging().registerDeviceForRemoteMessages();
+                    }
+
+                    const isRegPost = typeof (messaging() as any).isDeviceRegisteredForRemoteMessages === 'function'
+                        ? (messaging() as any).isDeviceRegisteredForRemoteMessages()
+                        : (messaging() as any).isDeviceRegisteredForRemoteMessages;
+
+                    if (!isRegPost) {
+                        console.log('[Push] iOS Device not registered for remote messages, skipping sync');
+                        return;
+                    }
+
+                    const apnsToken = await messaging().getAPNSToken();
+                    if (!apnsToken) {
+                        console.log('[Push] No APNS token available yet, skipping sync');
+                        return;
+                    }
+                } catch (apnsError) {
+                    console.log('[Push] APNS token fetch failed (not registered?):', apnsError);
+                    return;
+                }
+            }
+
             const offset = this.getTimezoneOffset();
             const topic = `daily_ayah_${offset}`;
             const legacyTopic = 'daily_ayah';

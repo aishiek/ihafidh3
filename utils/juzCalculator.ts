@@ -24,7 +24,7 @@ function getGlobalVerseId(surahName: string, verseNumber: number): number {
     candidateNames.includes(s.englishName) ||
     candidateNames.includes(s.arabicName)
   );
-  
+
   if (!surah) {
     console.warn(`Surah not found: ${surahName}`);
     return 0;
@@ -38,7 +38,7 @@ function getGlobalVerseId(surahName: string, verseNumber: number): number {
       globalId += prevSurah.versesCount;
     }
   }
-  
+
   // Add the verse number from current surah
   return globalId + verseNumber;
 }
@@ -57,7 +57,7 @@ export function getJuzVerseRange(juzNumber: number): JuzVerseRange {
   // Parse start and end references
   const [startSurah, startVerseStr] = juzInfo.start.split(':');
   const [endSurah, endVerseStr] = juzInfo.end.split(':');
-  
+
   const startVerseNumber = parseInt(startVerseStr, 10);
   const endVerseNumber = parseInt(endVerseStr, 10);
 
@@ -86,30 +86,38 @@ export function getAllJuzRanges(): JuzVerseRange[] {
   return cachedJuzRanges;
 }
 
-// Calculate Juz progress from memorized verses
-export function calculateJuzProgress(juzNumber: number, memorizedVerses: number[]): {
+// Calculate Juz progress from memorized and revised verses
+export function calculateJuzProgress(juzNumber: number, memorizedVerses: number[], revisedVerses?: number[]): {
   memorized: number;
+  revised: number;
   total: number;
   progress: number;
 } {
   const range = getJuzVerseRange(juzNumber);
   if (!range.totalVerses) {
-    return { memorized: 0, total: 0, progress: 0 };
+    return { memorized: 0, revised: 0, total: 0, progress: 0 };
   }
 
   const memorizedSet = new Set(memorizedVerses);
+  const revisedSet = revisedVerses ? new Set(revisedVerses) : new Set();
+
   let memorizedCount = 0;
-  
+  let revisedCount = 0;
+
   for (let verseId = range.startVerseId; verseId <= range.endVerseId; verseId++) {
     if (memorizedSet.has(verseId)) {
       memorizedCount++;
     }
+    if (revisedSet.has(verseId)) {
+      revisedCount++;
+    }
   }
 
   const progress = range.totalVerses > 0 ? Math.round((memorizedCount / range.totalVerses) * 100) : 0;
-  
+
   return {
     memorized: memorizedCount,
+    revised: revisedCount,
     total: range.totalVerses,
     progress
   };
@@ -130,7 +138,7 @@ export function calculateOverallJuzStats(memorizedVerses: number[]): {
 
   for (const range of ranges) {
     const juzProgress = calculateJuzProgress(range.juzNumber, memorizedVerses);
-    
+
     if (juzProgress.memorized === 0) {
       notStarted++;
     } else if (juzProgress.memorized === juzProgress.total) {

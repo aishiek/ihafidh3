@@ -92,6 +92,54 @@ const SafeAnimatedRect = memo(({
 
 SafeAnimatedRect.displayName = 'SafeAnimatedRect';
 
+const getScaleSettings = (maxValue: number) => {
+  let scale, step;
+
+  if (maxValue <= 500) {
+    scale = 500;
+    step = 100;
+  } else if (maxValue <= 1000) {
+    scale = 1000;
+    step = 200;
+  } else if (maxValue <= 1500) {
+    scale = 1500;
+    step = 300;
+  } else if (maxValue <= 2000) {
+    scale = 2000;
+    step = 400;
+  } else if (maxValue <= 2500) {
+    scale = 2500;
+    step = 500;
+  } else if (maxValue <= 6236) {
+    scale = 6236;
+    step = 1000; // Large steps for full Quran scale
+  } else {
+    scale = Math.ceil(maxValue / 1000) * 1000;
+    step = scale / 5;
+  }
+
+  const labels = [];
+  for (let i = 0; i < scale; i += step) {
+    if (i === 0) {
+      labels.push('0');
+    } else if (i >= 1000) {
+      labels.push(`${(i / 1000).toFixed(1).replace('.0', '')}K`);
+    } else {
+      labels.push(i.toString());
+    }
+  }
+  // Always include the actual scale if it's 6236 or if it's the last label
+  if (scale === 6236) {
+    labels.push('6.2K');
+  } else if (scale >= 1000) {
+    labels.push(`${(scale / 1000).toFixed(1).replace('.0', '')}K`);
+  } else {
+    labels.push(scale.toString());
+  }
+
+  return { labels, scale };
+};
+
 export default function VerseProgressGraph({
   timeRange,
   data,
@@ -155,12 +203,20 @@ export default function VerseProgressGraph({
   const cardPadding = 32;
   const availableScreenWidth = screenWidth - cardPadding;
   const graphHeight = 240;
-  const yAxisWidth = 40; // Space for Y-axis labels
+  const yAxisWidth = 45; // Space for Y-axis labels
   const chartPadding = { top: 24, bottom: 48, left: 12 + yAxisWidth, right: 12 };
 
-  const denominator = totalVerses || TOTAL_VERSES;
-  const minBarHeight = 2;
+  const minBarHeight = 3;
   const availableHeight = graphHeight - chartPadding.top - chartPadding.bottom;
+
+  // Calculate local max for dynamic scaling
+  const rawMaxValue = useMemo(() => {
+    const lastPoint = processedData[processedData.length - 1];
+    const maxVal = Math.max(lastPoint.cumulativeMemorized + lastPoint.cumulativeRevised, 1);
+    return maxVal;
+  }, [processedData]);
+
+  const { labels: yAxisLabels, scale: denominator } = useMemo(() => getScaleSettings(rawMaxValue), [rawMaxValue]);
 
   // Process stacked bar data
   const stackedData = useMemo(() => {
@@ -172,59 +228,15 @@ export default function VerseProgressGraph({
     });
   }, [processedData, denominator]);
 
-  // Calculate global progress
-  const globalProgress = stackedData.length > 0
-    ? stackedData[stackedData.length - 1]._total
-    : 0;
-
-  // Dynamic gridline interval - More aggressive spacing for clarity
-  const gridInterval = useMemo(() => {
-    if (globalProgress <= 100) return 50;
-    if (globalProgress <= 500) return 250;
-    if (globalProgress <= 1000) return 500;
-    if (globalProgress <= 2000) return 1000;
-    if (globalProgress <= 4000) return 2000;
-    return 3000;
-  }, [globalProgress]);
-
-  // Generate gridlines - max 4 lines total (including 0)
+  // Generate gridlines based on getScaleSettings labels
   const gridlines = useMemo(() => {
-    const lines: number[] = [0]; // Always show 0
-
-    // Calculate minimum value spacing to avoid visual overlap
-    // Assuming approx 20px height for labels and availableHeight pixels total
-    const minPixelSpacing = 25;
-    const minValueSpacing = (minPixelSpacing / availableHeight) * denominator;
-
-    // Add intermediate points
-    const mid1 = gridInterval;
-    const mid2 = gridInterval * 2;
-
-    // Check mid1
-    if (mid1 < denominator) {
-      // Only add if far enough from 0 (which is always true for reasonable intervals)
-      // AND far enough from denominator
-      if (denominator - mid1 > minValueSpacing) {
-        lines.push(mid1);
-      }
+    const step = denominator / (yAxisLabels.length - 1);
+    const lines = [];
+    for (let i = 0; i < yAxisLabels.length; i++) {
+      lines.push(i * step);
     }
-
-    // Check mid2
-    if (mid2 < denominator) {
-      // Only add if far enough from mid1 (if it exists) or 0
-      const prevLine = lines[lines.length - 1];
-      if (mid2 - prevLine > minValueSpacing && denominator - mid2 > minValueSpacing) {
-        lines.push(mid2);
-      }
-    }
-
-    // Always add the max (6236) if not already there
-    if (lines[lines.length - 1] !== denominator) {
-      lines.push(denominator);
-    }
-
     return lines;
-  }, [gridInterval, denominator, availableHeight]);
+  }, [denominator, yAxisLabels]);
 
   // Determine if scrolling is needed
   const needsScrolling = timeRange === 'month' || timeRange === 'year';
@@ -270,7 +282,7 @@ export default function VerseProgressGraph({
               style={[styles.yAxisLabel, { top: y - 8 }]}
             >
               <Text style={[styles.yAxisText, { color: colors.textSecondary }]}>
-                {val}
+                {yAxisLabels[gridlines.indexOf(val)]}
               </Text>
             </View>
           );
