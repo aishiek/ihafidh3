@@ -1,14 +1,23 @@
 const admin = require('firebase-admin');
 
-// Service Account from Environment Variable
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+const rawSA = process.env.FIREBASE_SERVICE_ACCOUNT;
 
-if (Object.keys(serviceAccount).length > 0) {
+if (!rawSA || rawSA.trim() === "") {
+    console.error('FIREBASE_SERVICE_ACCOUNT is empty or missing in environment variables.');
+    process.exit(1);
+}
+
+let serviceAccount;
+try {
+    serviceAccount = JSON.parse(rawSA);
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)
     });
-} else {
-    console.error('FIREBASE_SERVICE_ACCOUNT missing');
+} catch (e) {
+    console.error('❌ ERROR: Could not parse FIREBASE_SERVICE_ACCOUNT as JSON.');
+    console.error('It looks like the secret you pasted is not valid JSON.');
+    console.error(`String starts with: "${rawSA.trim().substring(0, 15)}..."`);
+    console.error('Detailed Error:', e.message);
     process.exit(1);
 }
 
