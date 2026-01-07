@@ -46,9 +46,9 @@ async function main() {
 
             if (localHour === TARGET_HOUR) {
                 // Format offset string matches App (e.g. "+0800", "-0500")
-                const sign = offset >= 0 ? '+' : '-';
+                const sign = offset >= 0 ? '' : '-'; // Removed '+' for valid topic name
                 const abs = Math.abs(offset);
-                const offsetStr = `${sign}${String(abs).padStart(2, '0')}00`; // Assuming 00 minutes
+                const offsetStr = `${sign}${String(abs).padStart(2, '0')}00`;
                 validOffsets.push({ val: offset, str: offsetStr });
             }
         }

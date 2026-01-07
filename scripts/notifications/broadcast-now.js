@@ -27,8 +27,8 @@ async function main() {
     try {
         console.log('--- Sending Immediate Test Broadcast to +0800 (Your Timezone) ---');
 
-        const topicFasting = 'fasting_+0800';
-        const topicAyah = 'daily_ayah_+0800';
+        const topicFasting = 'fasting_0800';
+        const topicAyah = 'daily_ayah_0800';
 
         // 1. Send Fasting Test
         console.log(`Sending to: ${topicFasting}`);

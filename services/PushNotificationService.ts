@@ -10,7 +10,7 @@ export class PushNotificationService {
      */
     static getTimezoneOffset(): string {
         const offsetMinutes = new Date().getTimezoneOffset();
-        const sign = offsetMinutes > 0 ? '-' : '+'; // JS offset is inverted
+        const sign = offsetMinutes > 0 ? '-' : ''; // Removed '+' for valid topic name (FCM only allows - and alphanumeric)
         const absMinutes = Math.abs(offsetMinutes);
         const hours = Math.floor(absMinutes / 60);
         const minutes = absMinutes % 60;
