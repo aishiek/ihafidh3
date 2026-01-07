@@ -1,0 +1,23 @@
+name: Force Test Notification
+
+on:
+    workflow_dispatch: # Allows you to run this manually
+
+jobs:
+    test-notification:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v3
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v3
+              with:
+                  node-version: "18"
+
+            - name: Install Dependencies
+              run: npm install firebase-admin
+
+            - name: Send Test
+              run: node scripts/notifications/broadcast-now.js
+              env:
+                  FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
