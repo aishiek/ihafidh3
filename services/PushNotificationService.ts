@@ -102,6 +102,16 @@ export class PushNotificationService {
                 console.log('[Push] Background message:', remoteMessage);
             });
 
+            // Auto-subscribe to broadcast topic for promotional messages
+            try {
+                const offset = this.getTimezoneOffset();
+                const broadcastTopic = `broadcast_${offset}`;
+                await messaging().subscribeToTopic(broadcastTopic);
+                console.log(`[Push] Subscribed to broadcast topic: ${broadcastTopic}`);
+            } catch (broadcastError) {
+                console.log('[Push] Failed to subscribe to broadcast topic:', broadcastError);
+            }
+
             console.log('[Push] Initialization complete');
         } catch (error) {
             console.error('[Push] Initialization failed:', error);
