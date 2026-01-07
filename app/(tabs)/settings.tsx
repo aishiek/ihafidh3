@@ -890,7 +890,7 @@ export default function SettingsScreen() {
 
         {/* App version label */}
         <View style={styles.versionRow}>
-          <Text style={styles.versionText}>Ver-2.0.5</Text>
+          <Text style={styles.versionText}>Ver-2.0.6</Text>
         </View>
       </ScrollView>
 
