@@ -248,11 +248,11 @@ export default function HomeScreen() {
       if (!mounted) return;
 
       try {
-      if (__DEV__) {
-        console.log('=== WEEKLY SURAHS DEBUG ===');
-        console.log('weeklyRevisedVerses (raw):', weeklyRevisedVerses);
-        console.log('revisionSchedule.surahsPerWeek:', revisionSchedule?.surahsPerWeek);
-      }
+        if (__DEV__) {
+          console.log('=== WEEKLY SURAHS DEBUG ===');
+          console.log('weeklyRevisedVerses (raw):', weeklyRevisedVerses);
+          console.log('revisionSchedule.surahsPerWeek:', revisionSchedule?.surahsPerWeek);
+        }
         // Initialize manager first
         const mgr = initializeActiveTimeManager();
 
@@ -914,58 +914,23 @@ export default function HomeScreen() {
 
   // Smart adaptive formatter based on total minutes
   function formatQuranTimeAdaptive(totalMinutes: number): string {
-    const minutes = totalMinutes % 60;
+    if (!totalMinutes || totalMinutes <= 0) return '0m';
+
+    const min = totalMinutes % 60;
     const hours = Math.floor(totalMinutes / 60) % 24;
-    const days = Math.floor(totalMinutes / 1440);
-    const weeks = Math.floor(days / 7);
-    const months = Math.floor(days / 30);
-    const years = Math.floor(days / 365);
+    const days = Math.floor(totalMinutes / 1440) % 30;
+    const months = Math.floor(totalMinutes / 43200) % 12;
+    const years = Math.floor(totalMinutes / 525600);
 
-    // Years (365+ days)
-    if (years >= 1) {
-      const remainingMonths = Math.floor((days % 365) / 30);
-      if (remainingMonths > 0) {
-        return `${years}Y ${remainingMonths}M`;
-      }
-      return `${years}Y`;
-    }
+    const parts: string[] = [];
+    if (years > 0) parts.push(`${years}Y`);
+    if (months > 0) parts.push(`${months}M`);
+    if (days > 0) parts.push(`${days}D`);
+    if (hours > 0) parts.push(`${hours}h`);
+    if (min > 0) parts.push(`${min}m`);
 
-    // Months (30+ days)
-    if (months >= 1) {
-      const remainingDays = days % 30;
-      if (remainingDays > 0) {
-        return `${months}M ${remainingDays}D`;
-      }
-      return `${months}M`;
-    }
-
-    // Weeks (7+ days)
-    if (weeks >= 1) {
-      const remainingDays = days % 7;
-      if (remainingDays > 0) {
-        return `${weeks}W ${remainingDays}D`;
-      }
-      return `${weeks}W`;
-    }
-
-    // Days (1+ day)
-    if (days >= 1) {
-      let result = `${days}D`;
-      if (hours > 0) result += ` ${hours}h`;
-      if (minutes > 0) result += ` ${minutes}m`;
-      return result;
-    }
-
-    // Hours (1+ hour)
-    if (hours >= 1) {
-      if (minutes > 0) {
-        return `${hours}h ${minutes}m`;
-      }
-      return `${hours}h`;
-    }
-
-    // Minutes only
-    return `${minutes}m`;
+    // Take top 3 units for clarity and detail
+    return parts.slice(0, 3).join(' ');
   }
 
   function formatQuranTimeStyledParts(totalMinutes: number): { primary: string; secondary: string } {
