@@ -134,7 +134,7 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
                       style={styles.noteBtn}
                       onPress={() => {
                         setCurrentNote(p.note || '');
-                        setCurrentNoteTitle(s?.englishName || `Surah ${p.surahId}`);
+                        setCurrentNoteTitle(s?.name || `Surah ${p.surahId}`);
                         setCurrentEntryId(p.id);
                         setNoteVisible(true);
                       }}
