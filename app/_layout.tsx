@@ -129,7 +129,7 @@ function RootLayoutContent() {
   const [forcedUpdate, setForcedUpdate] = React.useState(false);
   const [showAnnouncement, setShowAnnouncement] = React.useState(false);
   const [announcement, setAnnouncement] = React.useState<AnnouncementConfig | null>(null);
-  const [currentVersion, setCurrentVersion] = React.useState<string>('2.0.5');
+  const [currentVersion, setCurrentVersion] = React.useState('2.0.6');
   const [latestVersion, setLatestVersion] = React.useState<string | null>(null);
   const [releaseNotes, setReleaseNotes] = React.useState<string[] | undefined>(undefined);
   const [iosAppIdOverride, setIosAppIdOverride] = React.useState<string | null>(null);

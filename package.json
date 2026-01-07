@@ -1,7 +1,7 @@
 {
   "name": "ihafidh3",
   "main": "expo-router/entry",
-  "version": "2.0.5",
+  "version": "2.0.6",
   "scripts": {
     "start": "expo start --dev-client",
     "android": "cross-env NODE_ENV=development expo run:android",

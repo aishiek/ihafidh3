@@ -2,7 +2,8 @@
 // Adjust these values when you release a new minimum-supported version.
 
 export const MIN_SUPPORTED_VERSION = '2.0.5'; // Local fallback minimum supported version
-export const LATEST_VERSION = '2.0.5'; // Local fallback latest version for soft prompts
+export const LATEST_VERSION = '2.0.6';
+// Local fallback latest version for soft prompts
 
 // Store metadata
 // Android package id is read from android/app/build.gradle -> applicationId
