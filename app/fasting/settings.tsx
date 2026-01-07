@@ -3,12 +3,12 @@ import { safeGoBack } from '@/utils/navigationUtils';
 import { ArrowLeft } from 'lucide-react-native';
 import React, { useContext } from 'react';
 import {
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TouchableOpacity,
-    View,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FastingCalendarContext } from '../../components/fasting/context/FastingCalendarContext';
@@ -17,7 +17,7 @@ import { useUnifiedTheme } from '../../hooks/useUnifiedTheme';
 const FastingSettings: React.FC = () => {
   const { theme } = useUnifiedTheme();
   const fastingContext = useContext(FastingCalendarContext);
-  
+
 
   if (!fastingContext) {
     return (
@@ -60,7 +60,7 @@ const FastingSettings: React.FC = () => {
 
   const setHijriAdjustment = async (val: -1 | 0 | 1) => {
     await updateSettings({ hijriAdjustment: val });
-    await loadCalendarData(state.currentMonth);
+    // Calendar will auto-reload via useEffect in FastingCalendarContext
   };
 
   const setGlobalBeforeDays = async (days: number) => {
@@ -80,7 +80,7 @@ const FastingSettings: React.FC = () => {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       {/* App-style header with yellow back arrow */}
       <View style={[styles.headerBar, { backgroundColor: theme.background, borderBottomColor: theme.border }]}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" hitSlop={{ top:10, bottom:10, left:10, right:10 }} onPress={() => safeGoBack()} style={styles.backButton}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => safeGoBack()} style={styles.backButton}>
           <ArrowLeft size={24} color="#FFC107" />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]}>Manage Fasting Settings</Text>
@@ -100,7 +100,7 @@ const FastingSettings: React.FC = () => {
               Reminder lead time (days before):
             </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              {[0,1,2,3,4,5].map(d => {
+              {[0, 1, 2, 3, 4, 5].map(d => {
                 const active = settings.notifications.defaultBeforeDays === d;
                 return (
                   <TouchableOpacity
@@ -166,7 +166,7 @@ const FastingSettings: React.FC = () => {
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Hijri Date Adjustment</Text>
           <Text style={[styles.settingDescription, { color: theme.textSecondary, marginBottom: 12 }]}>Shift displayed Hijri dates by -1 or +1 day for local moonsighting differences.</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {([-1,0,1] as const).map(v => {
+            {([-1, 0, 1] as const).map(v => {
               const active = settings.hijriAdjustment === v;
               return (
                 <TouchableOpacity
@@ -199,9 +199,9 @@ const FastingSettings: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  headerBar: { flexDirection:'row', alignItems:'center', paddingHorizontal:16, paddingTop:4, paddingBottom:10, borderBottomWidth:1 },
-  backButton: { width:40, height:40, alignItems:'center', justifyContent:'center' },
-  headerTitle: { flex:1, textAlign:'center', fontSize:18, fontWeight:'700' },
+  headerBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 4, paddingBottom: 10, borderBottomWidth: 1 },
+  backButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: '700' },
   content: { flex: 1, paddingHorizontal: 16 },
   helperText: { fontSize: 12, lineHeight: 16, marginBottom: 16 },
   section: { marginTop: 16, borderRadius: 12, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },

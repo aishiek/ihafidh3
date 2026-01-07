@@ -7,13 +7,13 @@ import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
 import { FastingCalendarService } from '@/services/fasting/calendarService';
 import { FastingNotificationService } from '@/services/fasting/notificationService';
 import {
-    FastingAppSettings,
-    FastingCalendarAction,
-    FastingCalendarState,
-    FastingContextType,
-    FastingIntention,
-    FastingNotificationSettings,
-    FastingType
+  FastingAppSettings,
+  FastingCalendarAction,
+  FastingCalendarState,
+  FastingContextType,
+  FastingIntention,
+  FastingNotificationSettings,
+  FastingType
 } from '@/types/fasting';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useReducer } from 'react';
@@ -96,15 +96,15 @@ export function FastingCalendarProvider({ children }: { children: React.ReactNod
 
   // Sync theme changes from unified theme to fasting context
   useEffect(() => {
-    if (state.settings.theme !== unifiedTheme.themeMode || 
-        state.settings.colorScheme !== unifiedTheme.colorScheme) {
-      
-      dispatch({ 
-        type: 'UPDATE_SETTINGS', 
-        payload: { 
+    if (state.settings.theme !== unifiedTheme.themeMode ||
+      state.settings.colorScheme !== unifiedTheme.colorScheme) {
+
+      dispatch({
+        type: 'UPDATE_SETTINGS',
+        payload: {
           theme: unifiedTheme.themeMode === 'system' ? 'light' : unifiedTheme.themeMode,
-          colorScheme: unifiedTheme.colorScheme 
-        } 
+          colorScheme: unifiedTheme.colorScheme
+        }
       });
     }
   }, [unifiedTheme.themeMode, unifiedTheme.colorScheme]);
@@ -112,16 +112,16 @@ export function FastingCalendarProvider({ children }: { children: React.ReactNod
   const loadCalendarData = async (month: Date) => {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
-    
+
     try {
       const days = await FastingCalendarService.generateCalendarDays(
-        month, 
+        month,
         state.settings.location,
         state.settings.hijriAdjustment
       );
-      
+
       dispatch({ type: 'SET_CALENDAR_DAYS', payload: days });
-      
+
       // Schedule notifications if enabled
       if (state.settings.notifications?.enabled) {
         try {
@@ -139,14 +139,14 @@ export function FastingCalendarProvider({ children }: { children: React.ReactNod
       }
     } catch (error) {
       console.error('Error loading fasting calendar data:', error);
-      
+
       // Check if it's a rate limit error
       if (error instanceof Error && error.message.includes('Rate limit exceeded')) {
         dispatch({ type: 'SET_ERROR', payload: 'API rate limit exceeded. Please try again in a few minutes.' });
       } else {
         dispatch({ type: 'SET_ERROR', payload: 'Error loading calendar data. Using offline mode.' });
       }
-      
+
       // Generate fallback calendar with basic fasting days
       try {
         const fallbackDays = FastingCalendarService.generateFallbackCalendarDays(month);
@@ -161,7 +161,7 @@ export function FastingCalendarProvider({ children }: { children: React.ReactNod
 
   const setFastingIntention = async (intention: FastingIntention) => {
     dispatch({ type: 'SET_FASTING_INTENTION', payload: intention });
-    
+
     try {
       await AsyncStorage.setItem(
         `fasting_intention_${intention.date}`,
@@ -175,10 +175,10 @@ export function FastingCalendarProvider({ children }: { children: React.ReactNod
   const updateSettings = async (settings: Partial<FastingAppSettings>) => {
     const newSettings = { ...state.settings, ...settings };
     dispatch({ type: 'UPDATE_SETTINGS', payload: settings });
-    
+
     try {
       await AsyncStorage.setItem('fasting_app_settings', JSON.stringify(newSettings));
-      
+
       // Reschedule notifications if notification settings changed
       if (settings.notifications) {
         try {
@@ -219,7 +219,7 @@ export function FastingCalendarProvider({ children }: { children: React.ReactNod
         const settings = await AsyncStorage.getItem('fasting_app_settings');
         if (settings) {
           const parsedSettings = JSON.parse(settings);
-          
+
           // Ensure notification settings are properly initialized
           const updatedSettings = {
             ...parsedSettings,
@@ -232,7 +232,7 @@ export function FastingCalendarProvider({ children }: { children: React.ReactNod
               }
             }
           };
-          
+
           dispatch({ type: 'UPDATE_SETTINGS', payload: updatedSettings });
         }
       } catch (error) {
@@ -264,8 +264,9 @@ export function FastingCalendarProvider({ children }: { children: React.ReactNod
     loadFastingIntentions();
   }, []);
 
-  // Load calendar data when month changes
+  // Load calendar data when month, location, or hijri adjustment changes
   useEffect(() => {
+    console.log('📅 Calendar reload triggered - Hijri Adjustment:', state.settings.hijriAdjustment);
     loadCalendarData(state.currentMonth);
   }, [state.currentMonth, state.settings.location, state.settings.hijriAdjustment]);
 
