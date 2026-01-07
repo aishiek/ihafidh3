@@ -162,41 +162,60 @@ export default function QuizScreen() {
     return memorizedSurahs;
   }, [memorizedVerses]);
 
-  // Memoize failed surahs calculation
-  // Memoize failed surahs calculation
+  // Calculate failed surahs that need practice
+  const { verseStatus } = useProgressStore();
+
   const failedSurahs = useMemo(() => {
     const failed: { surahId: number; surahName: string; date: Date }[] = [];
     const processedSurahIds = new Set<number>();
 
     // Go through quiz results in reverse order (newest first)
-    // Logic: 
-    // 1. If the MOST RECENT quiz for a surah is 100% correct, it is CLEARED (not added to list).
-    // 2. If the MOST RECENT quiz has < 100%, it is ADDED to list.
-    // 3. We ignore older results for the same surah once processed.
     [...quizState.results].reverse().forEach(result => {
-      if (processedSurahIds.has(result.surahId)) return; // Already handled this surah's latest result
+      if (processedSurahIds.has(result.surahId)) return;
 
       const isPerfect = result.score === 100;
+      processedSurahIds.add(result.surahId);
 
-      if (isPerfect) {
-        // Latest attempt was perfect, so it is CLEARED from practice list
-        processedSurahIds.add(result.surahId);
-      } else {
-        // Latest attempt was Failed, so it goes onto the list
+      if (!isPerfect) {
+        // Latest attempt was Failed
         const surah = surahsData.find(s => s.id === result.surahId);
         if (surah) {
-          failed.push({
-            surahId: result.surahId,
-            surahName: surah.name,
-            date: new Date(result.date)
-          });
-          processedSurahIds.add(result.surahId);
+          // Lenient Check: Has any verse in this surah been marked memorized/revised AFTER this quiz?
+          const quizTime = new Date(result.date).getTime();
+          let hasRecentPractice = false;
+
+          // Helper to get verse range for this surah
+          let startId = 0;
+          for (let i = 1; i < surah.id; i++) {
+            const s = surahsData.find(sd => sd.id === i);
+            if (s) startId += s.versesCount;
+          }
+
+          for (let vNum = 1; vNum <= surah.versesCount; vNum++) {
+            const vId = startId + vNum;
+            const status = verseStatus[vId];
+            if (status?.last_updated) {
+              const lastUpdatedTime = new Date(status.last_updated).getTime();
+              if (lastUpdatedTime > quizTime) {
+                hasRecentPractice = true;
+                break;
+              }
+            }
+          }
+
+          if (!hasRecentPractice) {
+            failed.push({
+              surahId: result.surahId,
+              surahName: surah.name,
+              date: new Date(result.date)
+            });
+          }
         }
       }
     });
 
-    return failed.slice(0, 15); // Return only last 15 currently failing surahs
-  }, [quizState.results]);
+    return failed.slice(0, 15);
+  }, [quizState.results, verseStatus]);
 
   // Save quiz result
   const saveQuizResult = async (result: QuizResult) => {

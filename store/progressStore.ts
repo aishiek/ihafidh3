@@ -267,7 +267,7 @@ export const useProgressStore = create<ProgressState>()(
           if (s.memorizedVerses.includes(verseId)) return {};
           const memorizedVerses = [...s.memorizedVerses, verseId];
           const memorizedVerseDates = { ...s.memorizedVerseDates, [verseId]: formatDate(new Date()) };
-          const verseStatus = { ...s.verseStatus, [verseId]: { status: 'memorized' as const, last_updated: formatDate(new Date()) } };
+          const verseStatus = { ...s.verseStatus, [verseId]: { status: 'memorized' as const, last_updated: new Date().toISOString() } };
           const agg = recomputeAggregatesFromStatus(verseStatus);
           return { memorizedVerses, memorizedVerseDates, verseStatus, ...agg };
         });
@@ -278,7 +278,7 @@ export const useProgressStore = create<ProgressState>()(
           const memorizedVerses = s.memorizedVerses.filter((v) => v !== verseId);
           const memorizedVerseDates = { ...s.memorizedVerseDates };
           delete memorizedVerseDates[verseId];
-          const verseStatus = { ...s.verseStatus, [verseId]: { status: 'not_started' as const, last_updated: formatDate(new Date()) } };
+          const verseStatus = { ...s.verseStatus, [verseId]: { status: 'not_started' as const, last_updated: new Date().toISOString() } };
           const agg = recomputeAggregatesFromStatus(verseStatus);
           return { memorizedVerses, memorizedVerseDates, verseStatus, ...agg };
         });
@@ -304,7 +304,7 @@ export const useProgressStore = create<ProgressState>()(
           const verseStatus = { ...s.verseStatus };
           ids.forEach((id) => (verseStatus[id] = {
             status: isMarking ? 'memorized' as const : 'not_started' as const,
-            last_updated: formatDate(new Date())
+            last_updated: new Date().toISOString()
           }));
 
           const agg = recomputeAggregatesFromStatus(verseStatus);
@@ -339,7 +339,7 @@ export const useProgressStore = create<ProgressState>()(
             ...s.verseStatus,
             [verseId]: {
               status: 'revised' as const,
-              last_updated: today
+              last_updated: new Date().toISOString()
             }
           };
           const agg = recomputeAggregatesFromStatus(verseStatus);
@@ -363,7 +363,7 @@ export const useProgressStore = create<ProgressState>()(
             ...s.verseStatus,
             [verseId]: {
               status: s.memorizedVerses.includes(verseId) ? 'memorized' as const : 'not_started' as const,
-              last_updated: formatDate(new Date())
+              last_updated: new Date().toISOString()
             }
           };
 
@@ -413,13 +413,13 @@ export const useProgressStore = create<ProgressState>()(
             if (isMarking) {
               verseStatus[id] = {
                 status: 'revised' as const,
-                last_updated: today
+                last_updated: new Date().toISOString()
               };
             } else {
               // Revert to memorized if it was memorized, otherwise not_started
               verseStatus[id] = {
                 status: s.memorizedVerses.includes(id) ? 'memorized' as const : 'not_started' as const,
-                last_updated: today
+                last_updated: new Date().toISOString()
               };
             }
           });
