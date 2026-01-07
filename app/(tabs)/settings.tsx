@@ -11,8 +11,9 @@ import { FastingLocation } from '@/types/fasting';
 import { Slider } from '@/components/ui/Slider';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Audio } from 'expo-av';
 import { router, Stack } from 'expo-router';
-import { Bell, Calendar, Globe, MessageSquare, Music, User } from 'lucide-react-native';
+import { Bell, Calendar, Globe, MessageSquare, Music, Play, Square, User } from 'lucide-react-native';
 import React, { useMemo, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -36,6 +37,8 @@ export default function SettingsScreen() {
   const [arabicSizePreview, setArabicSizePreview] = useState<number>(fontSizeArabic ?? 24);
   const [translationSizePreview, setTranslationSizePreview] = useState<number>(fontSizeTranslation ?? 16);
   const [translitSizePreview, setTranslitSizePreview] = useState<number>(fontSizeTransliteration ?? 14);
+  const [previewSound, setPreviewSound] = useState<Audio.Sound | null>(null);
+  const [playingReciter, setPlayingReciter] = useState<string | null>(null);
 
   // Sync previews with store if changed elsewhere
   React.useEffect(() => {
@@ -118,6 +121,64 @@ export default function SettingsScreen() {
       );
     });
   };
+
+  // Audio preview for reciter selection
+  const playPreview = async () => {
+    try {
+      // Stop any currently playing preview
+      if (previewSound) {
+        await previewSound.stopAsync();
+        await previewSound.unloadAsync();
+        setPreviewSound(null);
+      }
+
+      // Al-Fatiha (Surah 1) is a good short preview
+      const previewUrl = `https://cdn.alquran.cloud/media/audio/ayah/${selectedReciter}/1`;
+
+      setPlayingReciter(selectedReciter);
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: previewUrl },
+        { shouldPlay: true }
+      );
+
+      setPreviewSound(sound);
+
+      // Auto-stop when finished
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          setPlayingReciter(null);
+          sound.unloadAsync();
+          setPreviewSound(null);
+        }
+      });
+    } catch (error) {
+      console.error('Error playing preview:', error);
+      setPlayingReciter(null);
+      Alert.alert('Preview Error', 'Unable to play audio preview. Please check your connection.');
+    }
+  };
+
+  const stopPreview = async () => {
+    try {
+      if (previewSound) {
+        await previewSound.stopAsync();
+        await previewSound.unloadAsync();
+        setPreviewSound(null);
+      }
+      setPlayingReciter(null);
+    } catch (error) {
+      console.error('Error stopping preview:', error);
+    }
+  };
+
+  // Cleanup on unmount
+  React.useEffect(() => {
+    return () => {
+      if (previewSound) {
+        previewSound.unloadAsync();
+      }
+    };
+  }, [previewSound]);
 
   const handleLocationChange = async (location: FastingLocation) => {
     try {
@@ -257,6 +318,22 @@ export default function SettingsScreen() {
     },
     reciterOptionTextSelected: {
       color: '#FFFFFF',
+    },
+    previewButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 20,
+      borderRadius: 8,
+      marginTop: 12,
+      marginBottom: 8,
+      borderWidth: 1,
+    },
+    previewButtonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '600',
     },
     languageOptionSubtext: {
       fontSize: 10,
@@ -459,6 +536,27 @@ export default function SettingsScreen() {
               ))}
             </ScrollView>
           </View>
+
+          {/* Preview Button */}
+          <Pressable
+            style={[
+              styles.previewButton,
+              {
+                backgroundColor: playingReciter === selectedReciter ? '#ef4444' : theme.primary,
+                borderColor: theme.primary
+              }
+            ]}
+            onPress={playingReciter === selectedReciter ? stopPreview : playPreview}
+          >
+            {playingReciter === selectedReciter ? (
+              <Square size={16} color="#fff" fill="#fff" style={{ marginRight: 8 }} />
+            ) : (
+              <Play size={16} color="#fff" fill="#fff" style={{ marginRight: 8 }} />
+            )}
+            <Text style={styles.previewButtonText}>
+              {playingReciter === selectedReciter ? 'Stop Preview' : 'Preview Reciter'}
+            </Text>
+          </Pressable>
 
           <Text style={styles.inputLabel}>Translation Language</Text>
           <View style={styles.pickerContainer}>
