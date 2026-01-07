@@ -182,7 +182,7 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
           >
             <Check size={14} color="#ffffff" style={{ marginRight: 4 }} />
             <Text style={styles.actionBtnText}>
-              {memorizedDone ? 'Memorized' : 'Mark Juz'}
+              {memorizedDone ? 'Done' : 'Mark Juz'}
             </Text>
             {memorizedDone && (
               <View style={styles.toggleBackIcon}>
@@ -196,7 +196,7 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
             style={[
               styles.actionBtn,
               {
-                backgroundColor: revisedDone ? '#4CAF50' : '#FF9800',
+                backgroundColor: revisedDone ? '#FF9800' : '#FF9800',
                 opacity: revisedDone ? 1 : 0.9,
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -208,7 +208,7 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
           >
             <RefreshCw size={14} color="#ffffff" style={{ marginRight: 4 }} />
             <Text style={styles.actionBtnText}>
-              {revisedDone ? 'Revised' : 'Revise Juz'}
+              {revisedDone ? 'Done' : 'Revise Juz'}
             </Text>
             {revisedDone && (
               <View style={styles.toggleBackIcon}>
