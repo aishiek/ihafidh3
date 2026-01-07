@@ -39,6 +39,7 @@ export default function SettingsScreen() {
   const [translitSizePreview, setTranslitSizePreview] = useState<number>(fontSizeTransliteration ?? 14);
   const [previewSound, setPreviewSound] = useState<Audio.Sound | null>(null);
   const [playingReciter, setPlayingReciter] = useState<string | null>(null);
+  const [isSliderActive, setIsSliderActive] = useState(false);
 
   // Sync previews with store if changed elsewhere
   React.useEffect(() => {
@@ -485,7 +486,11 @@ export default function SettingsScreen() {
         }}
       />
 
-      <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scrollContainer}
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={!isSliderActive}
+      >
         {/* Personal Information Section */}
         <View style={styles.section}>
           <View style={styles.sectionTitle}>
@@ -803,6 +808,8 @@ export default function SettingsScreen() {
               trackColor={theme.inactive}
               filledColor={theme.primary}
               thumbColor={theme.primary}
+              onTouchStart={() => setIsSliderActive(true)}
+              onTouchEnd={() => setIsSliderActive(false)}
               onChange={(v) => {
                 // Update preview immediately for smooth UI
                 setArabicSizePreview(v);
@@ -842,6 +849,8 @@ export default function SettingsScreen() {
               trackColor={theme.inactive}
               filledColor={theme.primary}
               thumbColor={theme.primary}
+              onTouchStart={() => setIsSliderActive(true)}
+              onTouchEnd={() => setIsSliderActive(false)}
               onChange={(v) => {
                 setTranslationSizePreview(v);
               }}
@@ -879,6 +888,8 @@ export default function SettingsScreen() {
               trackColor={theme.inactive}
               filledColor={theme.primary}
               thumbColor={theme.primary}
+              onTouchStart={() => setIsSliderActive(true)}
+              onTouchEnd={() => setIsSliderActive(false)}
               onChange={(v) => {
                 setTranslitSizePreview(v);
               }}

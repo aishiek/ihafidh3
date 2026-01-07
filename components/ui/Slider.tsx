@@ -14,6 +14,8 @@ type SliderProps = {
   height?: number;
   thumbSize?: number;
   disabled?: boolean;
+  onTouchStart?: () => void;
+  onTouchEnd?: () => void;
 };
 
 /**
@@ -36,6 +38,8 @@ export const Slider: React.FC<SliderProps> = ({
   height = 32,
   thumbSize = 24,
   disabled = false,
+  onTouchStart = () => { },
+  onTouchEnd = () => { },
 }) => {
   const [trackWidth, setTrackWidth] = useState(0);
   const isDragging = useRef(false);
@@ -89,8 +93,13 @@ export const Slider: React.FC<SliderProps> = ({
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => !disabled,
     onMoveShouldSetPanResponder: () => !disabled,
+    // CRITICAL: Capture the gesture before parents (ScrollView) can
+    onStartShouldSetPanResponderCapture: () => !disabled,
+    onMoveShouldSetPanResponderCapture: () => !disabled,
+
     onPanResponderGrant: (event: GestureResponderEvent) => {
       isDragging.current = true;
+      onTouchStart?.();
       animateThumbScale(1.3);
 
       // Jump to touch position
@@ -120,8 +129,15 @@ export const Slider: React.FC<SliderProps> = ({
 
       setTimeout(() => {
         isDragging.current = false;
+        onTouchEnd?.();
       }, 100);
     },
+    onPanResponderTerminate: () => {
+      animateThumbScale(1);
+      isDragging.current = false;
+      onTouchEnd?.();
+    },
+    onPanResponderTerminationRequest: () => false,
   });
 
   const trackHeight = 6;
@@ -132,6 +148,7 @@ export const Slider: React.FC<SliderProps> = ({
         style={styles.trackContainer}
         onLayout={handleLayout}
         {...panResponder.panHandlers}
+        hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
       >
         <View style={[styles.track, { backgroundColor: trackColor, height: trackHeight }]} />
         <View
