@@ -41,6 +41,9 @@ export interface SettingsState extends AppSettings {
   arabicFont: ArabicFont;
   playbackSpeed: PlaybackSpeed;
   infiniteLoop: boolean;
+  mushafRepeatMode: number;
+  mushafInfiniteLoop: boolean;
+  mushafRepeatScope: 'page' | 'verse';
   notificationSettings: NotificationSettings;
   revisionReminderSettings: RevisionReminderSettings;
   pageReminderSettings: PageReminderSettings;
@@ -66,6 +69,9 @@ export interface SettingsState extends AppSettings {
   setReciterIdentifier: (identifier: string) => void;
   setPlaybackSpeed: (speed: PlaybackSpeed) => void;
   setInfiniteLoop: (enabled: boolean) => void;
+  setMushafRepeatMode: (mode: number) => void;
+  setMushafInfiniteLoop: (enabled: boolean) => void;
+  setMushafRepeatScope: (scope: 'page' | 'verse') => void;
   setNotificationSetting: (key: keyof NotificationSettings, value: boolean) => void;
   setRevisionReminderSettings: (settings: Partial<RevisionReminderSettings>) => void;
   setPageReminderSettings: (settings: Partial<PageReminderSettings>) => void;
@@ -126,6 +132,9 @@ export const useSettingsStore = create<SettingsState>()(
         arabicFont: 'default',
         playbackSpeed: DEFAULT_PLAYBACK_SPEED,
         infiniteLoop: false,
+        mushafRepeatMode: 1,
+        mushafInfiniteLoop: false,
+        mushafRepeatScope: 'verse',
         ayahDailyNotificationsEnabled: false,
         notificationSettings: {
           dailyAyah: false,
@@ -152,11 +161,11 @@ export const useSettingsStore = create<SettingsState>()(
         setFontSizeTransliteration: (fontSizeTransliteration) => set({ fontSizeTransliteration }),
         setFontSizeTranslation: (fontSizeTranslation) => set({ fontSizeTranslation }),
         setArabicFont: (arabicFont) => {
-          // Handle case where 'tajweed' might be in AsyncStorage from previous version
-          const font = (arabicFont === 'tajweed') ? 'scheherazade' :
-            (['default', 'uthman-taha', 'scheherazade', 'scheherazade-bold', 'indo-pak', 'amiri-quran', 'noto-naskh'].includes(arabicFont)
+          const font = (
+            ['default', 'uthman-taha', 'scheherazade', 'scheherazade-bold', 'tajweed', 'indo-pak', 'amiri-quran', 'noto-naskh'].includes(arabicFont)
               ? arabicFont
-              : 'default');
+              : 'default'
+          );
           set({ arabicFont: font });
         },
         setShowTranslation: (showTranslation) => set({ showTranslation }),
@@ -185,6 +194,9 @@ export const useSettingsStore = create<SettingsState>()(
           clearAudioCache();
           set({ reciterIdentifier });
         },
+        setMushafRepeatMode: (mushafRepeatMode) => set({ mushafRepeatMode }),
+        setMushafInfiniteLoop: (mushafInfiniteLoop) => set({ mushafInfiniteLoop }),
+        setMushafRepeatScope: (mushafRepeatScope) => set({ mushafRepeatScope }),
         setPlaybackSpeed: (playbackSpeed) => set({ playbackSpeed }),
         setInfiniteLoop: (infiniteLoop) => set({ infiniteLoop }),
         setNotificationSetting: (key, value) =>
@@ -265,6 +277,10 @@ export const useSettingsStore = create<SettingsState>()(
           // Default playback settings
           state.playbackSpeed = state.playbackSpeed || DEFAULT_PLAYBACK_SPEED;
           state.infiniteLoop = state.infiniteLoop || false;
+          // @ts-ignore - mushaf repeat settings
+          (state as any).mushafRepeatMode = (state as any).mushafRepeatMode || 1;
+          // @ts-ignore - mushaf infinite loop
+          (state as any).mushafInfiniteLoop = (state as any).mushafInfiniteLoop || false;
           // Initialize notification settings with defaults
           // @ts-ignore - extend persisted state
           (state as any).notificationSettings = (state as any).notificationSettings || {

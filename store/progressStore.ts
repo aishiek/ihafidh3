@@ -1,9 +1,9 @@
 // Full-ish, compatible persisted progress store (types + simple implementations)
 import {
-  bulkLogRevisions,
-  bulkMarkVersesMemorized,
-  logVerseMemorization,
-  logVerseRevision
+    bulkLogRevisions,
+    bulkMarkVersesMemorized,
+    logVerseMemorization,
+    logVerseRevision
 } from '@/assets/database/QuranDatabase';
 import { TOTAL_VERSES } from '@/constants/quran';
 import { Verse } from '@/types/verse';
@@ -458,6 +458,11 @@ export const useProgressStore = create<ProgressState>()(
             return { dailyStreak: 1, lastOpenDate: today };
           }
 
+          // If already updated today, don't recalculate
+          if (s.lastOpenDate === today) {
+            return s; // No changes needed
+          }
+
           const last = new Date(s.lastOpenDate + 'T00:00:00');
           const cur = new Date(today + 'T00:00:00');
           const diff = Math.floor((cur.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
@@ -472,6 +477,8 @@ export const useProgressStore = create<ProgressState>()(
           else if (diff > 1) {
             newStreak = 1;
           }
+          // If diff === 0, this shouldn't happen due to early return above
+          // but keeping streak the same just in case
 
           return {
             dailyStreak: newStreak,

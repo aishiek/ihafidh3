@@ -159,6 +159,7 @@ const HeatmapCalendar: React.FC<HeatmapCalendarProps> = ({ data, type = 'memoriz
   const CELL_SIZE = 12;
   const CELL_GAP = 3;
   const COLUMN_WIDTH = CELL_SIZE + CELL_GAP;
+  const TOTAL_GRID_HEIGHT = (CELL_SIZE * 7) + (CELL_GAP * 6); // 7 days with 6 gaps between
 
   return (
     <View style={[styles.container, { backgroundColor: colors.card }]}>
@@ -202,9 +203,9 @@ const HeatmapCalendar: React.FC<HeatmapCalendarProps> = ({ data, type = 'memoriz
 
           <View style={styles.calendarGrid}>
             {/* Day labels */}
-            <View style={styles.dayLabelsColumn}>
+            <View style={[styles.dayLabelsColumn, { height: TOTAL_GRID_HEIGHT }]}>
               {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
-                <View key={i} style={styles.dayLabelContainer}>
+                <View key={i} style={[styles.dayLabelContainer, { height: CELL_SIZE }]}>
                   <Text style={[styles.dayLabel, { color: colors.textSecondary }]}>
                     {day}
                   </Text>
@@ -364,11 +365,10 @@ const styles = StyleSheet.create({
   dayLabelsColumn: {
     marginRight: 8,
     justifyContent: 'space-between',
-    height: 105,
   },
   dayLabelContainer: {
-    height: 13,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   dayLabel: {
     fontSize: 9,

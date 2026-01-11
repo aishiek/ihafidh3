@@ -4,7 +4,7 @@ import { useThemeColor } from "@/utils/useThemeColor";
 import { Tabs } from "expo-router";
 import { BarChart, BookOpen, Brain, Home, RefreshCw, Settings as SettingsIcon } from "lucide-react-native";
 import React from "react";
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 
 export default function TabLayout() {
   const { primary } = useThemeColor();
@@ -20,13 +20,14 @@ export default function TabLayout() {
             fontSize: 10,
             fontWeight: '600',
             marginTop: -4,
-            marginBottom: 4,
+            marginBottom: Platform.OS === 'android' ? 6 : 4,
           },
           tabBarStyle: {
             backgroundColor: "#1a1a1a",
             borderTopColor: "#333333",
-            height: 60,
-            paddingBottom: 8,
+            height: Platform.OS === 'android' ? 70 : 60,
+            paddingBottom: Platform.OS === 'android' ? 12 : 8,
+            paddingTop: Platform.OS === 'android' ? 8 : 0,
           },
           headerStyle: {
             backgroundColor: "#1a1a1a",

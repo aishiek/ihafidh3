@@ -1,4 +1,3 @@
-import { useTajweed } from '@/app/hooks/useTajweed';
 import { surahsData } from '@/data/surahs';
 import { fetchTransliterationText } from '@/services/quranApi';
 import { getTranslationRemote } from '@/services/remoteTranslation';
@@ -8,17 +7,15 @@ import { useBookmarkStore } from '@/store/bookmarkStore';
 import { useProgressStore } from '@/store/progressStore';
 import { PLAYBACK_SPEED_OPTIONS, useSettingsStore, type PlaybackSpeed } from '@/store/settingsStore';
 import { Verse } from '@/types';
-import { TAJWEED_COLORS } from '@/types/tajweed';
 import { setPlaybackSpeed as setAudioPlaybackSpeed } from '@/utils/audioUtils';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
-import { parseTajweedText } from '@/utils/tajweedParser';
 import { useThemeColor } from '@/utils/useThemeColor';
 import * as Haptics from 'expo-haptics';
 import { ArrowLeft, Bookmark as BookmarkIcon, BookOpen, Check, Infinity as InfinityIcon, Play, RefreshCw } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import TajweedVerse from 'rn-tajweed-verse';
 import TafsirModal from './TafsirModal';
+import TajweedText from './TajweedText';
 // Direct import to avoid Suspense conflicts with FlashList
 import SajdahIcon from '@/assets/svg/islamic-patterns/SajdahIcon';
 import { isSajdah } from '@/utils/isSajdah';
@@ -95,8 +92,6 @@ const VerseItem = ({
     translationLanguage
   } = useSettingsStore();
 
-  // Tajweed hook (must be top-level hook)
-  const tajweedHook = useTajweed();
   // ============ PROGRESS STORE ============
   const memorizedVerseDates = useProgressStore(state => state.memorizedVerseDates);
   const memorizedVerses = useProgressStore(state => state.memorizedVerses);
@@ -210,10 +205,19 @@ const VerseItem = ({
   // ============ DISPLAY VALUES ============
   // Prefer explicitly loaded local data; otherwise use computed arabicText.
   // If neither is present, show an empty string (prevents accidental Bismillah fallbacks).
+  // NOTE: U+06DF (۟) marks are legitimate Quranic orthography that should be visible
+  // React Native can't position them above letters (GPOS limitation) so they appear standalone
   const displayedArabic = useMemo(() => {
-    if (localData.arabic && localData.arabic.trim().length > 0) return localData.arabic;
+    // CRITICAL: When Tajweed font is selected, use tajweedText with markup for colors
+    if (arabicFont === 'tajweed' && (verse as any).tajweedText) {
+      return (verse as any).tajweedText;
+    }
+    // Otherwise use plain text
+    if (localData.arabic && localData.arabic.trim().length > 0) {
+      return localData.arabic;
+    }
     return arabicText || '';
-  }, [localData.arabic, arabicText]);
+  }, [arabicFont, (verse as any).tajweedText, localData.arabic, arabicText]);
 
   // Simplified: prefer remote (English) transliteration when available, then local cache, then prop.
   const displayedTransliteration = useMemo(() => {
@@ -280,61 +284,6 @@ const VerseItem = ({
       borderWidth: 1,
     };
   }, [memorized, surahMemorizedGlobally, revised, surahRevisedGlobally, pageIsPlaying, pageIsCompleted]);
-
-  // ============ TAJWEED COMPUTATIONS ============
-  const tajweedTextRaw = (verse as any).tajweedText || null;
-
-  const normalizedTajweedText = useMemo(() => {
-    if (!tajweedTextRaw) return null;
-    if (tajweedTextRaw.includes('[') && tajweedTextRaw.includes(']')) return tajweedTextRaw;
-
-    try {
-      const segments = parseTajweedText(tajweedTextRaw);
-      if (!segments || segments.length === 0) return tajweedTextRaw;
-      let out = '';
-      for (const seg of segments) {
-        const segText = seg.text || '';
-        const segRule = (seg.rule || '').toString();
-
-        let matchedKey: string | null = null;
-        if (segRule) {
-          const lower = segRule.toLowerCase();
-          for (const key of Object.keys(TAJWEED_COLORS)) {
-            const info = (TAJWEED_COLORS as any)[key];
-            if (!info) continue;
-            if ((info.description || '').toLowerCase() === lower
-              || (info.arDescription || '').toLowerCase() === lower
-              || key.toLowerCase() === lower
-              || key.toLowerCase().includes(lower)
-            ) {
-              matchedKey = key;
-              break;
-            }
-          }
-        }
-
-        if (matchedKey) out += `[${matchedKey}]${segText}`;
-        else out += segText;
-      }
-      return out;
-    } catch (e) {
-      return tajweedTextRaw;
-    }
-  }, [tajweedTextRaw]);
-
-  const rnTajweedConfig = useMemo(() => {
-    const map: Record<string, any> = {};
-    try {
-      Object.entries(TAJWEED_COLORS).forEach(([k, v]) => {
-        map[k] = { style: { color: (v as any).hexColor } };
-      });
-    } catch (e) {
-      // ignore
-    }
-    return map;
-  }, []);
-
-  const shouldUseTajweed = arabicFont === 'tajweed' && tajweedHook?.config?.enabled && !!normalizedTajweedText;
 
   // ============ EVENT HANDLERS (using getState() to prevent re-renders) ============
 
@@ -771,19 +720,20 @@ const VerseItem = ({
       {/* Inline container so we can place an inline sajdah icon at the end of the verse */}
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'flex-end' }}>
         <View style={{ flex: 1 }}>
-          {shouldUseTajweed ? (
-            <TajweedVerse
-              verse={normalizedTajweedText || displayedArabic}
-              config={{
-                style: {
-                  fontSize: fontSizeArabic,
-                  lineHeight: arabicTypography.lineHeight || Math.round(fontSizeArabic * 2.0),
-                  color: '#ffffff',
-                  direction: 'rtl',
-                  fontFamily: arabicFamily,
-                },
-                tajweed: rnTajweedConfig,
-              }}
+          {arabicFont === 'tajweed' ? (
+            <TajweedText
+              text={displayedArabic}
+              surahNumber={surahId || undefined}
+              verseNumber={verse.verseNumber}
+              allowFontScaling={false}
+              style={[{
+                color: '#ffffff',
+                fontFamily: arabicFamily,
+                includeFontPadding: false,
+                paddingHorizontal: 4,
+                ...arabicTypography,
+                lineHeight: arabicTypography.lineHeight || Math.round(fontSizeArabic * 2.0),
+              }]}
             />
           ) : (
             <Text
@@ -888,7 +838,7 @@ const VerseItem = ({
           accessibilityLabel={memorized ? 'Unmark as memorized' : 'Mark as memorized'}
         >
           <Check size={16} color="#ffffff" />
-          <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff', marginLeft: 6 }}>
+          <Text style={{ fontSize: 13, fontWeight: '600', color: '#ffffff', marginLeft: 6 }}>
             {memorized ? 'Memorized' : 'Mark Memorized'}
           </Text>
           {memorized && (
@@ -932,7 +882,7 @@ const VerseItem = ({
           accessibilityLabel={revised ? 'Unmark as revised' : 'Mark as revised'}
         >
           <RefreshCw size={16} color="#ffffff" />
-          <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff', marginLeft: 6 }}>
+          <Text style={{ fontSize: 13, fontWeight: '600', color: '#ffffff', marginLeft: 6 }}>
             {revised ? 'Revised' : 'Mark Revision'}
           </Text>
           {revised && (

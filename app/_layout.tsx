@@ -76,6 +76,15 @@ async function loadAppFontsOnce() {
     console.warn('[fonts] AmiriQuran-Regular.ttf not found in assets/fonts – skipping optional font');
   }
 
+  // Try to include KFGQPC Uthmanic Hafs font if bundled (TTF format for best cross-platform support).
+  let kfgqpcAsset: any | null = null;
+  try {
+    // @ts-ignore: Metro resolve guarded
+    kfgqpcAsset = require('../assets/fonts/UthmanicHafs_V22.ttf');
+  } catch (e: any) {
+    console.warn('[fonts] UthmanicHafs_V22.ttf not found in assets/fonts – skipping optional font');
+  }
+
   const fontMap: Record<string, any> = {
     'ScheherazadeNew-Regular': require('../assets/fonts/ScheherazadeNew-Regular.ttf'),
     'ScheherazadeNew-Bold': require('../assets/fonts/ScheherazadeNew-Bold.ttf'),
@@ -84,6 +93,9 @@ async function loadAppFontsOnce() {
   };
   if (amiriAsset) {
     fontMap['AmiriQuran-Regular'] = amiriAsset;
+  }
+  if (kfgqpcAsset) {
+    fontMap['KFGQPC-Uthmanic-Hafs'] = kfgqpcAsset;
   }
 
   const toLoad: Record<string, any> = {};
@@ -225,21 +237,39 @@ function RootLayoutContent() {
   const notificationsEnabled = useSettingsStore(s => s.notificationsEnabled);
 
   React.useEffect(() => {
-    // Initialize push notifications after a short delay to avoid blocking app startup
-    const timer = setTimeout(() => {
-      PushNotificationService.initialize()
-        .then(() => {
-          // Sync subscriptions based on current settings
-          // Use 'notificationsEnabled' for Fasting (as general daily reminder)
-          PushNotificationService.syncFastingSubscription(notificationsEnabled);
-          // Use 'ayahEnabled' for Daily Ayah
-          PushNotificationService.syncAyahSubscription(ayahEnabled ?? false);
-        })
-        .catch(e =>
-          console.log('[Push] Initialization failed:', e)
-        );
-    }, 1000);
-    return () => clearTimeout(timer);
+    // Initialize immediately (no delay) to ensure subscriptions persist
+    console.log('[_layout] Initializing push notifications...');
+    console.log('[_layout] Daily Reminders (Fasting):', notificationsEnabled ? 'ENABLED' : 'DISABLED');
+    console.log('[_layout] Daily Ayah:', ayahEnabled ? 'ENABLED' : 'DISABLED');
+    
+    PushNotificationService.initialize()
+      .then(() => {
+        console.log('[_layout] Push service initialized, syncing subscriptions...');
+        // Sync subscriptions based on current settings
+        // Use 'notificationsEnabled' for Fasting (as general daily reminder)
+        PushNotificationService.syncFastingSubscription(notificationsEnabled);
+        // Use 'ayahEnabled' for Daily Ayah
+        PushNotificationService.syncAyahSubscription(ayahEnabled ?? false);
+        console.log('[_layout] ✅ Subscription sync complete');
+      })
+      .catch(e =>
+        console.error('[_layout] ❌ Initialization failed:', e)
+      );
+  }, [notificationsEnabled, ayahEnabled]);
+
+  // Re-subscribe on every app foreground to ensure persistence
+  React.useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        console.log('[_layout] App foregrounded, re-subscribing...');
+        console.log('[_layout] Fasting:', notificationsEnabled ? 'ENABLED' : 'DISABLED');
+        console.log('[_layout] Daily Ayah:', ayahEnabled ? 'ENABLED' : 'DISABLED');
+        // Re-sync subscriptions when app comes to foreground
+        PushNotificationService.syncFastingSubscription(notificationsEnabled);
+        PushNotificationService.syncAyahSubscription(ayahEnabled ?? false);
+      }
+    });
+    return () => subscription.remove();
   }, [notificationsEnabled, ayahEnabled]);
 
   // Sync daily Ayah notification schedule with settings
@@ -462,6 +492,17 @@ function RootLayoutContent() {
         }
         break;
       }
+      case 'fasting_reminder':
+        // Open fasting calendar when user taps fasting notification
+        try { router.replace('/moon-phases'); } catch { router.push('/moon-phases'); }
+        break;
+      case 'announcement':
+      case 'greeting':
+      case 'promotion':
+      case 'update':
+        // Broadcast messages - open home screen
+        try { router.replace('/(tabs)/index'); } catch { router.push('/(tabs)/index'); }
+        break;
       case 'daily-verse-reminder':
         try { router.replace('/(tabs)/read'); } catch { router.push('/(tabs)/read'); }
         break;
@@ -479,9 +520,11 @@ function RootLayoutContent() {
     }
   }, []);
 
-  // Foreground Event Listener (Interactions & Delivered)
+  // Notifee Foreground Event Listener (Handles taps on Notifee-displayed notifications)
   React.useEffect(() => {
     const unsubscribe = notifee.onForegroundEvent(({ type, detail }) => {
+      console.log('[Notifee] Foreground event:', EventType[type], detail);
+      
       if (type === EventType.PRESS) {
         handleNotificationInteraction(detail.notification?.data);
       }
@@ -489,7 +532,21 @@ function RootLayoutContent() {
     return unsubscribe;
   }, [handleNotificationInteraction]);
 
-  // Cold Start Handling
+  // Notifee Background Event Listener (Handles taps when app is backgrounded)
+  // This is critical for handling taps on notifications displayed via Notifee in onMessage
+  React.useEffect(() => {
+    const unsubscribe = notifee.onBackgroundEvent(async ({ type, detail }) => {
+      console.log('[Notifee] Background event:', EventType[type], detail);
+      
+      if (type === EventType.PRESS) {
+        // Handle navigation - this will open the app
+        handleNotificationInteraction(detail.notification?.data);
+      }
+    });
+    return unsubscribe;
+  }, [handleNotificationInteraction]);
+
+  // Cold Start Handling (App opened from quit state via notification)
   React.useEffect(() => {
     (async () => {
       try {
@@ -503,11 +560,6 @@ function RootLayoutContent() {
       }
     })();
   }, [handleNotificationInteraction]);
-
-  // Background Event Handler is usually set in index.js, but for simple deep linking,
-  // the OS launches the app and getInitialNotification catches it.
-  // For actions that don't open the app, we need a background handler in index.js.
-  // We'll assume standard press-to-open behavior for now.
 
   // Persistence guard and DB lifecycle management
   React.useEffect(() => {

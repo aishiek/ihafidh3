@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
-import Svg, { Line, Rect } from 'react-native-svg';
+import Svg, { Line } from 'react-native-svg';
 
 type Props = {
   onPress?: () => void;
@@ -11,8 +11,8 @@ type Props = {
 
 const PageModeButton: React.FC<Props> = ({ onPress, onLongPress, isActive = false, style }) => {
   const [showTooltip, setShowTooltip] = React.useState(false);
-  const bg = isActive ? '#222' : '#3a3a3a';
-  const frontFill = '#FFD700';
+  const bg = isActive ? '#222' : 'rgba(255, 255, 255, 0.08)';
+  const frontFill = '#C5A059';
 
   return (
     <View style={{ alignItems: 'center', justifyContent: 'center' }}>
@@ -30,17 +30,11 @@ const PageModeButton: React.FC<Props> = ({ onPress, onLongPress, isActive = fals
         activeOpacity={0.85}
       >
         <Svg width={40} height={40} viewBox="0 0 50 50" fill="none">
-          {/* Back layer */}
-          <Rect x="8" y="12" width="28" height="32" rx="2" fill="#999" opacity="0.3" />
-          {/* Middle layer */}
-          <Rect x="11" y="9" width="28" height="32" rx="2" fill="#ccc" opacity="0.6" />
-          {/* Front page */}
-          <Rect x="14" y="6" width="28" height="32" rx="2" fill={frontFill} />
-
-          {/* Text lines */}
-          <Line x1="18" y1="13" x2="36" y2="13" stroke="#1a1a1a" strokeWidth="2" strokeLinecap="round" />
-          <Line x1="18" y1="19" x2="36" y2="19" stroke="#1a1a1a" strokeWidth="2" strokeLinecap="round" />
-          <Line x1="18" y1="25" x2="32" y2="25" stroke="#1a1a1a" strokeWidth="2" strokeLinecap="round" />
+          {/* Text lines only - no background page */}
+          <Line x1="12" y1="15" x2="38" y2="15" stroke={frontFill} strokeWidth="2.5" strokeLinecap="round" />
+          <Line x1="12" y1="22" x2="38" y2="22" stroke={frontFill} strokeWidth="2.5" strokeLinecap="round" />
+          <Line x1="12" y1="29" x2="38" y2="29" stroke={frontFill} strokeWidth="2.5" strokeLinecap="round" />
+          <Line x1="12" y1="36" x2="38" y2="36" stroke={frontFill} strokeWidth="2.5" strokeLinecap="round" />
         </Svg>
       </TouchableOpacity>
     </View>
@@ -60,8 +54,6 @@ const styles = StyleSheet.create({
   tooltip: {
     position: 'absolute',
     top: -36,
-    backgroundColor: '#FFD700',
-    paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
     alignSelf: 'center',

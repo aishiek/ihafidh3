@@ -85,14 +85,27 @@ async function sendBroadcast() {
                         timestamp: Date.now().toString(),
                         broadcast: 'true'
                     },
-                    // High priority for promotional messages
+                    // High priority ensures delivery even when app is backgrounded/quit
                     android: {
                         priority: 'high',
+                        notification: {
+                            channelId: 'default',
+                            sound: 'default',
+                            priority: 'high',
+                            defaultSound: true,
+                            defaultVibrateTimings: true,
+                        }
                     },
                     apns: {
                         headers: {
                             'apns-priority': '10',
                         },
+                        payload: {
+                            aps: {
+                                sound: 'default',
+                                badge: 1,
+                            }
+                        }
                     },
                 });
                 successCount++;

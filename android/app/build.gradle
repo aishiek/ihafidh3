@@ -1,7 +1,6 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
-apply plugin: "com.google.gms.google-services"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 
@@ -88,13 +87,13 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.ihafidh'
+    namespace "com.ihafidh"
     defaultConfig {
-        applicationId 'com.ihafidh'
+        applicationId "com.ihafidh"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 33
-        versionName "2.0.5"
+        versionCode 34
+        versionName "2.0.6"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
@@ -106,12 +105,10 @@ android {
             keyPassword 'android'
         }
         release {
-            if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
-                storeFile file(MYAPP_UPLOAD_STORE_FILE)
-                storePassword MYAPP_UPLOAD_STORE_PASSWORD
-                keyAlias MYAPP_UPLOAD_KEY_ALIAS
-                keyPassword MYAPP_UPLOAD_KEY_PASSWORD
-            }
+            storeFile file('../../my-upload-key.keystore')
+            storePassword System.getenv("KEYSTORE_PASSWORD") ?: 'D0ntf0rget#'
+            keyAlias System.getenv("KEY_ALIAS") ?: 'my-key-alias'
+            keyPassword System.getenv("KEY_PASSWORD") ?: 'D0ntf0rget#'
         }
     }
     buildTypes {
@@ -119,8 +116,7 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
+            // Production keystore configuration
             signingConfig signingConfigs.release
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
@@ -163,15 +159,6 @@ android {
 
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
-
-    // Import the Firebase BoM
-    implementation platform('com.google.firebase:firebase-bom:34.6.0')
-
-    // Firebase Cloud Messaging
-    implementation 'com.google.firebase:firebase-messaging'
-
-    // Firebase Analytics (optional but recommended)
-    implementation 'com.google.firebase:firebase-analytics'
     implementation("com.facebook.react:react-android")
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";

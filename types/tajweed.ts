@@ -34,54 +34,54 @@ export interface TajweedConfig {
   style?: string;
 }
 
-// Color mapping constants
+// Color mapping constants - Metallic Inlay Tajweed Palette (Ultra-Premium)
 export const TAJWEED_COLORS: Record<TajweedRule, TajweedColor> = {
   [TajweedRule.IKHFA]: {
     rule: TajweedRule.IKHFA,
-    color: 'emerald',
-    hexColor: '#10b981',
+    color: 'purple',
+    hexColor: '#A78BFA',
     description: 'Ikhfa (Concealment)',
     arDescription: 'الإخفاء',
   },
   [TajweedRule.GHUNNA]: {
     rule: TajweedRule.GHUNNA,
-    color: 'red',
-    hexColor: '#ef4444',
+    color: 'orange',
+    hexColor: '#F97316',
     description: 'Ghunna (Nasalization)',
     arDescription: 'الغنة',
   },
   [TajweedRule.IDHAR]: {
     rule: TajweedRule.IDHAR,
-    color: 'blue',
-    hexColor: '#3b82f6',
+    color: 'gray',
+    hexColor: '#9CA3AF',
     description: 'Idhar (Clarification)',
     arDescription: 'الإظهار',
   },
   [TajweedRule.IQLAB]: {
     rule: TajweedRule.IQLAB,
-    color: 'purple',
-    hexColor: '#a855f7',
+    color: 'blue',
+    hexColor: '#3B82F6',
     description: 'Iqlab (Substitution)',
     arDescription: 'الإقلاب',
   },
   [TajweedRule.IDGHAAM]: {
     rule: TajweedRule.IDGHAAM,
-    color: 'yellow',
-    hexColor: '#eab308',
+    color: 'green',
+    hexColor: '#10B981',
     description: 'Idghaam (Merging)',
     arDescription: 'الإدغام',
   },
   [TajweedRule.QALQALA]: {
     rule: TajweedRule.QALQALA,
-    color: 'orange',
-    hexColor: '#f97316',
+    color: 'red',
+    hexColor: '#EF4444',
     description: 'Qalqala (Vibration)',
     arDescription: 'القلقلة',
   },
   [TajweedRule.SUKUN]: {
     rule: TajweedRule.SUKUN,
-    color: 'amber',
-    hexColor: '#b45309',
+    color: 'bronze',
+    hexColor: '#B45309',
     description: 'Sukun (No Vowel)',
     arDescription: 'السكون',
   },

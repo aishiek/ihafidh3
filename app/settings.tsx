@@ -633,6 +633,19 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
           )}
+
+          {/* Debug Button for Notifications */}
+          <TouchableOpacity
+            style={styles.debugButton}
+            onPress={async () => {
+              const { logNotificationDebugInfo } = await import('../utils/notificationDebug');
+              await logNotificationDebugInfo();
+              alert('Debug info logged to console. Open React Native debugger to view.');
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.debugButtonText}>🔍 Debug Notifications</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Reading Font Sizes */}
@@ -796,6 +809,7 @@ export default function SettingsScreen() {
                 { value: 'noto-naskh', label: 'Naskh Arabic' },
                 { value: 'amiri-quran', label: 'Amiri' },
                 { value: 'indo-pak', label: 'Indo-Pak' },
+                { value: 'tajweed', label: 'Tajweed Colors' },
               ].map((font) => (
                 <TouchableOpacity
                   key={font.value}
@@ -1160,6 +1174,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#888888',
     fontWeight: '500',
+  },
+  debugButton: {
+    marginTop: 12,
+    backgroundColor: '#2a2a2a',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#444444',
+  },
+  debugButtonText: {
+    fontSize: 14,
+    color: '#03A9F4',
+    fontWeight: '600',
   },
   downloadButton: {
     backgroundColor: '#2196F3',

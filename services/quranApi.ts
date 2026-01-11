@@ -456,3 +456,123 @@ export async function fetchTranslationsForVerses(
   return translations;
 }
 
+// In-memory cache for Tajweed text
+const tajweedCache = new Map<string, string>();
+
+/**
+ * Fetch Tajweed text from Al-Quran Cloud API
+ * Uses the quran-simple edition which has proper diacritical marks including sukoon
+ * @param surahNumber - Surah number (1-114)
+ * @param verseNumber - Verse number within the surah
+ * @returns Promise<string | null> - Tajweed text or null if failed
+ */
+export async function fetchTajweedText(
+  surahNumber: number,
+  verseNumber: number
+): Promise<string | null> {
+  const key = `${surahNumber}:${verseNumber}`;
+  
+  // Check cache first
+  if (tajweedCache.has(key)) {
+    return tajweedCache.get(key)!;
+  }
+
+  try {
+    // Use quran-simple edition which includes proper diacritical marks (including sukoon)
+    // This edition has all the marks needed for Tajweed detection
+    const response = await fetchWithTimeout(
+      `${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/quran-simple`,
+      {},
+      5000
+    );
+
+    if (!response.ok) {
+      console.warn(`[fetchTajweedText] Failed to fetch ${key}: ${response.status}`);
+      return null;
+    }
+
+    const data: AlQuranCloudAyahResponse = await response.json();
+    let tajweedText = data?.data?.text;
+
+    if (tajweedText) {
+      // Strip any color markup tags in case API returns tagged text
+      tajweedText = stripColorMarkup(tajweedText);
+      
+      // Cache the cleaned result
+      tajweedCache.set(key, tajweedText);
+      return tajweedText;
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`[fetchTajweedText] Error fetching ${key}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Clear Tajweed cache (useful for memory management)
+ */
+export function clearTajweedCache(): void {
+  tajweedCache.clear();
+}
+
+/**
+ * Remove color markup tags from quran-tajweed edition text
+ * Tags like [h:9999[, [o[, [f:17[, [q:19[ etc.
+ */
+function stripColorMarkup(text: string): string {
+  // Remove all square bracket markup tags like [h:9999[, [o[, [f:17[, etc.
+  return text.replace(/\[[^\]]*\[/g, '');
+}
+
+/**
+ * Fetch Surah with Tajweed data from Quran.com API
+ * Returns verses with text_uthmani_tajweed field containing HTML tags
+ * 
+ * @param surahNumber - Surah number (1-114)
+ * @returns Array of verses with tajweed HTML or null on error
+ * 
+ * @example
+ * const verses = await fetchSurahWithTajweed(1);
+ * // verses[0].text_uthmani_tajweed contains: "بِسۡمِ <tajweed class="madda_normal">ٱللَّهِ</tajweed>..."
+ */
+export async function fetchSurahWithTajweed(surahNumber: number): Promise<Array<{
+  id: number;
+  verse_key: string;
+  verse_number: number;
+  text_uthmani: string;
+  text_uthmani_tajweed: string;
+}> | null> {
+  try {
+    const QURAN_COM_API = 'https://api.quran.com/api/v4';
+    const url = `${QURAN_COM_API}/verses/by_chapter/${surahNumber}?` +
+      `language=ar&` +
+      `words=false&` +
+      `per_page=300&` + // Fetch all verses (longest surah is 286 verses)
+      `fields=text_uthmani,text_uthmani_tajweed`;
+    
+    const response = await fetchWithTimeout(url, {}, 10000);
+    
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // DEBUG: Verify tajweed data is present
+    if (__DEV__ && data.verses?.[0]) {
+      console.log('✅ Tajweed API Response Sample:', {
+        surah: surahNumber,
+        verse_key: data.verses[0].verse_key,
+        has_tajweed: !!data.verses[0].text_uthmani_tajweed,
+        tajweed_sample: data.verses[0].text_uthmani_tajweed?.substring(0, 100),
+      });
+    }
+    
+    return data.verses || [];
+  } catch (error) {
+    console.error(`[fetchSurahWithTajweed] Error fetching surah ${surahNumber}:`, error);
+    return null;
+  }
+}

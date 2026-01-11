@@ -4,41 +4,43 @@ import type { FlashListRef } from '@shopify/flash-list';
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, ArrowRight, Check, Pause, Play, RefreshCw, Search, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PageAudioManager, { AudioState, getPageAudioManager } from '../audio/PageAudioManager';
 
 import {
-  ActivityIndicator,
-  Alert,
-  Animated,
-  Modal,
-  PanResponder,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Modal,
+    PanResponder,
+    Pressable,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 import JuzMemorization from '@/components/JuzMemorization';
 import VerseItem from '@/components/VerseItem';
 import { surahsData } from '@/data/surahs';
 import { fetchVersesForJuz, fetchVersesForSurah, getDatabase, JuzVerse, logDatabaseTables } from '@/services/juzDbService';
+import { useNavigationStore } from '@/store/navigationStore';
 import { useProgressStore } from '@/store/progressStore';
 import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import type { Surah, Verse } from '@/types';
 import {
-  getAudioUrl,
-  pauseAudio,
-  pauseSurahAudio,
-  playAudio,
-  playSurahAudioWithFallback,
-  resumeSurahAudio,
-  stopSurahAudio,
+    getAudioUrl,
+    pauseAudio,
+    pauseSurahAudio,
+    playAudio,
+    playSurahAudioWithFallback,
+    resumeSurahAudio,
+    stopSurahAudio,
 } from '@/utils/audioUtils';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
@@ -48,6 +50,8 @@ import { AutoSizeText, ResizeTextMode } from 'react-native-auto-size-text';
 import PageModeButton from '@/components/PageModeButton';
 import PageModeConfig from '@/components/PageModeConfig';
 import { calculatePages } from '@/utils/pageUtils';
+
+import { fetchUthmaniTajweedRnMarkupByChapter } from '@/services/quranComTajweedService';
 
 export default function ReadScreen() {
   const router = useRouter();
@@ -82,6 +86,18 @@ export default function ReadScreen() {
 
   const lastViewedSurahId = useQuranStore((state) => state.lastViewedSurahId);
   const setLastViewedSurahId = useQuranStore((state) => state.setLastViewedSurahId);
+
+  // Navigation scroll position tracking
+  const {
+    surahListScrollY,
+    setSurahListScrollY,
+    juzListScrollY,
+    setJuzListScrollY,
+  } = useNavigationStore();
+  
+  // Track if we should restore scroll position (reactive state instead of refs)
+  const [shouldRestoreSurahScroll, setShouldRestoreSurahScroll] = useState(false);
+  const [shouldRestoreJuzScroll, setShouldRestoreJuzScroll] = useState(false);
 
   // UI State
   const [tab, setTab] = useState<'surah' | 'juz'>('surah');
@@ -274,6 +290,7 @@ export default function ReadScreen() {
       transliteration: item.transliteration || undefined,
       pageNumber: item.page_id ? Number(item.page_id) : undefined,
       juzNumber: item.part_id ? Number(item.part_id) : undefined,
+      tajweedText: (item as any).tajweedText || undefined,
     } as any));
 
     const pages = calculatePages(mapped, vpp ?? pageModeSessionVpp);
@@ -589,17 +606,37 @@ export default function ReadScreen() {
 
           const reciterIdentifier = useSettingsStore.getState().reciterIdentifier;
 
-          let mappedVerses: Verse[] = allVersesFromDB.map((v: any) => ({
-            id: v.verse_id,
-            surahId: v.chapter_id,
-            verseNumber: v.verse_number,
-            arabicText: v.ayah,
-            translation: v.translation || '', // English from local DB
-            transliteration: v.transliteration || undefined,
-            pageNumber: v.page_id ? Number(v.page_id) : undefined,
-            juzNumber: v.part_id ? Number(v.part_id) : undefined,
-            audioUrl: getAudioUrl(reciterIdentifier, v.chapter_id || surah.id, v.verse_number),
-          }));
+          // If user selected tajweed font, load tajweed markup for this chapter once
+          // and attach it to each verse as `tajweedText` (consumed by VerseItem).
+          const needsTajweed = useSettingsStore.getState().arabicFont === 'tajweed';
+          const tajweedByKey = needsTajweed
+            ? await fetchUthmaniTajweedRnMarkupByChapter(surah.id)
+            : null;
+
+          let mappedVerses: Verse[] = allVersesFromDB.map((v: any) => {
+            const tajweedText = needsTajweed ? tajweedByKey?.[`${surah.id}:${v.verse_number}`] : undefined;
+            
+            // DEBUG: Log verse 28:53 specifically
+            if (__DEV__ && surah.id === 28 && v.verse_number === 53) {
+              console.log('[read] DEBUG 28:53 - Local DB ayah:', v.ayah?.substring(0, 100));
+              console.log('[read] DEBUG 28:53 - Tajweed text from API:', tajweedText?.substring(0, 100));
+              console.log('[read] DEBUG 28:53 - Local has عَامَٓد:', v.ayah?.includes('عَامَٓد'));
+              console.log('[read] DEBUG 28:53 - Tajweed has ءَامَنَّا:', tajweedText?.includes('ءَامَنَّا'));
+            }
+            
+            return {
+              id: v.verse_id,
+              surahId: v.chapter_id,
+              verseNumber: v.verse_number,
+              arabicText: v.ayah,
+              translation: v.translation || '', // English from local DB
+              transliteration: v.transliteration || undefined,
+              pageNumber: v.page_id ? Number(v.page_id) : undefined,
+              juzNumber: v.part_id ? Number(v.part_id) : undefined,
+              audioUrl: getAudioUrl(reciterIdentifier, v.chapter_id || surah.id, v.verse_number),
+              ...(needsTajweed ? { tajweedText } : {}),
+            };
+          });
 
           // PERFORMANCE FIX: Local DB already has translations!
           // Removed API call that was causing 3-10 second delays for non-English languages
@@ -704,6 +741,17 @@ export default function ReadScreen() {
         // Ensure Page Mode is exited when going back to lists
         try { exitPageMode(); } catch { }
         console.log('[read] Back from verses to list view - clearing params');
+        
+        // Enable scroll restoration for next list view AND set correct tab
+        if (selectedSurah) {
+          setShouldRestoreSurahScroll(true);
+          setTab('surah'); // Ensure we're on Surah tab when returning to Surah list
+        }
+        if (selectedJuz !== null) {
+          setShouldRestoreJuzScroll(true);
+          setTab('juz'); // Ensure we're on Juz tab when returning to Juz list
+        }
+        
         // CRITICAL: Clear URL params to allow fresh navigation next time
         router.replace('/(tabs)/read');
         setSelectedJuz(null);
@@ -927,7 +975,8 @@ export default function ReadScreen() {
       setCompletedVerses(new Set());
 
       const settings = useSettingsStore.getState();
-      const repeatPerVerse = settings.infiniteLoop ? 0 : (settings.repeatMode || 1);
+      // Use mushaf-specific repeat settings for page mode
+      const repeatPerVerse = settings.mushafInfiniteLoop ? 0 : (settings.mushafRepeatMode || 1);
 
       // NEW: Infinite page looping for Page Mode ONLY
       // This runs independently and won't affect Surah mode which uses different handlers
@@ -1103,6 +1152,53 @@ export default function ReadScreen() {
     }
   }, [getCurrentPageVerses, pageModeScope, selectedSurah, selectedJuz, currentPageIndex, revisedVerses, bulkMarkVersesRevised, unmarkVerseAsRevised, markPageAsRevised, unmarkPageAsRevised, pageModeSessionVpp, showToast]);
 
+  // 🎯 SCROLL POSITION RESTORATION: Surah List
+  useEffect(() => {
+    if (shouldRestoreSurahScroll && surahListScrollY > 0 && !selectedSurah && tab === 'surah') {
+      // Use requestAnimationFrame to ensure DOM is ready
+      requestAnimationFrame(() => {
+        surahListRef.current?.scrollToOffset({
+          offset: surahListScrollY,
+          animated: false, // No animation = instant positioning
+        });
+      });
+      setShouldRestoreSurahScroll(false);
+    }
+  }, [shouldRestoreSurahScroll, surahListScrollY, selectedSurah, tab]);
+
+  // 🎯 SCROLL POSITION RESTORATION: Juz List
+  useEffect(() => {
+    if (shouldRestoreJuzScroll && juzListScrollY > 0 && selectedJuz == null && tab === 'juz') {
+      // Juz tab is rendered via <JuzMemorization />, which owns its own FlatList.
+      // We keep the stored scroll position, but there is no ref to restore here.
+      setShouldRestoreJuzScroll(false);
+    }
+  }, [shouldRestoreJuzScroll, juzListScrollY, selectedJuz, tab]);
+
+  // 🎯 SAVE SURAH LIST SCROLL POSITION
+  const surahScrollDebounceRef = useRef<number>(0);
+  const handleSurahListScroll = useCallback((event: any) => {
+    const offsetY = event.nativeEvent.contentOffset.y;
+    // Debounce: Only save every 100ms to avoid performance issues
+    if (surahScrollDebounceRef.current && Date.now() - surahScrollDebounceRef.current < 100) {
+      return;
+    }
+    setSurahListScrollY(offsetY);
+    surahScrollDebounceRef.current = Date.now();
+  }, [setSurahListScrollY]);
+
+  // 🎯 SAVE JUZ LIST SCROLL POSITION
+  const juzScrollDebounceRef = useRef<number>(0);
+  const handleJuzListScroll = useCallback((event: any) => {
+    const offsetY = event.nativeEvent.contentOffset.y;
+    // Debounce: Only save every 100ms to avoid performance issues
+    if (juzScrollDebounceRef.current && Date.now() - juzScrollDebounceRef.current < 100) {
+      return;
+    }
+    setJuzListScrollY(offsetY);
+    juzScrollDebounceRef.current = Date.now();
+  }, [setJuzListScrollY]);
+
   const handleSurahPress = (surah: Surah) => {
     setNavigationSource('surahList');
     setSelectedSurah(surah);
@@ -1125,14 +1221,42 @@ export default function ReadScreen() {
         throw new Error(`No verses returned from database for Juz ${juz}`);
       }
 
+      // If user selected tajweed font, attach `tajweedText` for each verse.
+      // Juz can span multiple surahs, so we fetch tajweed markup per unique chapter.
+      const needsTajweed = useSettingsStore.getState().arabicFont === 'tajweed';
+      let enrichedVersesData: any[] = versesData as any[];
+      if (needsTajweed) {
+        const chapterIds = Array.from(new Set((versesData || []).map((v: any) => Number(v.chapter_id)).filter(Boolean)));
+        const tajweedMaps = await Promise.all(
+          chapterIds.map(async (chapterId) => ({
+            chapterId,
+            map: await fetchUthmaniTajweedRnMarkupByChapter(chapterId),
+          }))
+        );
+
+        const tajweedByChapter = new Map<number, Record<string, string>>();
+        for (const entry of tajweedMaps) {
+          tajweedByChapter.set(entry.chapterId, entry.map);
+        }
+
+        enrichedVersesData = (versesData || []).map((v: any) => {
+          const chapterId = Number(v.chapter_id);
+          const verseNum = Number(v.verse_number);
+          const map = tajweedByChapter.get(chapterId);
+          const key = `${chapterId}:${verseNum}`;
+          const tajweedText = map?.[key] || undefined;
+          return { ...v, tajweedText } as any;
+        });
+      }
+
       console.log(`[read] Successfully loaded ${versesData.length} verses for Juz ${juz}`);
-      setJuzVerses(versesData);
+      setJuzVerses(enrichedVersesData as any);
       setJuzListKey(prev => prev + 1); // Force FlashList rebuild on data change
       setIsJuzLoading(false);
       // If Page Mode is active and scope is 'juz', compute pages immediately and restore last page
       if (pageModeScope === 'juz' && isPageModeActive) {
         try {
-          const mapped = versesData.map((item) => ({
+          const mapped = (enrichedVersesData as any[]).map((item) => ({
             id: item.verse_id,
             surahId: item.chapter_id,
             verseNumber: item.verse_number,
@@ -1141,6 +1265,7 @@ export default function ReadScreen() {
             transliteration: item.transliteration || undefined,
             pageNumber: item.page_id ? Number(item.page_id) : undefined,
             juzNumber: item.part_id ? Number(item.part_id) : undefined,
+            tajweedText: item.tajweedText || undefined,
           } as any));
 
           const pages = calculatePages(mapped, pageModeSessionVpp);
@@ -1309,6 +1434,7 @@ export default function ReadScreen() {
       transliteration: item.transliteration ?? item.transliteration,
       pageNumber: item.pageNumber ?? item.page_id,
       juzNumber: item.juzNumber ?? item.part_id,
+      tajweedText: item.tajweedText ?? undefined,
     } as any;
     // DEV: warn if critical fields missing
     if (!verseObj.surahId || !verseObj.verseNumber) {
@@ -1629,6 +1755,10 @@ export default function ReadScreen() {
           }
         })();
 
+        // Enable scroll restoration for Surah list (default tab)
+        setShouldRestoreSurahScroll(true);
+        setShouldRestoreJuzScroll(true);
+
         // Reset all state to show Surah list
         // Exit page mode if active
         try { exitPageMode(); } catch { }
@@ -1896,7 +2026,7 @@ export default function ReadScreen() {
       <View style={styles.headerContainer}>
         <View style={styles.headerTopRow}>
           <TouchableOpacity onPress={handleBackToSurahs} style={{ marginRight: 12 }}>
-            <ArrowLeft size={28} color="#FFD700" />
+            <ArrowLeft size={28} color="#C5A059" />
           </TouchableOpacity>
           {selectedSurah ? (
             <View style={[styles.headerTitleContainer, { alignItems: 'center' }]}>
@@ -1942,14 +2072,14 @@ export default function ReadScreen() {
                       }
                     }}
                     style={{
-                      backgroundColor: isPageModeActive ? (isPlayingPage ? '#FFD700' : '#333333') : (isPlayingSurah ? '#FFD700' : '#333333'),
+                      backgroundColor: isPageModeActive ? (isPlayingPage ? '#C5A059' : '#333333') : (isPlayingSurah ? '#C5A059' : '#333333'),
                       borderRadius: 22,
                       width: 44,
                       height: 44,
                       justifyContent: 'center',
                       alignItems: 'center',
                       borderWidth: 1,
-                      borderColor: isPageModeActive ? (isPlayingPage ? '#FFD700' : '#555555') : (isPlayingSurah ? '#FFD700' : '#555555'),
+                      borderColor: isPageModeActive ? (isPlayingPage ? '#C5A059' : '#555555') : (isPlayingSurah ? '#C5A059' : '#555555'),
                       marginRight: 12,
                     }}
                     activeOpacity={0.8}
@@ -1957,22 +2087,22 @@ export default function ReadScreen() {
                     {isPageModeActive ? (
                       isPageDownloading ? (
                         <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-                          <ActivityIndicator size="small" color="#FFD700" />
-                          <Text style={{ color: '#FFD700', fontSize: 10, marginTop: 2 }}>{Math.round(pageDownloadProgress)}%</Text>
+                          <ActivityIndicator size="small" color="#C5A059" />
+                          <Text style={{ color: '#C5A059', fontSize: 10, marginTop: 2 }}>{Math.round(pageDownloadProgress)}%</Text>
                         </View>
                       ) : (
-                        isPlayingPage ? <Pause size={22} color="#1a1a1a" /> : <Play size={22} color="#FFD700" />
+                        isPlayingPage ? <Pause size={22} color="#1a1a1a" /> : <Play size={22} color="#C5A059" />
                       )
                     ) : (
-                      isPlayingSurah ? <Pause size={22} color="#1a1a1a" /> : <Play size={22} color="#FFD700" />
+                      isPlayingSurah ? <Pause size={22} color="#1a1a1a" /> : <Play size={22} color="#C5A059" />
                     )}
                   </TouchableOpacity>
 
                   <Pressable
                     onPress={() => setGoToModalVisible(true)}
-                    style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFD700', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}
+                    style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255, 255, 255, 0.08)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}
                   >
-                    <ArrowRight size={18} color="#000" />
+                    <ArrowRight size={18} color="#C5A059" />
                   </Pressable>
 
                   <PageModeButton
@@ -2034,34 +2164,34 @@ export default function ReadScreen() {
                         setPageDownloadProgress(0);
                       }}
                       style={{
-                        backgroundColor: isPageModeActive ? (isPlayingPage ? '#FFD700' : '#333333') : '#333333',
+                        backgroundColor: isPageModeActive ? (isPlayingPage ? '#C5A059' : '#333333') : '#333333',
                         borderRadius: 22,
                         width: 44,
                         height: 44,
                         justifyContent: 'center',
                         alignItems: 'center',
                         borderWidth: 1,
-                        borderColor: isPageModeActive ? (isPlayingPage ? '#FFD700' : '#555555') : '#555555',
+                        borderColor: isPageModeActive ? (isPlayingPage ? '#C5A059' : '#555555') : '#555555',
                         marginRight: 12,
                       }}
                       activeOpacity={0.8}
                     >
                       {isPageDownloading ? (
                         <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-                          <ActivityIndicator size="small" color="#FFD700" />
-                          <Text style={{ color: '#FFD700', fontSize: 10, marginTop: 2 }}>{Math.round(pageDownloadProgress)}%</Text>
+                          <ActivityIndicator size="small" color="#C5A059" />
+                          <Text style={{ color: '#C5A059', fontSize: 10, marginTop: 2 }}>{Math.round(pageDownloadProgress)}%</Text>
                         </View>
                       ) : (
-                        isPlayingPage ? <Pause size={22} color="#1a1a1a" /> : <Play size={22} color="#FFD700" />
+                        isPlayingPage ? <Pause size={22} color="#1a1a1a" /> : <Play size={22} color="#C5A059" />
                       )}
                     </TouchableOpacity>
                   ) : null}
 
                   <Pressable
                     onPress={() => setGoToModalVisible(true)}
-                    style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFD700', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}
+                    style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255, 255, 255, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}
                   >
-                    <ArrowRight size={18} color="#000" />
+                    <ArrowRight size={18} color="#C5A059" />
                   </Pressable>
 
                   <PageModeButton
@@ -2284,16 +2414,16 @@ export default function ReadScreen() {
         }}
       />
 
-      <View style={[styles.container, { backgroundColor: '#1a1a1a' }]}>
+      <View style={[styles.container, { backgroundColor: '#0B0E14' }]}>
         {selectedSurah ? (
-          <View style={[styles.versesContainer, { backgroundColor: '#1a1a1a' }]}>
+          <View style={[styles.versesContainer, { backgroundColor: '#0B0E14' }]}>
             {isLoading ? (
-              <View style={[styles.loadingContainer, { backgroundColor: '#1a1a1a' }]}>
+              <View style={[styles.loadingContainer, { backgroundColor: '#0B0E14' }]}>
                 <ActivityIndicator size="large" color={primary} />
                 <Text style={[styles.loadingText, { color: '#ffffff' }]}>Loading verses...</Text>
               </View>
             ) : loadingError ? (
-              <View style={[styles.errorContainer, { backgroundColor: '#1a1a1a' }]}>
+              <View style={[styles.errorContainer, { backgroundColor: '#0B0E14' }]}>
                 <Text style={[styles.errorText, { color: '#ff5252' }]}>{loadingError}</Text>
                 <Pressable style={[styles.retryButton, { backgroundColor: primary }]} onPress={() => loadInitialVerses(selectedSurah)}>
                   <Text style={[styles.retryButtonText, { color: '#ffffff' }]}>Retry</Text>
@@ -2381,6 +2511,7 @@ export default function ReadScreen() {
                             transliteration: item.transliteration || undefined,
                             pageNumber: item.page_id ? Number(item.page_id) : undefined,
                             juzNumber: item.part_id ? Number(item.part_id) : undefined,
+                            tajweedText: item.tajweedText || undefined,
                           }}
                           onPlayAudio={handleVersePlayAudio}
                           surahMemorizedGlobally={false}
@@ -2394,20 +2525,36 @@ export default function ReadScreen() {
                         />
                       );
                     }}
-                    contentContainerStyle={[styles.versesContent, { backgroundColor: '#1a1a1a' }]}
+                    contentContainerStyle={[styles.versesContent, { backgroundColor: '#0B0E14' }]}
                   />
                 )}
               </Animated.View>
             )}
           </View>
         ) : tab === 'surah' ? (
-          <FlashList
-            ref={surahListRef}
-            data={filteredSurahs}
-            renderItem={renderSurahItem}
-            keyExtractor={(item: any) => `surah-${item.id}`}
-            contentContainerStyle={[styles.surahListContent, { backgroundColor: '#1a1a1a' }]}
-          />
+          <View style={{ flex: 1, position: 'relative' }}>
+            <FlashList
+              ref={surahListRef}
+              data={filteredSurahs}
+              renderItem={renderSurahItem}
+              keyExtractor={(item: any) => `surah-${item.id}`}
+              contentContainerStyle={[styles.surahListContent, { backgroundColor: '#0B0E14' }]}
+              onScroll={handleSurahListScroll}
+              scrollEventThrottle={16}
+            />
+            <LinearGradient
+              colors={['rgba(11, 14, 20, 0.8)', 'transparent']}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 0.3 }}
+              style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '20%', pointerEvents: 'none' }}
+            />
+            <LinearGradient
+              colors={['transparent', 'rgba(11, 14, 20, 0.8)']}
+              start={{ x: 0.5, y: 0.7 }}
+              end={{ x: 0.5, y: 1 }}
+              style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '20%', pointerEvents: 'none' }}
+            />
+          </View>
         ) : (
           <JuzMemorization onOpenJuz={handleSelectJuz} />
         )}

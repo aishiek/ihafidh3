@@ -17,8 +17,8 @@ export function getArabicFontFamily(option: ArabicFontOption): string | undefine
     case 'scheherazade-bold':
       return 'ScheherazadeNew-Bold';
     case 'tajweed':
-      // For tajweed coloring, use Scheherazade as the base font (rn-tajweed-verse applies color overlays)
-      return 'ScheherazadeNew-Regular';
+      // Now using API text with proper marks - using KFGQPC Uthmanic Hafs
+      return 'KFGQPC-Uthmanic-Hafs';
     case 'indo-pak':
       return 'NooreHuda-Regular';
     case 'noto-naskh':

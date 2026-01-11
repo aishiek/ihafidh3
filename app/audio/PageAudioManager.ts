@@ -54,6 +54,8 @@ export class PageAudioManager {
   private currentIndex = 0;
   private repeatCount = 1;
   private currentRepeat = 0;
+  private playbackSpeed = 1;
+  private repeatScope: 'page' | 'verse' = 'verse';
   private isPlaying = false;
   private isPaused = false;
   // Active sound instance controlled by this manager (for pause/resume/stop)
@@ -257,17 +259,19 @@ export class PageAudioManager {
     }
   }
 
-  async playPage(repeatCount = 1) {
+  async playPage(repeatCount = 1, speed = 1, scope: 'page' | 'verse' = 'verse') {
     if (!this.audioFiles.length) throw new Error('No audio files loaded. Call downloadPageAudio first.');
 
-    // If the global settings enable infinite loop, honor that first —
-    // otherwise treat repeatCount <= 0 as a signal to repeat forever as well.
-    const settingsInfinite = useSettingsStore.getState().infiniteLoop;
+    // Use mushaf-specific infinite loop setting instead of global setting
+    // repeatCount <= 0 is treated as a signal to repeat forever
+    const settingsInfinite = useSettingsStore.getState().mushafInfiniteLoop;
     if (settingsInfinite) {
       this.repeatCount = Infinity;
     } else {
       this.repeatCount = repeatCount <= 0 ? Infinity : repeatCount;
     }
+    this.playbackSpeed = speed;
+    this.repeatScope = scope;
     this.currentIndex = 0;
     this.isPlaying = true;
     this.isPaused = false;
@@ -286,9 +290,60 @@ export class PageAudioManager {
   // Play all loaded audio files sequentially; each file will be awaited before
   // moving to the next so callers won't skip ahead.
   private async playSequentially(): Promise<void> {
-    console.log('[PageAudioManager] 🎵 Starting playSequentially, total verses:', this.audioFiles.length);
+    console.log('[PageAudioManager] 🎵 Starting playSequentially, mode:', this.repeatScope, 'total verses:', this.audioFiles.length);
 
+    if (this.repeatScope === 'page') {
+      // PAGE MODE: Repeat entire page X times
+      const pageIterations = Number.isFinite(this.repeatCount) ? this.repeatCount : Infinity;
+      
+      if (Number.isFinite(pageIterations)) {
+        for (let pageRepeat = 1; pageRepeat <= pageIterations; pageRepeat++) {
+          if (!this.isPlaying) break;
+          await this.waitWhilePaused();
+          if (!this.isPlaying) break;
+          console.log('[PageAudioManager] 🔁 Page repeat', pageRepeat, '/', pageIterations);
+          await this.playAllVerses();
+          if (pageRepeat < pageIterations && this.isPlaying) {
+            await this.delay(500);
+            await this.waitWhilePaused();
+          }
+        }
+      } else {
+        // Infinite page repeats
+        let pageRepeat = 1;
+        while (this.isPlaying) {
+          await this.waitWhilePaused();
+          if (!this.isPlaying) break;
+          console.log('[PageAudioManager] 🔁 Infinite page repeat', pageRepeat);
+          await this.playAllVerses();
+          if (!this.isPlaying) break;
+          await this.delay(500);
+          await this.waitWhilePaused();
+          pageRepeat++;
+        }
+      }
+    } else {
+      // VERSE MODE: Repeat each verse X times before moving to next
+      await this.playAllVerses();
+    }
+
+    console.log('[PageAudioManager] 🎉 Page playback complete');
+
+    // Page complete
+    if (this.isPlaying) {
+      this.pageCompleteListeners.forEach((l) => l());
+      this.reset();
+    }
+  }
+
+  // Helper method to play all verses once (used by both modes)
+  private async playAllVerses(): Promise<void> {
+    this.currentIndex = 0;
+    
     while (this.currentIndex < this.audioFiles.length && this.isPlaying) {
+      await this.waitWhilePaused();
+      if (!this.isPlaying) break;
+      
       const audioFile = this.audioFiles[this.currentIndex];
       const urlToPlay = audioFile.downloaded ? audioFile.localPath : audioFile.remoteUrl;
 
@@ -298,29 +353,43 @@ export class PageAudioManager {
       this.verseStartListeners.forEach((l) => l(this.currentIndex, audioFile.verse));
       this.updateState();
 
-      // Play this verse with repeats. Finite and infinite repeat handling differ.
-      if (Number.isFinite(this.repeatCount)) {
-        for (this.currentRepeat = 1; this.currentRepeat <= this.repeatCount; this.currentRepeat++) {
-          if (!this.isPlaying) break;
+      // In VERSE mode, play this verse with repeats. In PAGE mode, play once.
+      if (this.repeatScope === 'verse') {
+        // Play this verse with repeats. Finite and infinite repeat handling differ.
+        if (Number.isFinite(this.repeatCount)) {
+          for (this.currentRepeat = 1; this.currentRepeat <= this.repeatCount; this.currentRepeat++) {
+            if (!this.isPlaying) break;
+            await this.waitWhilePaused();
+            if (!this.isPlaying) break;
 
-          console.log('[PageAudioManager] 🔁 Repeat', this.currentRepeat, '/', this.repeatCount);
+            console.log('[PageAudioManager] 🔁 Verse repeat', this.currentRepeat, '/', this.repeatCount);
 
-          // MUST AWAIT here so we wait for playback to finish
-          await this.playAudioFile(urlToPlay);
+            // MUST AWAIT here so we wait for playback to finish
+            await this.playAudioFile(urlToPlay);
 
-          // Pause between repeats (only if not last repeat)
-          if (this.currentRepeat < this.repeatCount) await this.delay(300);
+            // Pause between repeats (only if not last repeat)
+            if (this.currentRepeat < this.repeatCount) {
+              await this.delay(300);
+              await this.waitWhilePaused();
+            }
+          }
+        } else {
+          // Infinite repeats — loop until isPlaying becomes false
+          this.currentRepeat = 1;
+          while (this.isPlaying) {
+            await this.waitWhilePaused();
+            if (!this.isPlaying) break;
+            console.log('[PageAudioManager] 🔁 Infinite verse repeat iteration', this.currentRepeat);
+            await this.playAudioFile(urlToPlay);
+            if (!this.isPlaying) break;
+            await this.delay(300);
+            await this.waitWhilePaused();
+            this.currentRepeat++;
+          }
         }
       } else {
-        // Infinite repeats — loop until isPlaying becomes false
-        this.currentRepeat = 1;
-        while (this.isPlaying) {
-          console.log('[PageAudioManager] 🔁 Infinite repeat iteration', this.currentRepeat);
-          await this.playAudioFile(urlToPlay);
-          if (!this.isPlaying) break;
-          await this.delay(300);
-          this.currentRepeat++;
-        }
+        // PAGE MODE: Play verse once (no per-verse repeats)
+        await this.playAudioFile(urlToPlay);
       }
 
       console.log('[PageAudioManager] ✅ Verse complete:', this.currentIndex);
@@ -330,14 +399,6 @@ export class PageAudioManager {
 
       // Move to next verse
       this.currentIndex++;
-    }
-
-    console.log('[PageAudioManager] 🎉 Page playback complete');
-
-    // Page complete
-    if (this.currentIndex >= this.audioFiles.length) {
-      this.pageCompleteListeners.forEach((l) => l());
-      this.reset();
     }
   }
 
@@ -439,25 +500,21 @@ export class PageAudioManager {
 
   async pause() {
     this.isPaused = true;
-    this.isPlaying = false;
+    // Don't set isPlaying to false - keep the playback loop alive
     if (this.currentSound) {
       try {
         const st = await this.currentSound.getStatusAsync();
         if (st.isLoaded && st.isPlaying) await this.currentSound.pauseAsync();
       } catch (e) {
-        // Fallback to shared stop if local pause fails
-        console.warn('[PageAudioManager] pause failed locally, falling back to shared stop', e);
-        await stopAudio().catch(() => { });
+        console.warn('[PageAudioManager] pause failed locally:', e);
       }
-    } else {
-      await stopAudio().catch(() => { });
     }
     this.updateState();
   }
 
   async resume() {
     this.isPaused = false;
-    this.isPlaying = true;
+    // isPlaying should already be true from pause
     if (this.currentSound) {
       try {
         const st = await this.currentSound.getStatusAsync();
@@ -469,15 +526,22 @@ export class PageAudioManager {
     this.updateState();
   }
 
+  // Helper to wait while paused
+  private async waitWhilePaused(): Promise<void> {
+    while (this.isPaused && this.isPlaying) {
+      await this.delay(100);
+    }
+  }
+
   async stop() {
     this.isPlaying = false;
 
     // Abort any pending play/promise and clean up current sound
     if (this.playbackAbortController) {
       try {
-        // Add a small trace so runtime logs show where abort was triggered from.
-        const trace = new Error('stop() called — aborting playback').stack;
-        console.debug('[PageAudioManager] stop(): aborting playback \n', trace);
+        if (__DEV__) {
+          console.debug('[PageAudioManager] stop(): aborting playback');
+        }
         this.playbackAbortController.abort();
       } catch (_) { }
       this.playbackAbortController = null;

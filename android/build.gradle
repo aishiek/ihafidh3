@@ -9,8 +9,6 @@ buildscript {
     classpath('com.android.tools.build:gradle')
     classpath('com.facebook.react:react-native-gradle-plugin')
     classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
-    // Add the Google services Gradle plugin
-    classpath('com.google.gms:google-services:4.4.4')
   }
 }
 
@@ -19,10 +17,6 @@ allprojects {
     google()
     mavenCentral()
     maven { url 'https://www.jitpack.io' }
-    maven {
-      // All of Notifee's external dependencies are in the libs directory
-      url "$rootDir/../node_modules/@notifee/react-native/android/libs"
-    }
   }
 }
 

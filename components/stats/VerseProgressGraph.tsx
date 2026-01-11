@@ -147,6 +147,10 @@ export default function VerseProgressGraph({
   colors,
   onBarPress
 }: Props) {
+  // Initialize with default values first
+  let yAxisWidth = 35;
+  let styles = getStyles(yAxisWidth);
+
   // Validate props
   if (!data || data.length === 0 || !colors || !timeRange) {
     return (
@@ -198,17 +202,6 @@ export default function VerseProgressGraph({
     );
   }
 
-  // Layout calculations
-  const screenWidth = Dimensions.get('window').width;
-  const cardPadding = 32;
-  const availableScreenWidth = screenWidth - cardPadding;
-  const graphHeight = 240;
-  const yAxisWidth = 45; // Space for Y-axis labels
-  const chartPadding = { top: 24, bottom: 48, left: 12 + yAxisWidth, right: 12 };
-
-  const minBarHeight = 3;
-  const availableHeight = graphHeight - chartPadding.top - chartPadding.bottom;
-
   // Calculate local max for dynamic scaling
   const rawMaxValue = useMemo(() => {
     const lastPoint = processedData[processedData.length - 1];
@@ -217,6 +210,21 @@ export default function VerseProgressGraph({
   }, [processedData]);
 
   const { labels: yAxisLabels, scale: denominator } = useMemo(() => getScaleSettings(rawMaxValue), [rawMaxValue]);
+
+  // Layout calculations
+  const screenWidth = Dimensions.get('window').width;
+  const cardPadding = 40;
+  const availableScreenWidth = screenWidth - cardPadding;
+  const graphHeight = 240;
+
+  // Update yAxisWidth based on denominator
+  yAxisWidth = denominator >= 1000 ? 40 : 35;
+  const chartPadding = { top: 24, bottom: 48, left: yAxisWidth, right: 12 };
+  // Update styles with the new yAxisWidth
+  styles = getStyles(yAxisWidth);
+
+  const minBarHeight = 3;
+  const availableHeight = graphHeight - chartPadding.top - chartPadding.bottom;
 
   // Process stacked bar data
   const stackedData = useMemo(() => {
@@ -266,6 +274,9 @@ export default function VerseProgressGraph({
   }
 
 
+
+  // Update styles with the latest yAxisWidth
+  styles = getStyles(yAxisWidth);
 
   // Graph content component
   const GraphContent = () => (
@@ -474,7 +485,8 @@ export default function VerseProgressGraph({
   );
 }
 
-const styles = StyleSheet.create({
+// Helper function to get styles with dynamic yAxisWidth
+const getStyles = (yAxisWidth: number) => StyleSheet.create({
   container: {
     marginTop: 16,
   },
@@ -496,13 +508,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     top: 0,
-    width: 40,
+    width: yAxisWidth, // Dynamic width based on max value
     zIndex: 1,
   },
   yAxisLabel: {
     position: 'absolute',
     left: 0,
-    width: 38,
+    width: yAxisWidth - 4, // Slight padding from edge
     alignItems: 'flex-end',
     justifyContent: 'center',
     height: 16,
@@ -517,7 +529,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
     paddingHorizontal: 4,
-    marginLeft: 40, // Offset for Y-axis
+    marginLeft: 0,
+    paddingLeft: Platform.OS === 'android' ? Math.max(yAxisWidth - 12, 0) : yAxisWidth - 4, // Reduced padding on Android for better label visibility
   },
   labelWrapper: {
     alignItems: 'center',

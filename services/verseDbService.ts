@@ -30,7 +30,6 @@ export async function getVerseFromLocalDB(surahNumber: number, verseNumber: numb
     let lastError: any = null;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        log(`Attempt ${attempt + 1}/${maxRetries}`);
         return await operation();
       } catch (err) {
         lastError = err;

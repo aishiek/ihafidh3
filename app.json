@@ -46,7 +46,7 @@
         "aps-environment": "development"
       },
       "buildNumber": "25",
-      "googleServicesFile": "./ios/GoogleService-Info.plist",
+      "googleServicesFile": "./assets/firebase/GoogleService-Info.plist",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app needs access to your location to determine Qibla direction and to enhance fasting calendar accuracy.",
         "ITSAppUsesNonExemptEncryption": false,
@@ -106,6 +106,8 @@
       "blockedPermissions": [
         "android.permission.ACTIVITY_RECOGNITION"
       ],
+      "icon": "./assets/images/icon.png",
+      "googleServicesFile": "./assets/firebase/google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#1a1a1a"

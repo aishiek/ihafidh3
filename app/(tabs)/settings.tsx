@@ -133,8 +133,8 @@ export default function SettingsScreen() {
         setPreviewSound(null);
       }
 
-      // Al-Fatiha (Surah 1) is a good short preview
-      const previewUrl = `https://cdn.alquran.cloud/media/audio/ayah/${selectedReciter}/1`;
+      // Al-Fatiha verse 2 (Alhamdu lillahi rabbil aalameen)
+      const previewUrl = `https://cdn.alquran.cloud/media/audio/ayah/${selectedReciter}/2`;
 
       setPlayingReciter(selectedReciter);
       const { sound } = await Audio.Sound.createAsync(
@@ -696,7 +696,8 @@ export default function SettingsScreen() {
               { value: 'default', label: 'System Default (Scheherazade)' },
               { value: 'noto-naskh', label: 'Naskh Arabic' },
               { value: 'amiri-quran', label: 'Amiri Quran' },
-              { value: 'indo-pak', label: 'Indo-Pak (Noore Huda)' }
+              { value: 'indo-pak', label: 'Indo-Pak (Noore Huda)' },
+              { value: 'tajweed', label: 'Tajweed (KFGQPC)' }
             ].map((font) => (
               <Pressable
                 key={font.value}
@@ -735,39 +736,39 @@ export default function SettingsScreen() {
               </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
-                  <View style={{ width: 12, height: 12, backgroundColor: '#FF7E1E', borderRadius: 2, marginRight: 6 }} />
+                  <View style={{ width: 12, height: 12, backgroundColor: '#FFD700', borderRadius: 2, marginRight: 6 }} />
                   <Text style={{ color: theme.text, fontSize: 12 }}>Ghunnah</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
-                  <View style={{ width: 12, height: 12, backgroundColor: '#DD0008', borderRadius: 2, marginRight: 6 }} />
+                  <View style={{ width: 12, height: 12, backgroundColor: '#FF3B30', borderRadius: 2, marginRight: 6 }} />
                   <Text style={{ color: theme.text, fontSize: 12 }}>Qalqalah</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
-                  <View style={{ width: 12, height: 12, backgroundColor: '#A1A1A1', borderRadius: 2, marginRight: 6 }} />
+                  <View style={{ width: 12, height: 12, backgroundColor: '#FFD700', borderRadius: 2, marginRight: 6 }} />
                   <Text style={{ color: theme.text, fontSize: 12 }}>Noon/Meem Mushaddad</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
-                  <View style={{ width: 12, height: 12, backgroundColor: '#58B800', borderRadius: 2, marginRight: 6 }} />
+                  <View style={{ width: 12, height: 12, backgroundColor: '#00C853', borderRadius: 2, marginRight: 6 }} />
                   <Text style={{ color: theme.text, fontSize: 12 }}>Idgham</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
-                  <View style={{ width: 12, height: 12, backgroundColor: '#FFD700', borderRadius: 2, marginRight: 6 }} />
+                  <View style={{ width: 12, height: 12, backgroundColor: '#FFA500', borderRadius: 2, marginRight: 6 }} />
                   <Text style={{ color: theme.text, fontSize: 12 }}>Madd</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
-                  <View style={{ width: 12, height: 12, backgroundColor: '#26BFFD', borderRadius: 2, marginRight: 6 }} />
+                  <View style={{ width: 12, height: 12, backgroundColor: '#007AFF', borderRadius: 2, marginRight: 6 }} />
                   <Text style={{ color: theme.text, fontSize: 12 }}>Iqlab</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
-                  <View style={{ width: 12, height: 12, backgroundColor: '#9400A8', borderRadius: 2, marginRight: 6 }} />
+                  <View style={{ width: 12, height: 12, backgroundColor: '#FFB6C1', borderRadius: 2, marginRight: 6 }} />
                   <Text style={{ color: theme.text, fontSize: 12 }}>Ikhfa</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
-                  <View style={{ width: 12, height: 12, backgroundColor: '#169777', borderRadius: 2, marginRight: 6 }} />
+                  <View style={{ width: 12, height: 12, backgroundColor: '#00C853', borderRadius: 2, marginRight: 6 }} />
                   <Text style={{ color: theme.text, fontSize: 12 }}>Idgham with Ghunnah</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
-                  <View style={{ width: 12, height: 12, backgroundColor: '#D500B7', borderRadius: 2, marginRight: 6 }} />
+                  <View style={{ width: 12, height: 12, backgroundColor: '#DDA0DD', borderRadius: 2, marginRight: 6 }} />
                   <Text style={{ color: theme.text, fontSize: 12 }}>Ikhfa Shafawi</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>

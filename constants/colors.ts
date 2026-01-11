@@ -21,9 +21,9 @@ export const lightTheme = {
 export const darkTheme = {
   primary: '#5A8AD6',
   secondary: '#7BA7A3',
-  background: '#121212',
+  background: '#0B0E14', // Deepest charcoal obsidian
   card: '#1E1E1E',
-  text: '#F5F5F5',
+  text: '#FFF8E1',
   border: '#3A3A3C',
   notification: '#FF6B78',
   success: '#32D74B',
