@@ -21,14 +21,18 @@ const TOPIC_DAILY_AYAH = 'daily_ayah';
 
 async function main() {
     try {
-        console.log('--- Starting System Check (Hourly Timezone Aware) ---');
+        console.log('='.repeat(60));
+        console.log('🚀 DAILY NOTIFICATIONS - Starting System Check');
+        console.log('='.repeat(60));
 
         const now = new Date();
         const utcHour = now.getUTCHours();
         const TARGET_HOUR = 5; // 5 AM Local Time
 
-        console.log(`Current UTC Hour: ${utcHour}`);
-        console.log(`Target Local Hour: ${TARGET_HOUR}`);
+        console.log(`⏰ Current Time (UTC): ${now.toISOString()}`);
+        console.log(`⏰ Current UTC Hour: ${utcHour}`);
+        console.log(`🎯 Target Local Hour: ${TARGET_HOUR} AM`);
+        console.log('');
 
         // 1. Identify valid offsets for this hour
         // Formula: (utc + offset) % 24 == target
@@ -45,8 +49,8 @@ async function main() {
             if (localHour >= 24) localHour -= 24;
 
             if (localHour === TARGET_HOUR) {
-                // Format offset string matches App (e.g. "+0800", "-0500")
-                const sign = offset >= 0 ? '' : '-'; // Removed '+' for valid topic name
+                // Format offset string matches App (e.g. "+0800", "-0500" but without + for FCM topic compatibility)
+                const sign = offset >= 0 ? '' : '-';
                 const abs = Math.abs(offset);
                 const offsetStr = `${sign}${String(abs).padStart(2, '0')}00`;
                 validOffsets.push({ val: offset, str: offsetStr });
@@ -54,15 +58,25 @@ async function main() {
         }
 
         if (validOffsets.length === 0) {
-            console.log('No timezones match 5 AM right now. Exiting.');
+            console.log('ℹ️  No timezones match 5 AM right now. Exiting gracefully.');
+            console.log('='.repeat(60));
             process.exit(0);
         }
 
-        console.log(`Found timezones hitting 5 AM:`, validOffsets.map(o => o.str));
+        console.log(`✅ Found ${validOffsets.length} timezone(s) hitting 5 AM:`);
+        validOffsets.forEach(o => {
+            const sample = new Date(now.getTime() + (o.val * 60 * 60 * 1000));
+            console.log(`   • ${o.str} (UTC${o.val >= 0 ? '+' : ''}${o.val}) → Local: ${sample.toISOString().substring(0, 19)}`);
+        });
+        console.log('');
+
+        let totalSent = 0;
+        let totalErrors = 0;
 
         // 2. Process each valid offset
         for (const zone of validOffsets) {
-            console.log(`Processing Zone: ${zone.str} (UTC${zone.val})`);
+            console.log('─'.repeat(60));
+            console.log(`📍 Processing Zone: ${zone.str} (UTC${zone.val >= 0 ? '+' : ''}${zone.val})`);
 
             // Calculate Local Date for this zone
             // We create a date object shifted by the offset
@@ -71,14 +85,16 @@ async function main() {
             const month = localDate.getUTCMonth() + 1;
             const year = localDate.getUTCFullYear();
 
-            console.log(`  Local Date: ${year}-${month}-${day}`);
+            console.log(`📅 Local Date: ${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
 
             // Fetch Hijri info
+            console.log(`🔍 Fetching Hijri calendar data...`);
             const response = await fetch(`https://api.aladhan.com/v1/gToH/${day}-${month}-${year}`);
             const data = await response.json();
 
             if (data.code !== 200) {
-                console.error(`  API Error for ${zone.str}`, data);
+                console.error(`❌ API Error for ${zone.str}:`, data);
+                totalErrors++;
                 continue;
             }
 
@@ -87,7 +103,8 @@ async function main() {
             const hijriMonth = hijri.month.number;
             const weekday = data.data.gregorian.weekday.en;
 
-            console.log(`  Hijri: ${hijri.day} ${hijri.month.en} - ${weekday}`);
+            console.log(`🌙 Hijri: ${hijri.day} ${hijri.month.en} (${hijriMonth}/${hijriDay})`);
+            console.log(`📆 Gregorian: ${weekday}`);
 
             // --- Fasting Check (Is TODAY a fasting day?) ---
             let sendFasting = false;
@@ -124,31 +141,81 @@ async function main() {
 
             if (sendFasting) {
                 const topic = `${TOPIC_FASTING}_${zone.str}`;
-                console.log(`  Sending Fasting -> ${topic}`);
-                await messaging.send({
-                    topic: topic,
-                    notification: { title, body },
-                    data: { type: 'fasting_reminder' }
-                });
+                console.log(`📤 Sending Fasting Notification → Topic: ${topic}`);
+                console.log(`   Title: "${title}"`);
+                console.log(`   Body: "${body}"`);
+                
+                try {
+                    const result = await messaging.send({
+                        topic: topic,
+                        notification: { title, body },
+                        data: { type: 'fasting_reminder', timestamp: Date.now().toString() },
+                        android: {
+                            priority: 'high',
+                            notification: {
+                                channelId: 'default',
+                                sound: 'default',
+                                priority: 'high',
+                            }
+                        },
+                        apns: {
+                            headers: { 'apns-priority': '10' },
+                            payload: { aps: { sound: 'default', badge: 1 } }
+                        }
+                    });
+                    console.log(`✅ Fasting notification sent successfully (Message ID: ${result})`);
+                    totalSent++;
+                } catch (error) {
+                    console.error(`❌ Failed to send fasting notification:`, error.message);
+                    totalErrors++;
+                }
             } else {
-                console.log(`  No fasting today.`);
+                console.log(`ℹ️  No fasting reminder for today.`);
             }
 
             // --- Daily Ayah (Always Send) ---
             const ayahTopic = `${TOPIC_DAILY_AYAH}_${zone.str}`;
-            console.log(`  Sending Ayah -> ${ayahTopic}`);
-            await messaging.send({
-                topic: ayahTopic,
-                notification: {
-                    title: "Daily Ayah",
-                    body: "Read your Ayah of the Day"
-                },
-                data: { type: 'daily_ayah', target: 'index' }
-            });
+            console.log(`📤 Sending Daily Ayah → Topic: ${ayahTopic}`);
+            
+            try {
+                const result = await messaging.send({
+                    topic: ayahTopic,
+                    notification: {
+                        title: "Daily Ayah",
+                        body: "Read your Ayah of the Day"
+                    },
+                    data: { type: 'daily_ayah', target: 'index', timestamp: Date.now().toString() },
+                    android: {
+                        priority: 'high',
+                        notification: {
+                            channelId: 'default',
+                            sound: 'default',
+                            priority: 'high',
+                        }
+                    },
+                    apns: {
+                        headers: { 'apns-priority': '10' },
+                        payload: { aps: { sound: 'default', badge: 1 } }
+                    }
+                });
+                console.log(`✅ Daily Ayah sent successfully (Message ID: ${result})`);
+                totalSent++;
+            } catch (error) {
+                console.error(`❌ Failed to send daily ayah:`, error.message);
+                totalErrors++;
+            }
         }
 
-        console.log('--- Done ---');
-        process.exit(0);
+        console.log('');
+        console.log('='.repeat(60));
+        console.log('📊 SUMMARY');
+        console.log('='.repeat(60));
+        console.log(`✅ Successfully sent: ${totalSent} notification(s)`);
+        console.log(`❌ Errors: ${totalErrors}`);
+        console.log(`🌍 Timezones processed: ${validOffsets.length}`);
+        console.log('='.repeat(60));
+
+        process.exit(totalErrors > 0 ? 1 : 0);
     } catch (error) {
         console.error('Error:', error);
         process.exit(1);

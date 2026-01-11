@@ -19,10 +19,48 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Log Execution Time
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "⏰ GitHub Actions Execution Time"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "UTC Time:       $(date -u '+%Y-%m-%d %H:%M:%S %Z')"
+          echo "Singapore Time: $(TZ='Asia/Singapore' date '+%Y-%m-%d %H:%M:%S %Z')"
+          echo "New York Time:  $(TZ='America/New_York' date '+%Y-%m-%d %H:%M:%S %Z')"
+          echo "London Time:    $(TZ='Europe/London' date '+%Y-%m-%d %H:%M:%S %Z')"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
       - name: Install Dependencies
         run: npm install firebase-admin
 
-      - name: Send Notifications
-        run: node scripts/notifications/send-shared.js
+      - name: Verify Firebase Credentials
+        run: |
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+            echo "❌ ERROR: FIREBASE_SERVICE_ACCOUNT secret is not set!"
+            exit 1
+          fi
+          echo "✅ Firebase credentials are configured"
+          echo "   Credentials length: ${#FIREBASE_SERVICE_ACCOUNT} characters"
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Send Notifications
+        run: |
+          echo "🚀 Starting notification script..."
+          node scripts/notifications/send-shared.js 2>&1 | tee notification-log.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📊 Script Exit Code: $EXIT_CODE"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          exit $EXIT_CODE
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Upload Notification Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notification-logs-${{ github.run_number }}
+          path: notification-log.txt
+          retention-days: 7
