@@ -1,0 +1,35 @@
+name: Test Token Notification
+
+on:
+  workflow_dispatch:
+    inputs:
+      fcm_token:
+        description: 'FCM Token from debug screen'
+        required: true
+      title:
+        description: 'Notification Title'
+        required: true
+        default: '🔔 Direct Test'
+      body:
+        description: 'Notification Body'
+        required: true
+        default: 'If you see this, FCM is working!'
+
+jobs:
+  send-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install Dependencies
+        run: npm install firebase-admin
+      
+      - name: Send Test Notification
+        run: node scripts/notifications/test-direct-token.js "${{ github.event.inputs.fcm_token }}"
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
