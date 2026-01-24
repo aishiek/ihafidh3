@@ -19,3 +19,14 @@ export const OCCASION_COMPONENT_MAP: Record<string, React.ComponentType<any>> = 
 export const OCCASIONS_FLAG_URL = 'https://raw.githubusercontent.com/aishiek/aishiek.github.io/refs/heads/main/IslamicSeasons.json';
 
 export default OCCASION_COMPONENT_MAP;
+
+// Friendly display names for occasions (optional)
+export const OCCASION_NAMES: Record<string, string> = {
+  Ramadan: 'Ramadan',
+  EidUlFitr: 'Eid al-Fitr',
+  EidUlAdha: 'Eid al-Adha',
+  Hajj: 'Hajj',
+  Arafah: 'Arafah',
+  Muharram: 'Muharram',
+  MiladUnNabi: "Milad un-Nabi",
+};

@@ -1,6 +1,7 @@
 import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
 import { useSettingsStore } from '@/store/settingsStore';
+import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { calculateJuzProgress, calculateOverallJuzStats } from '@/utils/juzCalculator';
 import { useCustomColors } from '@/utils/themeUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
@@ -155,6 +156,14 @@ export default function StatsScreen() {
     };
   }, [getActivityData, memorizedVerses, revisedVerses]); // Reload when memorizedVerses OR revisedVerses changes
 
+  // ANALYTICS: Track stats tab view on mount
+  useEffect(() => {
+    logAnalyticsEvent('stats_tab_viewed', {
+      memorized_verses_count: memorizedVerses.length,
+      revised_verses_count: revisedVerses.length,
+      ...getCommonParams(),
+    });
+  }, []);
 
   // Initialize progress tracker with current memorized verses
   const progressTracker = useMemo(() => {

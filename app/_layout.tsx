@@ -2,6 +2,7 @@ import { initDatabase, logBasicStats, runIntegrityCheck } from '@/assets/databas
 import AnnouncementModal, { AnnouncementConfig } from '@/components/AnnouncementModal';
 import CelebrationModal from '@/components/CelebrationModal';
 import { FastingCalendarProvider } from '@/components/fasting/context/FastingCalendarContext';
+import ReviewSoftPrompt from '@/components/ReviewSoftPrompt';
 import UpdateModal from '@/components/UpdateModal';
 import { LATEST_VERSION, MIN_SUPPORTED_VERSION } from '@/constants/appConfig';
 import { CelebrationProvider, useCelebration } from '@/contexts/CelebrationContext';
@@ -10,17 +11,20 @@ import { FastingNotificationService } from '@/services/fasting/notificationServi
 import { AyahNotificationService, EnhancedNotificationService, RevisionReminderService, initializeNotifications, requestNotificationPermissions } from '@/services/NotificationService';
 import { PushNotificationService } from '@/services/PushNotificationService';
 import type { Badge } from '@/store/badgeStore';
+import { useBadgeStore } from '@/store/badgeStore';
 import { useProgressStore } from '@/store/progressStore';
 import { useSettingsStore } from '@/store/settingsStore';
+import { getCommonParams, getScreenNameFromPath, logAnalyticsEvent, logScreenView, setUserProperties } from '@/utils/analyticsHelper';
 import { initializeAudio } from '@/utils/audioUtils';
 import { getTodayCardVerse } from '@/utils/ayahOfTheDay';
 import { initGlobalErrorHandlers } from '@/utils/globalErrorHandlers';
 import { fetchRemoteVersionConfig, getEffectiveVersionConfig, type RemoteVersionConfig } from '@/utils/remoteVersion';
+import { canPromptNative, trackAppOpenAndCheckTrigger } from '@/utils/reviewPrompt';
 import { runTurboModuleProbe } from '@/utils/turboModuleProbe';
 import { getCurrentVersion, isVersionLower } from '@/utils/versionUtils';
 import notifee, { EventType } from '@notifee/react-native';
 import * as Font from 'expo-font';
-import { Stack, router } from 'expo-router';
+import { Stack, router, usePathname } from 'expo-router';
 import React, { Component, ReactNode } from 'react';
 import { ActivityIndicator, AppState, AppStateStatus, Platform, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -132,6 +136,16 @@ async function loadAppFontsOnce() {
   return __fontLoadPromise;
 }
 
+// Helper function to determine user memorization level
+function getMemorizationLevel(verseCount: number): string {
+  if (verseCount === 0) return 'beginner';
+  if (verseCount < 100) return 'novice';
+  if (verseCount < 500) return 'intermediate';
+  if (verseCount < 2000) return 'advanced';
+  if (verseCount < 6236) return 'expert';
+  return 'hafidh'; // Completed full Quran
+}
+
 // Separate component to use celebration hook (must be inside provider)
 function RootLayoutContent() {
   const [fontsLoaded, setFontsLoaded] = React.useState(false);
@@ -141,7 +155,8 @@ function RootLayoutContent() {
   const [forcedUpdate, setForcedUpdate] = React.useState(false);
   const [showAnnouncement, setShowAnnouncement] = React.useState(false);
   const [announcement, setAnnouncement] = React.useState<AnnouncementConfig | null>(null);
-  const [currentVersion, setCurrentVersion] = React.useState('2.0.6');
+  const [showReviewSoftPrompt, setShowReviewSoftPrompt] = React.useState(false);
+  const [currentVersion, setCurrentVersion] = React.useState('2.0.7');
   const [latestVersion, setLatestVersion] = React.useState<string | null>(null);
   const [releaseNotes, setReleaseNotes] = React.useState<string[] | undefined>(undefined);
   const [iosAppIdOverride, setIosAppIdOverride] = React.useState<string | null>(null);
@@ -150,6 +165,8 @@ function RootLayoutContent() {
   const reminderTime = useSettingsStore(s => s.reminderTime);
   const notificationSettings = useSettingsStore(s => s.notificationSettings);
   const revisionReminderSettings = useSettingsStore(s => s.revisionReminderSettings);
+  const lastSeenVersion = useSettingsStore(s => s.lastSeenVersion);
+  const setLastSeenVersion = useSettingsStore(s => s.setLastSeenVersion);
 
   // Global celebration hook - available on all screens
   const {
@@ -162,6 +179,63 @@ function RootLayoutContent() {
   } = useCelebration();
 
   const setBadgeCelebrationCallback = useProgressStore((s) => s.setBadgeCelebrationCallback);
+
+  const totalTimeSeconds = useProgressStore(s => s.timeSpent.total);
+  const totalRef = React.useRef<number>(totalTimeSeconds);
+
+  // Watch total tracked time and trigger review soft prompt when crossing 3 hours (10800s)
+  React.useEffect(() => {
+    const prev = totalRef.current || 0;
+    const nowTotal = totalTimeSeconds || 0;
+    if (prev < 10800 && nowTotal >= 10800) {
+      (async () => {
+        try {
+          const ok = await canPromptNative();
+          if (ok) setShowReviewSoftPrompt(true);
+        } catch (e) {
+          console.log('[review] 3-hour prompt failed', e);
+        }
+      })();
+    }
+    totalRef.current = nowTotal;
+  }, [totalTimeSeconds]);
+
+  // ==========================================
+  // ANALYTICS: App Lifecycle - App Open
+  // ==========================================
+  React.useEffect(() => {
+    logAnalyticsEvent('app_open', getCommonParams());
+    // Track consecutive opens and show the soft review prompt on the 7th consecutive day
+    (async () => {
+      try {
+        const should = await trackAppOpenAndCheckTrigger();
+        if (should) setShowReviewSoftPrompt(true);
+      } catch (e) {
+        console.log('[review] track open failed', e);
+      }
+    })();
+  }, []);
+
+  // ==========================================
+  // ANALYTICS: User Properties (Segmentation)
+  // ==========================================
+  React.useEffect(() => {
+    const initUserProperties = async () => {
+      const totalMemorized = useProgressStore.getState().memorizedVerses.length;
+      const preferredFont = useSettingsStore.getState().arabicFont;
+      const preferredLanguage = useSettingsStore.getState().translationLanguage;
+
+      await setUserProperties({
+        memorization_level: getMemorizationLevel(totalMemorized),
+        preferred_font: preferredFont,
+        preferred_language: preferredLanguage,
+        user_type: totalMemorized > 0 ? 'active_learner' : 'new_user',
+        os: Platform.OS,
+      });
+    };
+
+    initUserProperties();
+  }, []);
 
   React.useEffect(() => {
     let mounted = true;
@@ -354,6 +428,22 @@ function RootLayoutContent() {
       // Use setTimeout to ensure it triggers after any state updates
       setTimeout(() => {
         showCelebration(celebType, undefined, badge.name);
+        // If this is the user's first unlocked badge, consider showing the soft review prompt
+        try {
+          const unlocked = useBadgeStore.getState().getUnlockedBadges();
+          if (unlocked && unlocked.length === 1) {
+            (async () => {
+              try {
+                const ok = await canPromptNative();
+                if (ok) setShowReviewSoftPrompt(true);
+              } catch (e) {
+                console.log('[review] first-badge prompt failed', e);
+              }
+            })();
+          }
+        } catch (e) {
+          console.log('[review] error checking first badge', e);
+        }
       }, 100);
     };
 
@@ -369,6 +459,7 @@ function RootLayoutContent() {
     try {
       const { version } = getCurrentVersion();
       setCurrentVersion(version);
+      try { setLastSeenVersion && setLastSeenVersion(version); } catch { }
       console.log('[version] Current version:', version, 'MIN:', MIN_SUPPORTED_VERSION, 'LATEST:', LATEST_VERSION);
 
       // Initial local check (fast fallback before remote arrives)
@@ -424,6 +515,13 @@ function RootLayoutContent() {
       setIosAppIdOverride(remote.ios_app_id_override ?? null);
       setAndroidPkgOverride(remote.android_package_id_override ?? null);
 
+      // If user's last seen version already matches the remote latest, assume they updated and suppress the prompt
+      if (lastSeenVersion && lastSeenVersion === latest) {
+        console.log('[version] lastSeenVersion matches latest; suppressing update prompt');
+        setShowUpdatePrompt(false);
+        return;
+      }
+
       const isUpdate = isVersionLower(version, latest);
       const isForce = !!remote.force;
 
@@ -443,8 +541,8 @@ function RootLayoutContent() {
       } else if (isUpdate || isAnnouncement) {
         // Optional update or Announcement: Show if not dismissed for this version
         if (lastDismissedVersion !== latest) {
-          // Announcements use the "forced" (primary) style for visibility but are dismissible
-          setForcedUpdate(isAnnouncement || isForce);
+          // Only treat as a forced update when there is an actual update and remote requests force
+          setForcedUpdate(!!(isUpdate && isForce));
           setShowUpdatePrompt(true);
         } else {
           setShowUpdatePrompt(false);
@@ -456,7 +554,7 @@ function RootLayoutContent() {
     } catch (e) {
       console.log('[version] apply remote failed', e);
     }
-  }, [lastDismissedVersion]);
+  }, [lastDismissedVersion, lastSeenVersion]);
 
   // Handle notification interactions (Deep Linking)
   const handleNotificationInteraction = React.useCallback((data: any) => {
@@ -563,6 +661,12 @@ function RootLayoutContent() {
           await initDatabase();
           await runIntegrityCheck('[foreground]');
           await logBasicStats('[foreground]');
+
+          // ANALYTICS: App foregrounded
+          logAnalyticsEvent('app_foregrounded', getCommonParams());
+        } else if (next === 'background') {
+          // ANALYTICS: App backgrounded
+          logAnalyticsEvent('app_backgrounded', getCommonParams());
         }
       } catch (e) {
         console.log('[db] lifecycle handler error', e);
@@ -571,6 +675,15 @@ function RootLayoutContent() {
     const sub = AppState.addEventListener('change', onStateChange);
     return () => { try { sub.remove(); } catch { } };
   }, []);
+
+  // ==========================================
+  // ANALYTICS: Screen View Tracking
+  // ==========================================
+  const pathname = usePathname();
+  React.useEffect(() => {
+    const screenName = getScreenNameFromPath(pathname);
+    logScreenView(screenName);
+  }, [pathname]);
 
   try {
     if (!fontsLoaded && !forceContinue) {
@@ -629,6 +742,7 @@ function RootLayoutContent() {
               badgeName={badgeName}
               onComplete={hideCelebration}
             />
+            <ReviewSoftPrompt visible={showReviewSoftPrompt} onClose={() => setShowReviewSoftPrompt(false)} />
           </View>
         </FastingCalendarProvider>
       </RootErrorBoundary>

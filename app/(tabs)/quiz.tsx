@@ -4,6 +4,7 @@ import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
 import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
+import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -326,6 +327,15 @@ export default function QuizScreen() {
         startTime: new Date()
       });
       setQuizCompleted(false);
+      
+      // ANALYTICS: Track quiz started (random)
+      logAnalyticsEvent('quiz_started', {
+        quiz_type: 'random',
+        surah_id: randomSurah.surahId,
+        surah_name: randomSurah.surahName,
+        verses_count: verses.length,
+        ...getCommonParams(),
+      });
     } catch (error) {
       console.error('Error generating quiz:', error);
       Alert.alert('Error', 'Failed to generate quiz. Please try again.');
@@ -399,6 +409,15 @@ export default function QuizScreen() {
         startTime: new Date()
       });
       setQuizCompleted(false);
+      
+      // ANALYTICS: Track quiz started (specific surah)
+      logAnalyticsEvent('quiz_started', {
+        quiz_type: 'specific',
+        surah_id: surah.id,
+        surah_name: surah.name,
+        verses_count: verses.length,
+        ...getCommonParams(),
+      });
     } catch (error) {
       console.error('Error generating specific quiz:', error);
       Alert.alert('Error', 'Failed to generate specific quiz. Please try again.');

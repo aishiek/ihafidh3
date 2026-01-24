@@ -1,7 +1,7 @@
 {
   "name": "ihafidh3",
   "main": "expo-router/entry",
-  "version": "2.0.6",
+  "version": "2.0.7",
   "scripts": {
     "start": "expo start --dev-client",
     "android": "cross-env NODE_ENV=development expo run:android",
@@ -30,8 +30,9 @@
     "@notifee/react-native": "^9.1.8",
     "@react-native-async-storage/async-storage": "^2.0.0",
     "@react-native-community/netinfo": "^11.4.1",
-    "@react-native-firebase/app": "^23.7.0",
-    "@react-native-firebase/messaging": "^23.7.0",
+    "@react-native-firebase/analytics": "^23.8.3",
+    "@react-native-firebase/app": "^23.8.3",
+    "@react-native-firebase/messaging": "^23.8.3",
     "@react-native-masked-view/masked-view": "0.3.2",
     "@react-native-picker/picker": "2.11.1",
     "@shopify/flash-list": "2.0.2",
@@ -72,6 +73,7 @@
     "react-native-confetti-cannon": "^1.5.2",
     "react-native-fs": "^2.20.0",
     "react-native-gesture-handler": "~2.28.0",
+    "react-native-in-app-review": "^4.4.2",
     "react-native-reanimated": "~4.1.0",
     "react-native-render-html": "^6.3.4",
     "react-native-safe-area-context": "~5.6.0",
@@ -113,5 +115,13 @@
     "react-native-dotenv": "^3.4.11",
     "typescript": "~5.9.2"
   },
-  "private": true
+  "private": true,
+  "sdkVersions": {
+    "android": {
+      "minSdk": 24,
+      "targetSdk": 35,
+      "compileSdk": 35,
+      "firebase": "33.9.0"
+    }
+  }
 }

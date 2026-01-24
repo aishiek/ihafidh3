@@ -7,6 +7,7 @@ import {
 } from '@/assets/database/QuranDatabase';
 import { TOTAL_VERSES } from '@/constants/quran';
 import { Verse } from '@/types/verse';
+import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { formatDate } from '@/utils/dateUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
@@ -271,6 +272,26 @@ export const useProgressStore = create<ProgressState>()(
           const agg = recomputeAggregatesFromStatus(verseStatus);
           return { memorizedVerses, memorizedVerseDates, verseStatus, ...agg };
         });
+
+        // ANALYTICS: Verse memorization
+        const newTotal = (get().memorizedVerses.length || 0) + 1;
+        logAnalyticsEvent('verse_memorization_toggled', {
+          action: 'mark',
+          verse_id: verseId,
+          total_verses_memorized: newTotal,
+          ...getCommonParams(),
+        });
+
+        // Check for milestones
+        const milestones = [1, 10, 50, 100, 250, 500, 1000, 2000, 6236];
+        if (milestones.includes(newTotal)) {
+          logAnalyticsEvent('memorization_milestone', {
+            milestone: newTotal,
+            total_verses: 6236,
+            percentage: Math.round((newTotal / 6236) * 100),
+            ...getCommonParams(),
+          });
+        }
       },
 
       unmarkVerseAsMemorized: (verseId: number) => {
@@ -281,6 +302,14 @@ export const useProgressStore = create<ProgressState>()(
           const verseStatus = { ...s.verseStatus, [verseId]: { status: 'not_started' as const, last_updated: new Date().toISOString() } };
           const agg = recomputeAggregatesFromStatus(verseStatus);
           return { memorizedVerses, memorizedVerseDates, verseStatus, ...agg };
+        });
+
+        // ANALYTICS: Verse unmarked
+        logAnalyticsEvent('verse_memorization_toggled', {
+          action: 'unmark',
+          verse_id: verseId,
+          total_verses_memorized: get().memorizedVerses.length,
+          ...getCommonParams(),
         });
       },
 
@@ -309,6 +338,14 @@ export const useProgressStore = create<ProgressState>()(
 
           const agg = recomputeAggregatesFromStatus(verseStatus);
           return { memorizedVerses, memorizedVerseDates, verseStatus, ...agg };
+        });
+
+        // ANALYTICS: Bulk mark action
+        logAnalyticsEvent('bulk_mark_verses', {
+          action: isMarking ? 'mark_memorized' : 'unmark_memorized',
+          verse_count: ids.length,
+          total_verses_memorized: get().memorizedVerses.length,
+          ...getCommonParams(),
         });
 
         // Check for badge unlocks after marking (only when marking, not unmarking)
@@ -537,6 +574,17 @@ export const useProgressStore = create<ProgressState>()(
           setTimeout(() => get().updateBadges(), 0);
 
           return { quizResults };
+        });
+
+        // ANALYTICS: Quiz completed
+        const percentage = Math.round((result.score / result.totalQuestions) * 100);
+        logAnalyticsEvent('quiz_completed', {
+          surah_id: result.surahId || 0,
+          score: result.score,
+          total_questions: result.totalQuestions,
+          percentage: percentage,
+          passed: percentage >= 70,
+          ...getCommonParams(),
         });
       },
 

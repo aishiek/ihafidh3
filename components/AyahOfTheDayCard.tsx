@@ -3,6 +3,7 @@ import { useDayKey } from '@/hooks/useDayKey';
 import { fetchSingleVerse } from '@/services/quranApi';
 import { useBookmarkStore } from '@/store/bookmarkStore';
 import { useSettingsStore } from '@/store/settingsStore';
+import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { getTodayCardVerse } from '@/utils/ayahOfTheDay';
 import { useIsFocused } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
@@ -382,6 +383,16 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style, highl
         ayah.translation
       );
     } catch {}
+    
+    // ANALYTICS: Track Ayah of the Day card interaction
+    logAnalyticsEvent('ayah_of_day_read', {
+      surah_id: ayah.surahId,
+      surah_name: ayah.surahName,
+      verse_number: ayah.verseNumber,
+      verse_id: ayah.verseId,
+      ...getCommonParams(),
+    });
+    
     // Replace navigation when opening a specific verse to avoid duplicate Read entries
     // After fixing FlashList keys and recycling issues, scroll to specific verse should work reliably
     try { router.replace(`/(tabs)/read?surahId=${ayah.surahId}&verseId=${ayah.verseId}`); } catch { router.push(`/(tabs)/read?surahId=${ayah.surahId}&verseId=${ayah.verseId}`); }

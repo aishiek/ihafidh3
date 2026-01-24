@@ -1,7 +1,7 @@
+import { useSettingsStore } from '@/store/settingsStore';
+import { useThemeStore } from '@/store/themeStore';
 import { useEffect, useMemo } from 'react';
 import { useColorScheme } from 'react-native';
-import { useThemeStore } from '@/store/themeStore';
-import { useSettingsStore } from '@/store/settingsStore';
 
 // Unified theme interface that combines both systems
 export interface UnifiedThemeColors {
@@ -11,6 +11,7 @@ export interface UnifiedThemeColors {
   primaryLight: string;
   secondary: string;
   accent: string;
+    tint: string; // Added tint property
   
   // Backgrounds
   background: string;
@@ -143,6 +144,7 @@ const generateLightTheme = (scheme: ColorScheme): UnifiedThemeColors => ({
   memorized: '#4CAF50',
   inProgress: '#FF9800',
   notStarted: '#9E9E9E',
+    tint: COLOR_SCHEMES[scheme].accent, // Set default tint using accent color
 });
 
 const generateDarkTheme = (scheme: ColorScheme): UnifiedThemeColors => ({
@@ -176,6 +178,7 @@ const generateDarkTheme = (scheme: ColorScheme): UnifiedThemeColors => ({
   memorized: '#4CAF50',
   inProgress: '#FF9800',
   notStarted: '#666666',
+    tint: COLOR_SCHEMES[scheme].accent, // Set default tint using accent color
 });
 
 /**

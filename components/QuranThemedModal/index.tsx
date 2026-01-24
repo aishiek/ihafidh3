@@ -53,7 +53,7 @@ function IconFromKey({ keyName, color, size = 48 }: { keyName?: string; color?: 
   }
 }
 
-const AnimatedBlur = Animated.createAnimatedComponent(BlurView as any);
+const AnimatedBlur: any = Animated.createAnimatedComponent(BlurView as any);
 
 export default function QuranThemedModal(props: QuranThemedModalProps) {
   const {
@@ -190,7 +190,7 @@ export default function QuranThemedModal(props: QuranThemedModalProps) {
               {Array.isArray(badges) && badges.length > 0 && (
                 <View style={styles.badgesWrap} accessibilityRole="list">
                   {badges.map((b, idx) => (
-                    <View key={idx} style={[styles.badgePill, { backgroundColor: 'rgba(255,255,255,0.06)' }]} accessibilityRole="listitem">
+                    <View key={idx} style={[styles.badgePill, { backgroundColor: 'rgba(255,255,255,0.06)' }]}> 
                       {b.icon ? b.icon : null}
                       <Text style={{ color: themeColors.text, fontSize: 12, marginLeft: b.icon ? 6 : 0 }}>{b.label}</Text>
                     </View>

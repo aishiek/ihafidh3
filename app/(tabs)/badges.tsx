@@ -1,6 +1,7 @@
 import { QuranProgressTracker } from '@/data/quranProgress';
 import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
+import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { calculateCurrentBadge, getBadgeStates } from '@/utils/badgeUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
@@ -77,6 +78,21 @@ export default function BadgesScreen() {
       AsyncStorage.setItem('lastBadgeLevel', currentBadge.level.toString());
     }
   }, [memorizedVerses, progress.juz.completed]);
+
+  // ANALYTICS: Track badges screen view on mount
+  useEffect(() => {
+    const currentBadge = calculateCurrentBadge(memorizedVerses, progress.juz.completed);
+    const nextBadge = badges.find((badge: any) => !badge.isUnlocked);
+    
+    logAnalyticsEvent('badges_screen_viewed', {
+      current_badge_name: currentBadge.name,
+      current_badge_level: currentBadge.level,
+      memorized_verses_count: memorizedVerses.length,
+      completed_juz: progress.juz.completed,
+      next_badge_progress: nextBadge ? `${nextBadge.progress || 0}%` : 'none',
+      ...getCommonParams(),
+    });
+  }, []);
 
   // Consolidate badge state from shared helper
   const badges = useMemo(() => getBadgeStates(memorizedVerses, progress.juz.completed), [memorizedVerses, progress.juz.completed]);

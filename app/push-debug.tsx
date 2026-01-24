@@ -28,7 +28,7 @@ export default function PushDebugScreen() {
         const apnsTokenValue = await messagingModule.default().getAPNSToken();
         setApnsToken(apnsTokenValue ? apnsTokenValue : 'No APNs token');
       } catch (e) {
-        setApnsToken('Error: ' + (e?.message || e));
+        setApnsToken('Error: ' + (((e as any)?.message) || String(e)));
       }
     } else {
       setApnsToken('N/A (Android)');

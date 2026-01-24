@@ -79,7 +79,13 @@ export default function UpdateModal({ visible, forced = false, currentVersion, l
               </Pressable>
             )}
             <Pressable
-              onPress={() => openStorePage({ iosAppId: iosAppIdOverride ?? undefined, androidPackageId: androidPackageIdOverride ?? undefined })}
+              onPress={async () => {
+                try {
+                  await openStorePage({ iosAppId: iosAppIdOverride ?? undefined, androidPackageId: androidPackageIdOverride ?? undefined });
+                } catch (e) {
+                  console.warn('[update] openStorePage failed', e);
+                }
+              }}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 10, backgroundColor: '#22c55e' }}
             >
               <Check size={16} color="#0b1220" />

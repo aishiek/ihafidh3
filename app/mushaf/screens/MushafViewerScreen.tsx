@@ -1,4 +1,5 @@
 import { useThemeStore } from '@/store/themeStore';
+import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { useCustomColors } from '@/utils/themeUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
@@ -33,6 +34,15 @@ export default function MushafViewerScreen() {
       const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
       return () => subscription.remove();
     }
+  }, []);
+
+  // ANALYTICS: Track Mushaf viewer screen view on mount
+  useEffect(() => {
+    logAnalyticsEvent('mushaf_screen_viewed', {
+      source: params?.source || 'direct',
+      initial_page: params?.pageNumber || 'last_read',
+      ...getCommonParams(),
+    });
   }, []);
   const navigation = useNavigation();
   const router = useRouter();
@@ -306,6 +316,17 @@ export default function MushafViewerScreen() {
 
   // Navigation handlers
   const handlePageChange = (pageNum: number) => {
+    const direction = pageNum > currentPage ? 'next' : pageNum < currentPage ? 'prev' : 'jump';
+    
+    // ANALYTICS: Track Mushaf page navigation
+    logAnalyticsEvent('mushaf_page_changed', {
+      from_page: currentPage,
+      to_page: pageNum,
+      direction: direction,
+      total_pages: totalPages,
+      ...getCommonParams(),
+    });
+    
     setCurrentPage(pageNum);
   };
 

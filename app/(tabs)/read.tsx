@@ -1,3 +1,4 @@
+import { getCommonParams, logAnalyticsEvent, logAudioPlayback } from '@/utils/analyticsHelper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import type { FlashListRef } from '@shopify/flash-list';
@@ -11,17 +12,17 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import PageAudioManager, { AudioState, getPageAudioManager } from '../audio/PageAudioManager';
 
 import {
-  ActivityIndicator,
-  Alert,
-  Animated,
-  Modal,
-  PanResponder,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Modal,
+    PanResponder,
+    Pressable,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 import JuzMemorization from '@/components/JuzMemorization';
@@ -34,13 +35,13 @@ import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import type { Surah, Verse } from '@/types';
 import {
-  getAudioUrl,
-  pauseAudio,
-  pauseSurahAudio,
-  playAudio,
-  playSurahAudioWithFallback,
-  resumeSurahAudio,
-  stopSurahAudio,
+    getAudioUrl,
+    pauseAudio,
+    pauseSurahAudio,
+    playAudio,
+    playSurahAudioWithFallback,
+    resumeSurahAudio,
+    stopSurahAudio,
 } from '@/utils/audioUtils';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
@@ -56,7 +57,7 @@ import { fetchUthmaniTajweedRnMarkupByChapter } from '@/services/quranComTajweed
 export default function ReadScreen() {
   const router = useRouter();
   const { primary } = useThemeColor();
-  const { fontSizeArabic, fontSizeTranslation, showTranslation, arabicFont, translationLanguage, defaultVersesPerPage } = useSettingsStore();
+  const { fontSizeArabic, fontSizeTranslation, showTranslation, arabicFont, translationLanguage, defaultVersesPerPage, playbackSpeed } = useSettingsStore();
   const arabicTypography = getArabicTypographySizing(fontSizeArabic, arabicFont);
   const arabicFontFamily = getArabicFontFamily(arabicFont);
 
@@ -331,6 +332,15 @@ export default function ReadScreen() {
     // Unified entry toast for Page Mode (short, 2s fade)
     try { showToast('Your are in Page mode now!', 2000); } catch { }
 
+    // ANALYTICS: Page mode activated
+    logAnalyticsEvent('page_mode_activated', {
+      scope: scope,
+      verses_per_page: vpp ?? defaultVersesPerPage,
+      entity_id: scope === 'surah' ? selectedSurah?.id : selectedJuz,
+      entity_name: scope === 'surah' ? selectedSurah?.englishName : `Juz ${selectedJuz}`,
+      ...getCommonParams(),
+    });
+
     // switch tab when selecting Juz but not loaded
     if (scope === 'juz') {
       // Clear selectedSurah so the UI falls back to the Juz list view
@@ -402,6 +412,17 @@ export default function ReadScreen() {
         setCompletedVerses(new Set());
         setIsPlayingPage(false);
         setIsPagePaused(false);
+
+        // ANALYTICS: Page navigation
+        logAnalyticsEvent('page_navigation', {
+          direction: 'next',
+          scope: pageModeScope,
+          current_page: p,
+          new_page: v,
+          verses_per_page: pageModeSessionVpp,
+          ...getCommonParams(),
+        });
+
         return v;
       });
     } else if (pageModeScope === 'juz' && juzPages) {
@@ -414,10 +435,21 @@ export default function ReadScreen() {
         setCompletedVerses(new Set());
         setIsPlayingPage(false);
         setIsPagePaused(false);
+
+        // ANALYTICS: Page navigation
+        logAnalyticsEvent('page_navigation', {
+          direction: 'next',
+          scope: pageModeScope,
+          current_page: p,
+          new_page: v,
+          verses_per_page: pageModeSessionVpp,
+          ...getCommonParams(),
+        });
+
         return v;
       });
     }
-  }, [isPageModeActive, pageModeScope, surahPages, juzPages, selectedSurah, selectedJuz, saveLastPageFor]);
+  }, [isPageModeActive, pageModeScope, surahPages, juzPages, selectedSurah, selectedJuz, saveLastPageFor, pageModeSessionVpp]);
 
   // Exit page mode
   const exitPageMode = useCallback(() => {
@@ -893,6 +925,8 @@ export default function ReadScreen() {
   const handleToggleSurahAudio = useCallback(async () => {
     if (!selectedSurah) return;
     try {
+      const action = isPlayingSurah ? 'pause' : (isSurahPaused ? 'resume' : 'play');
+
       if (isPlayingSurah) {
         await pauseSurahAudio();
         setIsPlayingSurah(false);
@@ -932,12 +966,20 @@ export default function ReadScreen() {
         setIsPlayingSurah(true);
         setIsSurahPaused(false);
       }
+
+      // ANALYTICS: Consolidated audio playback event for surah audio
+      logAudioPlayback({
+        action: action,
+        audio_type: 'surah',
+        surah_id: selectedSurah.id,
+        playback_speed: playbackSpeed.toString(),
+      });
     } catch (e) {
       console.error('Surah audio playback failed:', e);
       setIsPlayingSurah(false);
       setIsSurahPaused(false);
     }
-  }, [selectedSurah, isPlayingSurah, isSurahPaused, isPageModeActive]);
+  }, [selectedSurah, isPlayingSurah, isSurahPaused, isPageModeActive, playbackSpeed]);
 
   const handleSurahMemorizeToggle = useCallback(async () => {
     if (!selectedSurah) return;
@@ -1252,7 +1294,7 @@ export default function ReadScreen() {
   const handleSurahListScroll = useCallback((event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;
     // Debounce: Only save every 100ms to avoid performance issues
-    if (handleSurahListScroll.lastSave && Date.now() - handleSurahListScroll.lastSave < 100) {
+    if ((handleSurahListScroll as any).lastSave && Date.now() - (handleSurahListScroll as any).lastSave < 100) {
       return;
     }
     setSurahListScrollY(offsetY);
@@ -1263,7 +1305,7 @@ export default function ReadScreen() {
   const handleJuzListScroll = useCallback((event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;
     // Debounce: Only save every 100ms to avoid performance issues
-    if (handleJuzListScroll.lastSave && Date.now() - handleJuzListScroll.lastSave < 100) {
+    if ((handleJuzListScroll as any).lastSave && Date.now() - (handleJuzListScroll as any).lastSave < 100) {
       return;
     }
     setJuzListScrollY(offsetY);
@@ -1275,6 +1317,16 @@ export default function ReadScreen() {
     setSelectedSurah(surah);
     setLastViewedSurahId(surah.id);
     loadInitialVerses(surah);
+
+    // ANALYTICS: Surah selected
+    logAnalyticsEvent('surah_selected', {
+      surah_id: surah.id,
+      surah_name: surah.englishName,
+      revelation_type: surah.revelationType,
+      verse_count: surah.versesCount,
+      source: 'surah_list',
+      ...getCommonParams(),
+    });
   };
 
   const handleSelectJuz = async (juz: number, retryCount = 0) => {
@@ -1282,6 +1334,13 @@ export default function ReadScreen() {
     setSelectedJuz(juz);
     setIsJuzLoading(true);
     setJuzLoadingError(null);
+
+    // ANALYTICS: Juz selected
+    logAnalyticsEvent('juz_selected', {
+      juz_number: juz,
+      source: 'juz_list',
+      ...getCommonParams(),
+    });
 
     try {
       console.log(`[read] Loading Juz ${juz} (attempt ${retryCount + 1}/3)...`);
@@ -1393,6 +1452,25 @@ export default function ReadScreen() {
     if (!toUpdate.length) {
       Alert.alert('No Changes', 'All verses are already in the desired state.');
       return;
+    }
+
+    // ANALYTICS: Bulk mark verses
+    logAnalyticsEvent('bulk_mark_verses', {
+      action: isMarking ? 'mark_memorized' : 'unmark_memorized',
+      surah_id: selectedSurah.id,
+      surah_name: selectedSurah.englishName,
+      verse_count: toUpdate.length,
+      ...getCommonParams(),
+    });
+
+    // Track surah completion if marking all
+    if (isMarking) {
+      logAnalyticsEvent('surah_completed', {
+        surah_id: selectedSurah.id,
+        surah_name: selectedSurah.englishName,
+        verse_count: selectedSurah.versesCount,
+        ...getCommonParams(),
+      });
     }
 
     setProgressAction(isMarking ? 'mark-memorized' : 'unmark-memorized');
@@ -1852,6 +1930,25 @@ export default function ReadScreen() {
   useEffect(() => {
     logDatabaseTables();
   }, []);
+
+  // ==========================================
+  // ANALYTICS: Session Duration Tracking
+  // ==========================================
+  useEffect(() => {
+    const sessionStart = Date.now();
+
+    return () => {
+      const sessionDuration = Math.round((Date.now() - sessionStart) / 1000); // in seconds
+
+      logAnalyticsEvent('recite_session_duration', {
+        duration_seconds: sessionDuration,
+        surah_id: selectedSurah?.id || null,
+        juz_number: selectedJuz || null,
+        page_mode_active: isPageModeActive,
+        ...getCommonParams(),
+      });
+    };
+  }, [selectedSurah, selectedJuz, isPageModeActive]);
 
   // Refs for PanResponder to avoid stale closures
   const isPageModeActiveRef = useRef(isPageModeActive);
@@ -2511,7 +2608,7 @@ export default function ReadScreen() {
               contentContainerStyle={[styles.surahListContent, { backgroundColor: '#0B0E14' }]}
               onScroll={handleSurahListScroll}
               scrollEventThrottle={16}
-              estimatedItemSize={80}
+              {...({ estimatedItemSize: 80 } as any)}
             />
             <LinearGradient
               colors={['rgba(11, 14, 20, 0.8)', 'transparent']}

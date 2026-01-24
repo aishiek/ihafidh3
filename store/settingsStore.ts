@@ -1,4 +1,5 @@
 import { AppSettings } from '@/types';
+import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { clearAudioCache } from '@/utils/audioCacheUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
@@ -83,6 +84,9 @@ export interface SettingsState extends AppSettings {
   // Version update tracking
   lastDismissedVersion: string | null;
   setLastDismissedVersion: (version: string) => void;
+  // Last app version seen by the user (used to detect successful upgrades)
+  lastSeenVersion: string | null;
+  setLastSeenVersion: (version: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -142,6 +146,13 @@ export const useSettingsStore = create<SettingsState>()(
               : 'default'
           );
           set({ arabicFont: font });
+
+          // ANALYTICS: Arabic font changed
+          logAnalyticsEvent('setting_changed', {
+            setting: 'arabic_font',
+            new_value: font,
+            ...getCommonParams(),
+          });
         },
         setShowTranslation: (showTranslation) => set({ showTranslation }),
         setShowTransliteration: (showTransliteration) => set({ showTransliteration }),
@@ -163,16 +174,41 @@ export const useSettingsStore = create<SettingsState>()(
           set({ userEmail: userEmail || '' });
         },
         setQuizVerseCount: (quizVerseCount) => set({ quizVerseCount }),
-        setTranslationLanguage: (translationLanguage) => set({ translationLanguage }),
+        setTranslationLanguage: (translationLanguage) => {
+          set({ translationLanguage });
+
+          // ANALYTICS: Translation language changed
+          logAnalyticsEvent('setting_changed', {
+            setting: 'translation_language',
+            new_value: translationLanguage,
+            ...getCommonParams(),
+          });
+        },
         setReciterIdentifier: (reciterIdentifier) => {
           // Clear audio cache when changing reciter
           clearAudioCache();
           set({ reciterIdentifier });
+
+          // ANALYTICS: Reciter changed
+          logAnalyticsEvent('setting_changed', {
+            setting: 'reciter',
+            new_value: reciterIdentifier,
+            ...getCommonParams(),
+          });
         },
         setMushafRepeatMode: (mushafRepeatMode) => set({ mushafRepeatMode }),
         setMushafInfiniteLoop: (mushafInfiniteLoop) => set({ mushafInfiniteLoop }),
         setMushafRepeatScope: (mushafRepeatScope) => set({ mushafRepeatScope }),
-        setPlaybackSpeed: (playbackSpeed) => set({ playbackSpeed }),
+        setPlaybackSpeed: (playbackSpeed) => {
+          set({ playbackSpeed });
+
+          // ANALYTICS: Playback speed changed
+          logAnalyticsEvent('setting_changed', {
+            setting: 'playback_speed',
+            new_value: playbackSpeed,
+            ...getCommonParams(),
+          });
+        },
         setInfiniteLoop: (infiniteLoop) => set({ infiniteLoop }),
         setNotificationSetting: (key, value) =>
           set((state) => ({
@@ -203,6 +239,8 @@ export const useSettingsStore = create<SettingsState>()(
         },
         lastDismissedVersion: null,
         setLastDismissedVersion: (version) => set({ lastDismissedVersion: version }),
+        lastSeenVersion: null,
+        setLastSeenVersion: (version) => set({ lastSeenVersion: version }),
       };
     },
     {
@@ -273,6 +311,8 @@ export const useSettingsStore = create<SettingsState>()(
           (state as any).defaultVersesPerPage = (state as any).defaultVersesPerPage || 15;
           // @ts-ignore - extend persisted state
           (state as any).lastDismissedVersion = (state as any).lastDismissedVersion || null;
+          // @ts-ignore - persisted last seen app version
+          (state as any).lastSeenVersion = (state as any).lastSeenVersion || null;
         }
       },
     }

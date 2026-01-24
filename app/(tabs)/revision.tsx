@@ -2,6 +2,7 @@ import MonthlyHifdhCalendar from '@/components/MonthlyHifdhCalendar';
 import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
 import { RevisionGoals } from '@/types/revision';
+import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { formatDate } from '@/utils/dateUtils';
 import { loadRevisionGoals, saveRevisionGoals } from '@/utils/revisionTracking';
 import { useThemeColor } from '@/utils/useThemeColor';
@@ -310,6 +311,17 @@ export default function RevisionScreen() {
       }
     })();
     return () => { mounted = false; };
+  }, []);
+
+  // ANALYTICS: Track revision tab view on mount
+  useEffect(() => {
+    logAnalyticsEvent('revision_tab_viewed', {
+      daily_goal_type: dailyGoalType,
+      daily_goal_value: dailyGoalType === 'verses' ? selectedGoal : dailyPagesGoal,
+      weekly_goal_type: weeklyGoalType,
+      selected_surahs_count: selectedSurahs.length,
+      ...getCommonParams(),
+    });
   }, []);
 
 

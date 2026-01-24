@@ -1,4 +1,5 @@
 import { useMushafDownload } from '@/app/mushaf/hooks/useMushafDownload';
+import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Download } from 'lucide-react-native';
@@ -110,8 +111,20 @@ export const MushafDownloadCard: React.FC = () => {
 
   const handlePress = () => {
     if (status === 'not-installed') {
+      // ANALYTICS: Track Mushaf download initiation
+      logAnalyticsEvent('mushaf_download_started', {
+        mushaf_type: 'indopak_15_lines',
+        status_before: status,
+        ...getCommonParams(),
+      });
       startDownload();
     } else if (status === 'ready') {
+      // ANALYTICS: Track Mushaf viewer opened
+      logAnalyticsEvent('mushaf_viewer_opened', {
+        mushaf_type: 'indopak_15_lines',
+        download_status: status,
+        ...getCommonParams(),
+      });
       router.push('/mushaf/viewer');
     }
   };

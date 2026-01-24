@@ -325,17 +325,18 @@ export default function SettingsScreen() {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      paddingVertical: 12,
-      paddingHorizontal: 20,
-      borderRadius: 8,
-      marginTop: 12,
-      marginBottom: 8,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      borderRadius: 4,
+      marginTop: 6,
+      marginBottom: 6,
       borderWidth: 1,
+      alignSelf: 'center',
     },
     previewButtonText: {
       color: '#FFFFFF',
-      fontSize: 14,
-      fontWeight: '600',
+      fontSize: 13,
+      fontWeight: '700',
     },
     languageOptionSubtext: {
       fontSize: 10,
@@ -465,15 +466,21 @@ export default function SettingsScreen() {
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: theme.primary,
-            borderRadius: 24,
-            paddingVertical: 10,
+            borderRadius: 20,
+            paddingVertical: 8,
+            paddingHorizontal: 16,
+            minWidth: 140,
+            alignSelf: 'center',
+            opacity: 0.94,
+            borderWidth: 0.5,
+            borderColor: 'rgba(255,255,255,0.12)',
             shadowColor: '#000',
             shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.2,
-            shadowRadius: 4,
-            elevation: 3,
+            shadowOpacity: 0.12,
+            shadowRadius: 3,
+            elevation: 2,
           }}>
-            <Text style={{ color: '#fff', fontWeight: '700' }}>Save changes</Text>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Save</Text>
           </Pressable>
         </View>
       )}
@@ -555,12 +562,12 @@ export default function SettingsScreen() {
             onPress={playingReciter === selectedReciter ? stopPreview : playPreview}
           >
             {playingReciter === selectedReciter ? (
-              <Square size={16} color="#fff" fill="#fff" style={{ marginRight: 8 }} />
+              <Square size={14} color="#fff" fill="#fff" style={{ marginRight: 6 }} />
             ) : (
-              <Play size={16} color="#fff" fill="#fff" style={{ marginRight: 8 }} />
+              <Play size={14} color="#fff" fill="#fff" style={{ marginRight: 6 }} />
             )}
             <Text style={styles.previewButtonText}>
-              {playingReciter === selectedReciter ? 'Stop Preview' : 'Preview Reciter'}
+              {playingReciter === selectedReciter ? 'Stop' : 'Preview'}
             </Text>
           </Pressable>
 
@@ -783,7 +790,7 @@ export default function SettingsScreen() {
 
         {/* Save Changes - Slim floating bar */}
         {hasChanges && (
-          <View style={{ height: 72 }} />
+          <View style={{ height: 56 }} />
         )}
 
         {/* Reading Font Sizes - free-flow slider with live preview */}
@@ -1013,7 +1020,7 @@ export default function SettingsScreen() {
             setTimeout(() => setDebugTapCount(0), 2000);
           }}
         >
-          <Text style={styles.versionText}>Ver-2.0.6</Text>
+          <Text style={styles.versionText}>Ver-2.0.7</Text>
         </Pressable>
       </ScrollView>
 

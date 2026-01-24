@@ -10,6 +10,7 @@ import { usePlannerStore } from '@/store/plannerStore';
 import { useProgressStore } from '@/store/progressStore';
 import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
+import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { calculateCurrentBadge } from '@/utils/badgeUtils';
 import { formatDate } from '@/utils/dateUtils';
 import { calculateJuzProgress, calculateOverallJuzStats } from '@/utils/juzCalculator';
@@ -20,16 +21,16 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
-  Award,
-  BookOpen,
-  Calendar,
-  CheckCircle,
-  Clock,
-  Info,
-  Play,
-  RotateCcw,
-  Target,
-  XCircle
+    Award,
+    BookOpen,
+    Calendar,
+    CheckCircle,
+    Clock,
+    Info,
+    Play,
+    RotateCcw,
+    Target,
+    XCircle
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Dimensions, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -597,6 +598,15 @@ export default function HomeScreen() {
         action: async () => {
           if (surah) {
             console.log('[home] Continue Reading clicked - navigating to:', { surahId: surah.id, verseNumber: verseDetails.verseNumber, source: 'continueReading' });
+
+            // ANALYTICS: Continue reading clicked
+            logAnalyticsEvent('continue_reading_clicked', {
+              surah_id: surah.id,
+              surah_name: surah.englishName,
+              verse_number: verseDetails.verseNumber,
+              ...getCommonParams(),
+            });
+
             await saveLastRead(surah.id, verseDetails.verseNumber);
             // Use safeNavigation.replace to avoid stacking duplicate Read entries when resuming
             safeNavigation.replace({
@@ -1277,7 +1287,14 @@ export default function HomeScreen() {
             {/* Quiz Card */}
             <Pressable
               style={styles.quizCard}
-              onPress={() => router.push('/quiz')}
+              onPress={() => {
+                logAnalyticsEvent('quick_action_used', {
+                  action_type: 'take_quiz',
+                  memorized_verses_count: memorizedVerses.length,
+                  ...getCommonParams(),
+                });
+                router.push('/quiz');
+              }}
               disabled={memorizedVerses.length === 0}
             >
               <View style={styles.quizIcon}>
@@ -1330,6 +1347,15 @@ export default function HomeScreen() {
 
                   // light haptic feedback
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
+
+                  // ANALYTICS: Track Mustahabbah surah selection
+                  const surah = surahsData.find(s => s.id === surahId);
+                  logAnalyticsEvent('mustahabbah_surah_selected', {
+                    surah_id: surahId,
+                    surah_name: surah?.englishName || 'Unknown',
+                    status: getSurahStatus(item),
+                    ...getCommonParams(),
+                  });
 
                   useQuranStore.getState().setLastViewedSurahId(surahId);
 

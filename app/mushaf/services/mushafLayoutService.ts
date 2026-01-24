@@ -3,7 +3,7 @@ import { MUSHAF_CACHE_DIR } from '../utils/mushafConstants';
 // Note: tajweedParser exports color maps and parsers. For Mushaf we only need raw Arabic words.
 // The app provides Quran text via database services; to keep this module decoupled we'll
 // fallback to a simple placeholder that returns an empty string when the full DB isn't available.
-import { TAJWEED_COLORS } from '@/utils/tajweedParser';
+import { TAJWEED_COLORS } from '@/utils/tajweedColors';
 import RNFS from 'react-native-fs';
 import LayoutService from './layoutService';
 import { getPageInfo, getWordsInRange, initMushafDB } from './mushafMetadataService';
@@ -218,7 +218,7 @@ export async function getPageImageUriAsync(pageNumber: number): Promise<string> 
   try {
     const activeLayoutId = typeof LayoutService.getActiveLayoutId === 'function'
       ? await LayoutService.getActiveLayoutId()
-      : (LayoutService.activeLayoutId || '');
+      : 'indopak_15';
     if (activeLayoutId === 'warsh_15') {
       for (const rel of candidatesLocal) {
         // Indopak images are usually in images/indopak/page_xxx.png

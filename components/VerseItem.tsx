@@ -7,6 +7,7 @@ import { useBookmarkStore } from '@/store/bookmarkStore';
 import { useProgressStore } from '@/store/progressStore';
 import { PLAYBACK_SPEED_OPTIONS, useSettingsStore, type PlaybackSpeed } from '@/store/settingsStore';
 import { Verse } from '@/types';
+import { getCommonParams, logAnalyticsEvent, logAudioPlayback } from '@/utils/analyticsHelper';
 import { setPlaybackSpeed as setAudioPlaybackSpeed } from '@/utils/audioUtils';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
@@ -305,6 +306,8 @@ const VerseItem = ({
       bookmarkBusyRef.current = true;
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
 
+      const action = bookmarked ? 'remove' : 'add';
+
       if (!bookmarked) {
         const arabicSnippet = (verse.arabicText || '').slice(0, 50);
         const translationSnippet = (verse.translation || '').slice(0, 100);
@@ -325,6 +328,16 @@ const VerseItem = ({
       } else {
         await useBookmarkStore.getState().removeBookmark(verse.id);
       }
+
+      // ANALYTICS: Bookmark toggled
+      logAnalyticsEvent('verse_bookmark_toggled', {
+        action: action,
+        verse_id: verse.id,
+        surah_id: surahId || 0,
+        verse_number: verse.verseNumber || 0,
+        source,
+        ...getCommonParams(),
+      });
     } catch (error) {
       console.error('[VerseItem] Bookmark toggle failed:', error);
     } finally {
@@ -334,6 +347,8 @@ const VerseItem = ({
 
   const handleMarkMemorized = useCallback(() => {
     try {
+      const action = memorized ? 'unmark' : 'mark';
+      
       if (memorized) {
         useProgressStore.getState().unmarkVerseAsMemorized(verse.id);
       } else {
@@ -343,22 +358,42 @@ const VerseItem = ({
           useProgressStore.getState().checkAndCelebrateBadges();
         }, 100);
       }
+
+      // ANALYTICS: Verse memorization toggled
+      logAnalyticsEvent('verse_memorization_toggled', {
+        action: action,
+        verse_id: verse.id,
+        surah_id: surahId || 0,
+        verse_number: verse.verseNumber || 0,
+        ...getCommonParams(),
+      });
     } catch (error) {
       console.error('[VerseItem] Mark memorized failed:', error);
     }
-  }, [memorized, verse.id]);
+  }, [memorized, verse.id, surahId, verse.verseNumber]);
 
   const handleMarkRevised = useCallback(() => {
     try {
+      const action = revised ? 'unmark' : 'mark';
+      
       if (revised) {
         useProgressStore.getState().unmarkVerseAsRevised(verse.id);
       } else {
         useProgressStore.getState().markVerseAsRevised(verse.id);
       }
+
+      // ANALYTICS: Verse revision toggled
+      logAnalyticsEvent('verse_revision_toggled', {
+        action: action,
+        verse_id: verse.id,
+        surah_id: surahId || 0,
+        verse_number: verse.verseNumber || 0,
+        ...getCommonParams(),
+      });
     } catch (error) {
       console.error('[VerseItem] Mark revised failed:', error);
     }
-  }, [revised, verse.id]);
+  }, [revised, verse.id, surahId, verse.verseNumber]);
 
   const handlePlaybackSpeedPress = useCallback((speed: PlaybackSpeed) => {
     try {
@@ -382,6 +417,17 @@ const VerseItem = ({
     }
   }, [infiniteLoop]);
 
+  const handleOpenTafsir = useCallback(() => {
+    // ANALYTICS: Tafsir opened
+    logAnalyticsEvent('tafsir_opened', {
+      verse_id: verse.id,
+      surah_id: surahId || 0,
+      verse_number: verse.verseNumber || 0,
+      ...getCommonParams(),
+    });
+    setShowTafsirModal(true);
+  }, [verse.id, surahId, verse.verseNumber]);
+
   const handleRepeatCountChange = useCallback((count: number) => {
     try {
       setRepeatCount(count);
@@ -398,10 +444,23 @@ const VerseItem = ({
       const surahNum = surahId || 0;
       const verseNum = verse.verseNumber || 0;
       onPlayAudio(surahNum, verseNum, undefined, repeatCount, infiniteLoop);
+
+      // ANALYTICS: Consolidated audio playback event
+      logAudioPlayback({
+        action: 'play',
+        audio_type: 'verse',
+        surah_id: surahNum,
+        verse_id: verse.id,
+        verse_number: verseNum,
+        playback_speed: playbackSpeed.toString(),
+        repeat_count: repeatCount,
+        infinite_loop: infiniteLoop,
+        source,
+      });
     } catch (error) {
       console.error('[VerseItem] Play audio failed:', error);
     }
-  }, [onPlayAudio, surahId, verse.verseNumber, repeatCount, infiniteLoop]);
+  }, [onPlayAudio, surahId, verse.verseNumber, verse.id, repeatCount, infiniteLoop, playbackSpeed, source]);
 
   // ============ EFFECTS ============
 
@@ -662,7 +721,7 @@ const VerseItem = ({
             accessibilityRole="button"
             accessibilityLabel="Open tafsir"
             style={[styles.controlButton, styles.subtleGoldBg, { marginLeft: 4 }]}
-            onPress={() => setShowTafsirModal(true)}
+            onPress={handleOpenTafsir}
           >
             <BookOpen size={18} color="#FFD700" />
           </TouchableOpacity>

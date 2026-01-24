@@ -27,17 +27,18 @@ export class PushNotificationService {
         try {
             const ms = messaging();
 
-            // Some RNFB versions may not expose isDeviceRegisteredForRemoteMessages()
-            const hasIsRegistered = typeof ms.isDeviceRegisteredForRemoteMessages === 'function';
+            // Some RNFB versions may expose isDeviceRegisteredForRemoteMessages as a boolean or a function.
             let isReg = false;
-
-            if (hasIsRegistered) {
-                try {
-                    isReg = await ms.isDeviceRegisteredForRemoteMessages();
-                } catch (e) {
-                    console.warn('[Push] isDeviceRegisteredForRemoteMessages threw:', e);
-                    isReg = false;
+            try {
+                const maybe = (ms as any).isDeviceRegisteredForRemoteMessages;
+                if (typeof maybe === 'function') {
+                    isReg = await maybe.call(ms);
+                } else {
+                    isReg = !!maybe;
                 }
+            } catch (e) {
+                console.warn('[Push] isDeviceRegisteredForRemoteMessages check threw:', e);
+                isReg = false;
             }
 
             if (!isReg) {
@@ -218,6 +219,21 @@ export class PushNotificationService {
         if (!isReady) {
             console.warn(`[Push] iOS not ready, skipping ${baseName} sync`);
             return;
+        }
+
+        // Extra safeguard: on iOS ensure APNS token is available before calling
+        // subscribe/unsubscribe which may require APNS token on some RNFB versions.
+        if (Platform.OS === 'ios') {
+            try {
+                const apns = await messaging().getAPNSToken();
+                if (!apns) {
+                    console.warn(`[Push] Missing APNS token - skipping ${baseName} sync until APNS token available`);
+                    return;
+                }
+            } catch (e) {
+                console.warn('[Push] Unable to fetch APNS token, skipping topic sync:', e);
+                return;
+            }
         }
 
         const offset = this.getTimezoneOffset();

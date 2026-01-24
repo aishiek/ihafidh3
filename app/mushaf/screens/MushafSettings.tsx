@@ -1,4 +1,5 @@
 import { AVAILABLE_LAYOUTS, LayoutMetadata } from '@/types/layout';
+import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { router } from 'expo-router';
 import { ArrowLeft, Check, Download, Trash2 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
@@ -179,6 +180,8 @@ export default function MushafSettings() {
 
   const handleDownload = async (layoutId: string) => {
     try {
+      const layoutName = AVAILABLE_LAYOUTS.find(l => l.layout_id === layoutId)?.layout_name;
+      
       setLayoutStates((prev) => ({
         ...prev,
         [layoutId]: {
@@ -187,6 +190,13 @@ export default function MushafSettings() {
           downloadProgress: 0,
         },
       }));
+
+      // ANALYTICS: Track mushaf layout download started
+      logAnalyticsEvent('mushaf_layout_download_started', {
+        layout_id: layoutId,
+        layout_name: layoutName,
+        ...getCommonParams(),
+      });
 
       await downloadMushaf(layoutId, (progress) => {
         const capped = Math.max(0, Math.min(99, Math.round(progress || 0)));
@@ -220,9 +230,27 @@ export default function MushafSettings() {
         },
       }));
 
+      // ANALYTICS: Track mushaf layout download completed
+      if (status === 'ready') {
+        logAnalyticsEvent('mushaf_layout_download_completed', {
+          layout_id: layoutId,
+          layout_name: layoutName,
+          download_size_mb: size,
+          ...getCommonParams(),
+        });
+      }
+
       Alert.alert('Success', `${layoutId} layout downloaded successfully!`);
     } catch (error) {
       console.error(`Error downloading ${layoutId}:`, error);
+      
+      // ANALYTICS: Track mushaf layout download failed
+      logAnalyticsEvent('mushaf_layout_download_failed', {
+        layout_id: layoutId,
+        error_message: error instanceof Error ? error.message : 'Unknown error',
+        ...getCommonParams(),
+      });
+      
       setLayoutStates((prev) => ({
         ...prev,
         [layoutId]: {
@@ -250,6 +278,14 @@ export default function MushafSettings() {
           style: 'destructive',
           onPress: async () => {
             try {
+              // ANALYTICS: Track mushaf layout deleted
+              logAnalyticsEvent('mushaf_layout_deleted', {
+                layout_id: layoutId,
+                layout_name: layoutName,
+                freed_space_mb: layoutStates[layoutId]?.installedSize || 0,
+                ...getCommonParams(),
+              });
+
               await deleteLayout(layoutId);
 
               setLayoutStates((prev) => ({

@@ -152,16 +152,16 @@ export default function AnnouncementModal({ visible, announcement, onClose, onAc
     }
   };
 
-  const getGradientByType = () => {
+  const getGradientByType = (): readonly [string, string] => {
     switch (announcement.type) {
       case 'seasonal':
-        return ['#1f2937', '#0b1220'];
+        return ['#1f2937', '#0b1220'] as const;
       case 'feature':
-        return ['#1e3a8a', '#0c1e47'];
+        return ['#1e3a8a', '#0c1e47'] as const;
       case 'maintenance':
-        return ['#7c2d12', '#3f1d0c'];
+        return ['#7c2d12', '#3f1d0c'] as const;
       default:
-        return ['#1f2937', '#0b1220'];
+        return ['#1f2937', '#0b1220'] as const;
     }
   };
 
