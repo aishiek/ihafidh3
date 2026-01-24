@@ -26,6 +26,7 @@ export default function SettingsScreen() {
   // Mixed state management integration
   const unifiedTheme = useUnifiedTheme();
   const fastingContext = useFastingCalendar();
+  const [debugTapCount, setDebugTapCount] = useState(0);
   const [localName, setLocalName] = useState(userName || '');
   const [selectedTranslation, setSelectedTranslation] = useState(translationLanguage || 'en.asad');
   const [selectedReciter, setSelectedReciter] = useState(reciterIdentifier || 'ar.alafasy');
@@ -998,10 +999,22 @@ export default function SettingsScreen() {
           </Text>
         </View>
 
-        {/* App version label */}
-        <View style={styles.versionRow}>
+        {/* App version label - Tap 7 times to access debug screen */}
+        <Pressable 
+          style={styles.versionRow}
+          onPress={() => {
+            const newCount = debugTapCount + 1;
+            setDebugTapCount(newCount);
+            if (newCount >= 7) {
+              setDebugTapCount(0);
+              router.push('/push-debug');
+            }
+            // Reset counter after 2 seconds of inactivity
+            setTimeout(() => setDebugTapCount(0), 2000);
+          }}
+        >
           <Text style={styles.versionText}>Ver-2.0.6</Text>
-        </View>
+        </Pressable>
       </ScrollView>
 
       {/* Location Selector Modal */}

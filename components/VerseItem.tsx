@@ -208,15 +208,27 @@ const VerseItem = ({
   // NOTE: U+06DF (۟) marks are legitimate Quranic orthography that should be visible
   // React Native can't position them above letters (GPOS limitation) so they appear standalone
   const displayedArabic = useMemo(() => {
-    // CRITICAL: When Tajweed font is selected, use tajweedText with markup for colors
-    if (arabicFont === 'tajweed' && (verse as any).tajweedText) {
-      return (verse as any).tajweedText;
+    let text = (() => {
+      // CRITICAL: When Tajweed font is selected, use tajweedText with markup for colors
+      if (arabicFont === 'tajweed' && (verse as any).tajweedText) {
+        return (verse as any).tajweedText;
+      }
+      // Otherwise use plain text
+      if (localData.arabic && localData.arabic.trim().length > 0) {
+        return localData.arabic;
+      }
+      return arabicText || '';
+    })();
+
+    // Append decorative verse end glyph for Tajweed mode
+    // The number decoration (۝) is appended as a single glyph.
+    // The actual digits will be overlaid by the TajweedText component to ensure correct framing.
+    // Defensive check: only append if the marker isn't already present (e.g. from parser cleaning)
+    if (arabicFont === 'tajweed' && text && !text.endsWith('\u06DD')) {
+      text = `${text}\u06DD`;
     }
-    // Otherwise use plain text
-    if (localData.arabic && localData.arabic.trim().length > 0) {
-      return localData.arabic;
-    }
-    return arabicText || '';
+
+    return text;
   }, [arabicFont, (verse as any).tajweedText, localData.arabic, arabicText]);
 
   // Simplified: prefer remote (English) transliteration when available, then local cache, then prop.
@@ -609,22 +621,28 @@ const VerseItem = ({
   const verseNumberStr = String(verse.verseNumber ?? '');
   const isThreeDigits = verseNumberStr.length >= 3;
 
+  // Determine if we should show the legacy verse number badge
+  // We hide it if we are in Tajweed mode and have a decorative Mushaf symbol as the primary marker
+  const showLegacyVerseNumber = !(arabicFont === 'tajweed' && displayedArabic.endsWith('\u06DD'));
+
   return (
     <Pressable ref={forwardedRef as any} style={[styles.container, containerStyle]}>
       <View style={styles.header}>
-        <View style={[
-          styles.verseNumber,
-          { backgroundColor: primary, flexDirection: 'row', alignItems: 'center', paddingHorizontal: isThreeDigits ? 8 : 6, minWidth: isThreeDigits ? 36 : 28 },
-        ]}>
-          <Text style={[styles.verseNumberText, { color: '#ffffff', fontSize: isThreeDigits ? 8 : styles.verseNumberText.fontSize, textAlign: 'center' }]} numberOfLines={1}>
-            {verse.verseNumber}
-          </Text>
-          {pageIsCompleted && (
-            <View style={{ marginLeft: 6, backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-              <Check size={14} color="#10B981" />
-            </View>
-          )}
-        </View>
+        {showLegacyVerseNumber && (
+          <View style={[
+            styles.verseNumber,
+            { backgroundColor: primary, flexDirection: 'row', alignItems: 'center', paddingHorizontal: isThreeDigits ? 8 : 6, minWidth: isThreeDigits ? 36 : 28 },
+          ]}>
+            <Text style={[styles.verseNumberText, { color: '#ffffff', fontSize: isThreeDigits ? 8 : styles.verseNumberText.fontSize, textAlign: 'center' }]} numberOfLines={1}>
+              {verse.verseNumber}
+            </Text>
+            {pageIsCompleted && (
+              <View style={{ marginLeft: 6, backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                <Check size={14} color="#10B981" />
+              </View>
+            )}
+          </View>
+        )}
 
         <View style={styles.verseInfo}>
           <Text
@@ -732,6 +750,7 @@ const VerseItem = ({
                 includeFontPadding: false,
                 paddingHorizontal: 4,
                 ...arabicTypography,
+                minHeight: arabicTypography.lineHeight || fontSizeArabic * 1.5, // Fallback for short verses
                 lineHeight: arabicTypography.lineHeight || Math.round(fontSizeArabic * 2.0),
               }]}
             />

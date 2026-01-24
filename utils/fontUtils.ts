@@ -57,7 +57,7 @@ export function getArabicTypographySizing(base: number, fontOption?: ArabicFontO
       lineHeightMultiplier = 1.75;
       break;
     case 'tajweed':
-      lineHeightMultiplier = 1.9; // needs a touch more for colored marks
+      lineHeightMultiplier = 1.5; // Reduced from 1.9 to prevent Metal crashes on super-long verses (like 2:282)
       break;
     case 'uthman-taha':
     case 'default':

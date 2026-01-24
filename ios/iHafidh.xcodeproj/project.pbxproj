@@ -10,8 +10,8 @@
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		2A4FFF255843D7CCAD7D4381 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0A9141F69D043E99A7B9FBCB /* PrivacyInfo.xcprivacy */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
+		846B305B2F14AA6300B2362C /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 846B305A2F14AA6300B2362C /* GoogleService-Info.plist */; };
 		95603A5A983F683FE0FE6591 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C59F40E9A029BEA2729E797C /* ExpoModulesProvider.swift */; };
-		A2584D40F821488BAC020F89 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 5E4BC43879E74D01B92C8E71 /* GoogleService-Info.plist */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		C4A25992E261E070F6A64F28 /* libPods-iHafidh.a in Frameworks */ = {isa = PBXBuildFile; fileRef = ECFB23191C2FA4598493FEB4 /* libPods-iHafidh.a */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
@@ -23,8 +23,9 @@
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = iHafidh/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = iHafidh/Info.plist; sourceTree = "<group>"; };
 		4695EF02BC2CB09D5D02F9B5 /* Pods-iHafidh.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-iHafidh.debug.xcconfig"; path = "Target Support Files/Pods-iHafidh/Pods-iHafidh.debug.xcconfig"; sourceTree = "<group>"; };
-		5E4BC43879E74D01B92C8E71 /* GoogleService-Info.plist */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.plist.xml; name = "GoogleService-Info.plist"; path = "iHafidh/GoogleService-Info.plist"; sourceTree = "<group>"; };
 		5E4D8D94088F692390E4E70A /* Pods-iHafidh.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-iHafidh.release.xcconfig"; path = "Target Support Files/Pods-iHafidh/Pods-iHafidh.release.xcconfig"; sourceTree = "<group>"; };
+		846B305A2F14AA6300B2362C /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		846B305C2F1536C600B2362C /* iHafidhRelease.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = iHafidhRelease.entitlements; path = iHafidh/iHafidhRelease.entitlements; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = iHafidh/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
 		C59F40E9A029BEA2729E797C /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-iHafidh/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
@@ -58,14 +59,15 @@
 		13B07FAE1A68108700A75B9A /* iHafidh */ = {
 			isa = PBXGroup;
 			children = (
+				846B305C2F1536C600B2362C /* iHafidhRelease.entitlements */,
 				F11748412D0307B40044C1D9 /* AppDelegate.swift */,
 				F11748442D0722820044C1D9 /* iHafidh-Bridging-Header.h */,
 				BB2F792B24A3F905000567C9 /* Supporting */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				5E4BC43879E74D01B92C8E71 /* GoogleService-Info.plist */,
 				0A9141F69D043E99A7B9FBCB /* PrivacyInfo.xcprivacy */,
+				846B305A2F14AA6300B2362C /* GoogleService-Info.plist */,
 			);
 			name = iHafidh;
 			sourceTree = "<group>";
@@ -198,8 +200,8 @@
 			files = (
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
+				846B305B2F14AA6300B2362C /* GoogleService-Info.plist in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				A2584D40F821488BAC020F89 /* GoogleService-Info.plist in Resources */,
 				2A4FFF255843D7CCAD7D4381 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -462,7 +464,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = iHafidh/iHafidh.entitlements;
+				CODE_SIGN_ENTITLEMENTS = iHafidh/iHafidhRelease.entitlements;
 				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = Z68D25352K;
 				INFOPLIST_FILE = iHafidh/Info.plist;

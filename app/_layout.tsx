@@ -257,21 +257,6 @@ function RootLayoutContent() {
       );
   }, [notificationsEnabled, ayahEnabled]);
 
-  // Re-subscribe on every app foreground to ensure persistence
-  React.useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') {
-        console.log('[_layout] App foregrounded, re-subscribing...');
-        console.log('[_layout] Fasting:', notificationsEnabled ? 'ENABLED' : 'DISABLED');
-        console.log('[_layout] Daily Ayah:', ayahEnabled ? 'ENABLED' : 'DISABLED');
-        // Re-sync subscriptions when app comes to foreground
-        PushNotificationService.syncFastingSubscription(notificationsEnabled);
-        PushNotificationService.syncAyahSubscription(ayahEnabled ?? false);
-      }
-    });
-    return () => subscription.remove();
-  }, [notificationsEnabled, ayahEnabled]);
-
   // Sync daily Ayah notification schedule with settings
   React.useEffect(() => {
     let mounted = true;

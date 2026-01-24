@@ -12,7 +12,7 @@ import { parseTajweedHTML } from '@/utils/QuranTajweedParser';
 import { TajweedParser } from '@/utils/tajweedParser';
 import { Canvas, Paragraph, Skia, TextAlign, TextDirection, useFonts } from '@shopify/react-native-skia';
 import React, { useMemo, useState } from 'react';
-import { StyleProp, TextStyle, View } from 'react-native';
+import { Text as RNText, StyleProp, TextStyle, View } from 'react-native';
 
 /**
  * Detects if text starts with combining mark (production-safe for Skia)
@@ -20,7 +20,7 @@ import { StyleProp, TextStyle, View } from 'react-native';
  * Madd Alif (0670), Small High Madda (0653), Quranic annotation marks (06D6-06ED),
  * Extended Arabic combining marks (08D3-08FF)
  */
-const COMBINING_MARK_START = /^[\u0300-\u036F\u0610-\u061A\u064B-\u065F\u0670\u0653\u06D6-\u06ED\u08D3-\u08FF]/;
+const COMBINING_MARK_START = /^[\u0300-\u036F\u0610-\u061A\u064B-\u065F\u0670\u0653\u06D6-\u06DD\u06DF-\u06ED\u08D3-\u08FF]/;
 
 export function startsWithCombiningMark(text: string): boolean {
   return COMBINING_MARK_START.test(text);
@@ -98,15 +98,15 @@ function splitOffTrailingCluster(text: string): { head: string; cluster: string 
 function normalizeForMushaf(text: string): string {
   // Pass through Quranic marks (Madd, Dagger Alif, Small waw/ya, annotation marks)
   // and let the font render them natively.
-  
+
   // Strip U+0640 (Arabic Tatweel/Kashida) when used as a carrier for combining marks.
   // Quran.com uses U+0640 + U+0670 (ـٰ) which renders as a "sun" glyph in some fonts.
   // We want just the combining mark (U+0670) without the carrier.
   let normalized = text.replace(/\u0640(?=[\u0300-\u036F\u0610-\u061A\u064B-\u065F\u0670\u0653\u06D6-\u06ED\u08D3-\u08FF])/g, '');
-  
+
   // Strip U+25CC (dotted-circle placeholder)
   normalized = normalized.replace(/\u25CC/g, '');
-  
+
   return normalized;
 }
 
@@ -318,15 +318,28 @@ interface ColoredSegment {
  */
 function extractFontSize(style: StyleProp<TextStyle>): number {
   if (!style) return 28;
-  
+
   const styleArray = Array.isArray(style) ? style : [style];
   for (const s of styleArray) {
     if (s && typeof s === 'object' && 'fontSize' in s && typeof s.fontSize === 'number') {
       return s.fontSize;
     }
   }
-  
+
   return 28;
+}
+
+function extractLineHeight(style: StyleProp<TextStyle>): number | null {
+  if (!style) return null;
+
+  const styleArray = Array.isArray(style) ? style : [style];
+  for (const s of styleArray) {
+    if (s && typeof s === 'object' && 'lineHeight' in s && typeof s.lineHeight === 'number') {
+      return s.lineHeight;
+    }
+  }
+
+  return null;
 }
 
 
@@ -340,8 +353,8 @@ function extractFontSize(style: StyleProp<TextStyle>): number {
  * Priority: API+Algorithmic+Stop > Markup format > Algorithmic only (fallback)
  */
 function parseText(
-  text: string, 
-  surahNumber?: number, 
+  text: string,
+  surahNumber?: number,
   verseNumber?: number,
   enableStopRules: boolean = false
 ): ColoredSegment[] {
@@ -353,18 +366,18 @@ function parseText(
       enableAlgorithmic: true,  // Ghunnah, Ikhfa, Idgham, Iqlab
       enableStopRules,          // Qalqalah at stops (Mushaf mode)
     });
-    
+
     return hybridSegments.map(seg => ({
       text: seg.text,
       color: seg.color,
     }));
   }
-  
+
   // STRATEGY 2: Check for markup format [rule_name]text[/rule_name]
   if (text.includes('[') && text.includes(']')) {
     return parseMarkup(text);
   }
-  
+
   // STRATEGY 3: Fallback to pure algorithmic parsing (least accurate)
   const result = TajweedParser.parse(text);
   return result.map((seg) => ({
@@ -379,7 +392,7 @@ function parseText(
  */
 function parseMarkup(text: string): ColoredSegment[] {
   const segments: ColoredSegment[] = [];
-  
+
   // Tajweed color mapping - updated to match color guide
   const MARKUP_COLORS: Record<string, string> = {
     // Silent Letters - Gray
@@ -389,7 +402,7 @@ function parseMarkup(text: string): ColoredSegment[] {
     lam_shamsiyah: '#AAAAAA',
     laam_shamsiyah: '#AAAAAA',
     slnt: '#AAAAAA',
-    
+
     // Madd - Orange (fixed from blue)
     madda_normal: '#FF9632',
     madda_permissible: '#FF9632',
@@ -398,20 +411,20 @@ function parseMarkup(text: string): ColoredSegment[] {
     madda_246: '#FF9632',
     madda_6: '#FF9632',
     madda_24: '#FF9632',
-    
+
     // Qalqalah - Red
     qalqalah: '#DD0008',
     qalqala: '#DD0008',
-    
+
     // Ghunnah - Yellow (fixed from orange)
     ghunnah: '#FFD700',
     ghunna: '#FFD700',
-    
+
     // Ikhfa - Pink
     ikhfa: '#FFB6C1',
     ikhfa_shaddah: '#FFB6C1',
     ikhafa: '#FFB6C1',
-    
+
     // Idgham - Green
     idgham_shaddah: '#00C853',
     idgham_wo_shaddah: '#00C853',
@@ -419,19 +432,19 @@ function parseMarkup(text: string): ColoredSegment[] {
     idgham_mutaqaribayn: '#00C853',
     idgham_w_ghunnah: '#00C853',
     idgham_wo_ghunnah: '#00C853',
-    
+
     // Iqlab - Blue
     iqlab: '#007AFF',
-    
+
     // Meem Sakinah - Purple/Light Green
     ikhfa_shafawi: '#DDA0DD',
     idgham_shafawi: '#96CEB4',
   };
-  
+
   let position = 0;
   const regex = /\[(\w+)\](.*?)\[\/\1\]/g;
   let match;
-  
+
   while ((match = regex.exec(text)) !== null) {
     // Add text before this match
     if (match.index > position) {
@@ -440,7 +453,7 @@ function parseMarkup(text: string): ColoredSegment[] {
         color: '#FFFFFF'
       });
     }
-    
+
     // Add colored text
     const ruleName = match[1];
     const coloredText = match[2];
@@ -448,10 +461,10 @@ function parseMarkup(text: string): ColoredSegment[] {
       text: coloredText,
       color: MARKUP_COLORS[ruleName] || '#FFFFFF'
     });
-    
+
     position = regex.lastIndex;
   }
-  
+
   // Add remaining text
   if (position < text.length) {
     segments.push({
@@ -459,7 +472,7 @@ function parseMarkup(text: string): ColoredSegment[] {
       color: '#FFFFFF'
     });
   }
-  
+
   return segments;
 }
 
@@ -469,6 +482,9 @@ const STRUCTURAL_COMBINING_MARKS = new Set([
   '\u0670', // Arabic Letter Superscript Alef (Dagger Alif / Madd Alif)
   '\u06E5', // Arabic Small Waw
   '\u06E6', // Arabic Small Yeh
+  '\u06E0', // Arabic Small High Upright Rectangular Zero (Silent) - Keeps ligature attached
+  '\u06DF', // Arabic Small High Rounded Zero (Silent) - Keeps ligature attached
+  '\u06DD', // Arabic End of Ayah - Must stay with digits for framing
 ]);
 
 function isStructuralCombiningMark(char: string): boolean {
@@ -555,14 +571,19 @@ function mergeCombiningIntoBase(segments: ColoredSegment[]): ColoredSegment[] {
   return result;
 }
 
-const TajweedText: React.FC<TajweedTextProps> = ({ 
-  text, 
+const TajweedText: React.FC<TajweedTextProps> = ({
+  text,
   style,
   surahNumber,
   verseNumber,
   fontMgr: fontMgrProp,
   enableStopRules = false, // Default: wasl mode (no qalqalah)
 }) => {
+  // Local utility to convert numbers to Eastern Arabic numerals (٠-٩)
+  const _toArabicDigits = (num: number | string): string => {
+    return String(num).replace(/\d/g, (d) => String.fromCharCode(0x0660 + Number(d)));
+  };
+
   // Measure actual container width (critical for tablets, landscape, split-screen)
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
 
@@ -576,6 +597,14 @@ const TajweedText: React.FC<TajweedTextProps> = ({
 
   // Memoize expensive calculations
   const fontSize = useMemo(() => extractFontSize(style), [style]);
+  const lineHeight = useMemo(() => extractLineHeight(style), [style]);
+
+  // Skia uses a height multiplier (e.g., 1.5), not pixel line-height
+  const heightMultiplier = useMemo(() => {
+    if (!lineHeight || !fontSize) return undefined;
+    if (lineHeight === fontSize) return 1.0;
+    return lineHeight / fontSize;
+  }, [lineHeight, fontSize]);
 
   // Best-practice: preserve raw source text upstream, normalize only for rendering.
   const mushafText = useMemo(() => {
@@ -584,7 +613,7 @@ const TajweedText: React.FC<TajweedTextProps> = ({
     __devLogInterestingMarksOnce(key, text);
     return normalizeForMushaf(text);
   }, [text, surahNumber, verseNumber]);
-  
+
   // LAYER 1: Parser-level merge (glyph cluster integrity)
   // Ensures combining marks are never standalone segments
   // NOTE: enableStopRules NOT used here - qalqalah applied after sanitization
@@ -596,76 +625,199 @@ const TajweedText: React.FC<TajweedTextProps> = ({
   // LAYER 2: Skia-level sanitizer (paragraph run safety)
   // Multi-pass backward merge ensures no Skia style run starts with combining mark
   const sanitized = useMemo(() => sanitizeRunsForSkia(segments), [segments]);
-  
+
   // LAYER 3: FINAL qalqalah overlay (AFTER sanitization)
   // This is the ONLY correct place to apply stop rules
   const safeSegments = useMemo(() => {
     if (!enableStopRules) return sanitized;
-    
+
     // Import and apply qalqalah as final overlay
     const { applyQalqalahOverlay } = require('@/utils/tajweedParser');
     const withQalqalah = applyQalqalahOverlay(sanitized, true);
-    
+
     // Safety assertion: verify no text was added, only split/recolored
     if (__DEV__) {
-      const joinedAfter = withQalqalah.map(s => s.text).join('');
-      const joinedBefore = sanitized.map(s => s.text).join('');
+      const joinedAfter = withQalqalah.map((s: ColoredSegment) => s.text).join('');
+      const joinedBefore = sanitized.map((s: ColoredSegment) => s.text).join('');
       if (joinedAfter !== joinedBefore) {
         console.warn('[Tajweed] Segment text mismatch after qalqalah overlay');
         console.warn('Before:', joinedBefore);
         console.warn('After:', joinedAfter);
       }
     }
-    
+
     return withQalqalah;
   }, [sanitized, enableStopRules]);
 
   // CRITICAL: Memoize paragraph to prevent re-creation on every render (FlashList performance)
-  const paragraph = useMemo(() => {
-    if (!fontMgr || !safeSegments.length || !containerWidth) return null;
+  const paragraphData = useMemo(() => {
+    // EXTRA GUARD: Do not attempt to layout or render if width is too small (prevents extreme vertical wrapping)
+    if (!fontMgr || !safeSegments.length || !containerWidth || containerWidth < 100) return null;
 
     const paragraphStyle = {
       textAlign: TextAlign.Right,
       textDirection: TextDirection.RTL,
     };
-    
+
     const builder = Skia.ParagraphBuilder.Make(paragraphStyle, fontMgr);
-    
+    let totalTextLength = 0;
+
     safeSegments.forEach((segment: ColoredSegment) => {
       builder.pushStyle({
         color: Skia.Color(segment.color),
         fontSize: fontSize,
         fontFamilies: ['QuranicFont'],
+        heightMultiplier: heightMultiplier, // Apply calculated line-height ratio
       });
       // Safe to add directly - sanitizeRunsForSkia ensures no combining mark starts
       builder.addText(segment.text);
+      totalTextLength += segment.text.length;
       builder.pop();
     });
-    
+
     const p = builder.build();
     // Layout using measured width (supports tablets, landscape, split-screen)
     p.layout(containerWidth);
-    return p;
-  }, [fontMgr, safeSegments, fontSize, containerWidth]);
 
-  const height = paragraph ? paragraph.getHeight() : fontSize * 2;
+    // Calculate overlay position for decorative verse numbers (Tajweed mode)
+    let overlay = null;
+    if (verseNumber && mushafText.endsWith('\u06DD')) {
+      try {
+        // Find position of the last character (the glyph ۝)
+        const rects = p.getRectsForRange(totalTextLength - 1, totalTextLength);
+        if (rects && rects.length > 0) {
+          const glyphRect = rects[0];
+
+          // Create small paragraph for digits to handle perfect centering inside frame
+          const digits = _toArabicDigits(verseNumber);
+          const digitFontSize = digits.length > 2 ? fontSize * 0.35 : fontSize * 0.45;
+
+          const dBuilder = Skia.ParagraphBuilder.Make({ textAlign: TextAlign.Center }, fontMgr);
+          dBuilder.pushStyle({
+            color: Skia.Color('#ffffff'), // Match standard text color
+            fontSize: digitFontSize,
+            fontFamilies: ['QuranicFont'],
+          });
+          dBuilder.addText(digits);
+          const dp = dBuilder.build();
+          dp.layout(glyphRect.width);
+
+          overlay = {
+            para: dp,
+            x: glyphRect.x,
+            // Center digits vertically within glyph box with small optical adjustment
+            y: glyphRect.y + (glyphRect.height - dp.getHeight()) / 2 + (fontSize * 0.04),
+          };
+        }
+      } catch (e) {
+        if (__DEV__) console.warn('[TajweedText] Suffix overlay calculation failed', e);
+      }
+    }
+
+    return { paragraph: p, overlay };
+  }, [fontMgr, safeSegments, fontSize, containerWidth, verseNumber, mushafText, heightMultiplier]);
+
+  const paragraph = paragraphData?.paragraph;
+  const overlay = paragraphData?.overlay;
+
+  // SAFETY GUARD: Cap the absolute maximum height for a single Skia Canvas.
+  // Standard GPU texture limit on iOS is 8192. Capping at 3000 for extra safety.
+  // Exceptionally long verses (like 2:282) at high font sizes skip Skia to prevent Metal SIGABRT crashes.
+  const METAL_HARDWARE_LIMIT = 3000;
+
+  const rawHeight = paragraph ? paragraph.getHeight() : fontSize * 2;
+  const isOverLimit = rawHeight > METAL_HARDWARE_LIMIT;
+
+  const height = isOverLimit ? rawHeight : Math.min(rawHeight, METAL_HARDWARE_LIMIT);
+
+  // OPTIMIZATION: Do not render Skia if dimensions are invalid or width is too small
+  const canRenderSkia = !isOverLimit && containerWidth && containerWidth >= 100 && height > 0 && !isNaN(height) && paragraph;
 
   return (
     <View
-      style={{ width: '100%' }}
-      onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+      style={{
+        width: '100%',
+        minHeight: fontSize * 2,
+        height: isOverLimit ? undefined : height, // Allow standard Text to expand if over limit
+        overflow: isOverLimit ? 'visible' : 'hidden'
+      }}
+      onLayout={(e) => {
+        const w = e.nativeEvent.layout.width;
+        if (w > 0) setContainerWidth(w);
+      }}
     >
-      {paragraph && containerWidth && (
-        <Canvas 
-          style={{ 
-            width: containerWidth, 
+      {canRenderSkia ? (
+        <Canvas
+          style={{
+            width: containerWidth,
             height: height,
-            // Ensure canvas doesn't swallow touch events meant for VerseItem
-            pointerEvents: 'none' 
+            pointerEvents: 'none'
           }}
         >
-          <Paragraph paragraph={paragraph} x={0} y={0} width={containerWidth} />
+          {paragraph && <Paragraph paragraph={paragraph} x={0} y={0} width={containerWidth} />}
+          {overlay && <Paragraph paragraph={overlay.para} x={overlay.x} y={overlay.y} width={overlay.para.getMaxWidth()} />}
         </Canvas>
+      ) : isOverLimit ? (
+        /* FALLBACK: Use standard React Native Text for massive verses to prevent Metal crash */
+        <View style={{ width: '100%', paddingHorizontal: 4 }}>
+          <RNText
+            style={[
+              style as any,
+              {
+                textAlign: 'right',
+                writingDirection: 'rtl',
+                lineHeight: lineHeight || Math.round(fontSize * 1.5)
+              }
+            ]}
+          >
+            {safeSegments.map((seg: ColoredSegment, i: number) => {
+              // Handle decorative ending in fallback mode
+              if (i === safeSegments.length - 1 && seg.text.endsWith('\u06DD') && verseNumber) {
+                const baseText = seg.text.slice(0, -1);
+                const digits = _toArabicDigits(verseNumber);
+                const digitFontSize = digits.length > 2 ? fontSize * 0.35 : fontSize * 0.42;
+
+                return (
+                  <RNText key={i} style={{ color: seg.color }}>
+                    {baseText}
+                    <View style={{
+                      width: fontSize * 1.1,
+                      height: fontSize,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      marginBottom: -fontSize * 0.15
+                    }}>
+                      <RNText style={{
+                        position: 'absolute',
+                        fontFamily: 'KFGQPC-Uthmanic-Hafs',
+                        fontSize: fontSize,
+                        color: seg.color,
+                        textAlign: 'center'
+                      }}>
+                        ۝
+                      </RNText>
+                      <RNText style={{
+                        fontSize: digitFontSize,
+                        fontWeight: 'bold',
+                        color: seg.color,
+                        textAlign: 'center',
+                        marginTop: fontSize * 0.05
+                      }}>
+                        {digits}
+                      </RNText>
+                    </View>
+                  </RNText>
+                );
+              }
+              return (
+                <RNText key={i} style={{ color: seg.color }}>{seg.text}</RNText>
+              );
+            })}
+          </RNText>
+        </View>
+      ) : (
+        // Initial measurement placeholder
+        <View style={{ width: '100%', height: fontSize * 2 }} />
       )}
     </View>
   );

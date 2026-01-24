@@ -11,17 +11,17 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import PageAudioManager, { AudioState, getPageAudioManager } from '../audio/PageAudioManager';
 
 import {
-    ActivityIndicator,
-    Alert,
-    Animated,
-    Modal,
-    PanResponder,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Modal,
+  PanResponder,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 import JuzMemorization from '@/components/JuzMemorization';
@@ -34,13 +34,13 @@ import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import type { Surah, Verse } from '@/types';
 import {
-    getAudioUrl,
-    pauseAudio,
-    pauseSurahAudio,
-    playAudio,
-    playSurahAudioWithFallback,
-    resumeSurahAudio,
-    stopSurahAudio,
+  getAudioUrl,
+  pauseAudio,
+  pauseSurahAudio,
+  playAudio,
+  playSurahAudioWithFallback,
+  resumeSurahAudio,
+  stopSurahAudio,
 } from '@/utils/audioUtils';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
@@ -94,10 +94,10 @@ export default function ReadScreen() {
     juzListScrollY,
     setJuzListScrollY,
   } = useNavigationStore();
-  
-  // Track if we should restore scroll position (reactive state instead of refs)
-  const [shouldRestoreSurahScroll, setShouldRestoreSurahScroll] = useState(false);
-  const [shouldRestoreJuzScroll, setShouldRestoreJuzScroll] = useState(false);
+
+  // Track if this is initial mount (to restore position silently)
+  const isInitialSurahMount = useRef(true);
+  const isInitialJuzMount = useRef(true);
 
   // UI State
   const [tab, setTab] = useState<'surah' | 'juz'>('surah');
@@ -198,6 +198,26 @@ export default function ReadScreen() {
   const suppressNextAutoOpen = useRef(false);
   const surahListRef = useRef<FlashListRef<any>>(null);
   const loadingLocks = useRef<Map<string, Promise<any>>>(new Map());
+
+  // === Smart Progressive Header Collapse ===
+  // Header state: 'full' (all controls), 'minimal' (hide bulk actions), 'collapsed' (essentials only)
+  const [headerState, setHeaderState] = useState<'full' | 'minimal' | 'collapsed'>('full');
+  const lastScrollY = useRef(0);
+  const lastHeaderStateChangeY = useRef(0); // For hysteresis - track last state change position
+
+  // Explicit header heights per state (for layout stability)
+  const HEADER_HEIGHT_FULL = 120; // Full header with all controls and bulk actions (no metadata row)
+  const HEADER_HEIGHT_MINIMAL = 56; // Single row with all controls, no bulk actions
+  const HEADER_HEIGHT_COLLAPSED = 56; // Same as minimal, just Arabic name hidden
+
+  // Scroll thresholds with hysteresis buffer to prevent jittery state changes
+  const SCROLL_THRESHOLD_MINIMAL = 100; // Collapse to minimal at 100px
+  const SCROLL_THRESHOLD_COLLAPSED = 300; // Collapse to collapsed at 300px
+  const HYSTERESIS_BUFFER = 30; // Require 30px scroll in opposite direction to undo state change
+
+  // Guard against FlashList scroll jumps (sudden large scroll position changes)
+  const MAX_SCROLL_JUMP = 500; // Ignore scroll events with jumps larger than this
+  const isAutomatedScrolling = useRef(false); // Track if we are programmatically scrolling (e.g. Go to)
 
   // Memoized
   const filteredSurahs = useMemo(() => {
@@ -509,6 +529,76 @@ export default function ReadScreen() {
     return latest;
   };
 
+  // === Smart Progressive Header Scroll Handler ===
+  // Handles progressive collapse with hysteresis and FlashList jump guards
+  const handleVerseScroll = useCallback((event: any) => {
+    const currentScrollY = event.nativeEvent.contentOffset.y;
+
+    // Guard: Forget about automated/programmatic scrolls (e.g. Go to)
+    if (isAutomatedScrolling.current) {
+      lastScrollY.current = currentScrollY;
+      return;
+    }
+
+    // Guard: Ignore negative scroll values (iOS bounce)
+    if (currentScrollY < 0) return;
+
+    // Guard: Ignore sudden large scroll jumps (FlashList recycling artifacts)
+    const scrollDelta = Math.abs(currentScrollY - lastScrollY.current);
+    if (scrollDelta > MAX_SCROLL_JUMP) {
+      lastScrollY.current = currentScrollY;
+      return;
+    }
+
+    const direction = currentScrollY > lastScrollY.current ? 'down' : 'up';
+    const distanceSinceLastChange = Math.abs(currentScrollY - lastHeaderStateChangeY.current);
+
+    if (direction === 'down') {
+      // Scrolling down - progressively collapse
+      if (currentScrollY > SCROLL_THRESHOLD_COLLAPSED && headerState !== 'collapsed') {
+        setHeaderState('collapsed');
+        lastHeaderStateChangeY.current = currentScrollY;
+      } else if (currentScrollY > SCROLL_THRESHOLD_MINIMAL && headerState === 'full') {
+        setHeaderState('minimal');
+        lastHeaderStateChangeY.current = currentScrollY;
+      }
+    } else {
+      // Scrolling up - progressively expand (with hysteresis)
+      // Only expand if we've scrolled far enough in the opposite direction
+      if (distanceSinceLastChange > HYSTERESIS_BUFFER) {
+        if (currentScrollY < SCROLL_THRESHOLD_MINIMAL && headerState !== 'full') {
+          setHeaderState('full');
+          lastHeaderStateChangeY.current = currentScrollY;
+        } else if (currentScrollY < SCROLL_THRESHOLD_COLLAPSED && headerState === 'collapsed') {
+          setHeaderState('minimal');
+          lastHeaderStateChangeY.current = currentScrollY;
+        }
+      }
+    }
+
+    lastScrollY.current = currentScrollY;
+  }, [headerState, SCROLL_THRESHOLD_MINIMAL, SCROLL_THRESHOLD_COLLAPSED, HYSTERESIS_BUFFER, MAX_SCROLL_JUMP]);
+
+  const getVerseType = useCallback((item: any) => {
+    const sId = item.surahId || item.chapter_id;
+    const vNum = item.verseNumber || item.verse_number;
+    // Handle 2:282 (largest verse) separately to avoid FlashList recycling crashes with large fonts
+    if (sId === 2 && vNum === 282) return 'huge';
+    return 'standard';
+  }, []);
+
+  // Reset header state when switching Surahs/Juz
+  useEffect(() => {
+    // Default to 'collapsed' (3rd level) for Juz mode as requested
+    if (selectedJuz != null) {
+      setHeaderState('collapsed');
+    } else {
+      setHeaderState('full');
+    }
+    lastScrollY.current = 0;
+    lastHeaderStateChangeY.current = 0;
+  }, [selectedSurah?.id, selectedJuz]);
+
   const surahStatus = useMemo(() => {
     if (!selectedSurah) return { isMemorized: false, isRevised: false };
     const allVerseIds = getSurahVerseRange({
@@ -613,30 +703,20 @@ export default function ReadScreen() {
             ? await fetchUthmaniTajweedRnMarkupByChapter(surah.id)
             : null;
 
-          let mappedVerses: Verse[] = allVersesFromDB.map((v: any) => {
-            const tajweedText = needsTajweed ? tajweedByKey?.[`${surah.id}:${v.verse_number}`] : undefined;
-            
-            // DEBUG: Log verse 28:53 specifically
-            if (__DEV__ && surah.id === 28 && v.verse_number === 53) {
-              console.log('[read] DEBUG 28:53 - Local DB ayah:', v.ayah?.substring(0, 100));
-              console.log('[read] DEBUG 28:53 - Tajweed text from API:', tajweedText?.substring(0, 100));
-              console.log('[read] DEBUG 28:53 - Local has عَامَٓد:', v.ayah?.includes('عَامَٓد'));
-              console.log('[read] DEBUG 28:53 - Tajweed has ءَامَنَّا:', tajweedText?.includes('ءَامَنَّا'));
-            }
-            
-            return {
-              id: v.verse_id,
-              surahId: v.chapter_id,
-              verseNumber: v.verse_number,
-              arabicText: v.ayah,
-              translation: v.translation || '', // English from local DB
-              transliteration: v.transliteration || undefined,
-              pageNumber: v.page_id ? Number(v.page_id) : undefined,
-              juzNumber: v.part_id ? Number(v.part_id) : undefined,
-              audioUrl: getAudioUrl(reciterIdentifier, v.chapter_id || surah.id, v.verse_number),
-              ...(needsTajweed ? { tajweedText } : {}),
-            };
-          });
+          let mappedVerses: Verse[] = allVersesFromDB.map((v: any) => ({
+            id: v.verse_id,
+            surahId: v.chapter_id,
+            verseNumber: v.verse_number,
+            arabicText: v.ayah,
+            translation: v.translation || '', // English from local DB
+            transliteration: v.transliteration || undefined,
+            pageNumber: v.page_id ? Number(v.page_id) : undefined,
+            juzNumber: v.part_id ? Number(v.part_id) : undefined,
+            audioUrl: getAudioUrl(reciterIdentifier, v.chapter_id || surah.id, v.verse_number),
+            ...(needsTajweed
+              ? { tajweedText: tajweedByKey?.[`${surah.id}:${v.verse_number}`] || undefined }
+              : {}),
+          }));
 
           // PERFORMANCE FIX: Local DB already has translations!
           // Removed API call that was causing 3-10 second delays for non-English languages
@@ -741,17 +821,6 @@ export default function ReadScreen() {
         // Ensure Page Mode is exited when going back to lists
         try { exitPageMode(); } catch { }
         console.log('[read] Back from verses to list view - clearing params');
-        
-        // Enable scroll restoration for next list view AND set correct tab
-        if (selectedSurah) {
-          setShouldRestoreSurahScroll(true);
-          setTab('surah'); // Ensure we're on Surah tab when returning to Surah list
-        }
-        if (selectedJuz !== null) {
-          setShouldRestoreJuzScroll(true);
-          setTab('juz'); // Ensure we're on Juz tab when returning to Juz list
-        }
-        
         // CRITICAL: Clear URL params to allow fresh navigation next time
         router.replace('/(tabs)/read');
         setSelectedJuz(null);
@@ -975,8 +1044,7 @@ export default function ReadScreen() {
       setCompletedVerses(new Set());
 
       const settings = useSettingsStore.getState();
-      // Use mushaf-specific repeat settings for page mode
-      const repeatPerVerse = settings.mushafInfiniteLoop ? 0 : (settings.mushafRepeatMode || 1);
+      const repeatPerVerse = settings.infiniteLoop ? 0 : (settings.repeatMode || 1);
 
       // NEW: Infinite page looping for Page Mode ONLY
       // This runs independently and won't affect Surah mode which uses different handlers
@@ -1154,49 +1222,52 @@ export default function ReadScreen() {
 
   // 🎯 SCROLL POSITION RESTORATION: Surah List
   useEffect(() => {
-    if (shouldRestoreSurahScroll && surahListScrollY > 0 && !selectedSurah && tab === 'surah') {
+    if (isInitialSurahMount.current && surahListScrollY > 0 && !selectedSurah && tab === 'surah') {
       // Use requestAnimationFrame to ensure DOM is ready
       requestAnimationFrame(() => {
         surahListRef.current?.scrollToOffset({
           offset: surahListScrollY,
-          animated: false, // No animation = instant positioning
+          animated: false, // CRITICAL: No animation = instant, natural
         });
       });
-      setShouldRestoreSurahScroll(false);
+      isInitialSurahMount.current = false;
     }
-  }, [shouldRestoreSurahScroll, surahListScrollY, selectedSurah, tab]);
+  }, [surahListScrollY, selectedSurah, tab]);
 
   // 🎯 SCROLL POSITION RESTORATION: Juz List
   useEffect(() => {
-    if (shouldRestoreJuzScroll && juzListScrollY > 0 && selectedJuz == null && tab === 'juz') {
-      // Juz tab is rendered via <JuzMemorization />, which owns its own FlatList.
-      // We keep the stored scroll position, but there is no ref to restore here.
-      setShouldRestoreJuzScroll(false);
+    if (isInitialJuzMount.current && juzListScrollY > 0 && selectedJuz == null && tab === 'juz') {
+      // Use requestAnimationFrame to ensure DOM is ready
+      requestAnimationFrame(() => {
+        surahListRef.current?.scrollToOffset({
+          offset: juzListScrollY,
+          animated: false, // CRITICAL: No animation = instant, natural
+        });
+      });
+      isInitialJuzMount.current = false;
     }
-  }, [shouldRestoreJuzScroll, juzListScrollY, selectedJuz, tab]);
+  }, [juzListScrollY, selectedJuz, tab]);
 
   // 🎯 SAVE SURAH LIST SCROLL POSITION
-  const surahScrollDebounceRef = useRef<number>(0);
   const handleSurahListScroll = useCallback((event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;
     // Debounce: Only save every 100ms to avoid performance issues
-    if (surahScrollDebounceRef.current && Date.now() - surahScrollDebounceRef.current < 100) {
+    if (handleSurahListScroll.lastSave && Date.now() - handleSurahListScroll.lastSave < 100) {
       return;
     }
     setSurahListScrollY(offsetY);
-    surahScrollDebounceRef.current = Date.now();
+    (handleSurahListScroll as any).lastSave = Date.now();
   }, [setSurahListScrollY]);
 
   // 🎯 SAVE JUZ LIST SCROLL POSITION
-  const juzScrollDebounceRef = useRef<number>(0);
   const handleJuzListScroll = useCallback((event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;
     // Debounce: Only save every 100ms to avoid performance issues
-    if (juzScrollDebounceRef.current && Date.now() - juzScrollDebounceRef.current < 100) {
+    if (handleJuzListScroll.lastSave && Date.now() - handleJuzListScroll.lastSave < 100) {
       return;
     }
     setJuzListScrollY(offsetY);
-    juzScrollDebounceRef.current = Date.now();
+    (handleJuzListScroll as any).lastSave = Date.now();
   }, [setJuzListScrollY]);
 
   const handleSurahPress = (surah: Surah) => {
@@ -1755,10 +1826,6 @@ export default function ReadScreen() {
           }
         })();
 
-        // Enable scroll restoration for Surah list (default tab)
-        setShouldRestoreSurahScroll(true);
-        setShouldRestoreJuzScroll(true);
-
         // Reset all state to show Surah list
         // Exit page mode if active
         try { exitPageMode(); } catch { }
@@ -1967,24 +2034,47 @@ export default function ReadScreen() {
                   if (idx !== -1 && idx >= 0) {
                     try {
                       console.log('[read] Executing scrollToIndex for index:', idx);
-                      // If Page Mode is active for Juz, compute the page and intra-page index
-                      if (isPageModeActive && pageModeScope === 'juz') {
+
+                      // LOCK HEADER: Prevent layout shifts during jump to avoid Skia/Metal race conditions
+                      isAutomatedScrolling.current = true;
+
+                      // SMART PAGINATION: Handle jumping across pages in Page Mode
+                      if (isPageModeActive) {
                         const vpp = pageModeSessionVpp || defaultVersesPerPage;
                         const pageIndex = Math.floor(idx / vpp);
                         const innerIndex = idx % vpp;
-                        // Switch the page mode to the computed page
-                        setCurrentPageIndex(pageIndex);
-                        // Allow list to update then scroll to intra-page index
-                        setTimeout(() => {
+
+                        if (currentPageIndex !== pageIndex) {
+                          setCurrentPageIndex(pageIndex);
+                          setTimeout(() => {
+                            try {
+                              flatListRef.current?.scrollToIndex({ index: innerIndex, animated: true, viewPosition: 0.2 });
+                            } catch (err) {
+                              flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+                            }
+                            // Unlock after animation
+                            setTimeout(() => { isAutomatedScrolling.current = false; }, 800);
+                          }, 150);
+                        } else {
                           flatListRef.current?.scrollToIndex({ index: innerIndex, animated: true, viewPosition: 0.2 });
-                        }, 120);
+                          setTimeout(() => { isAutomatedScrolling.current = false; }, 800);
+                        }
                       } else {
+                        // NORMAL LIST MODE: Jump directly
+                        // Using a simple check to skip animations for VERY massive jumps (prevents Skia animation crashes)
+                        const currentIdx = lastScrollY.current / (averageVerseHeight || 200);
+                        const isExtremeJump = Math.abs(idx - currentIdx) > 300;
+
                         flatListRef.current?.scrollToIndex({
                           index: idx,
-                          animated: true,
+                          animated: !isExtremeJump, // Restore animation for reasonably large jumps (like verse 282)
                           viewPosition: 0.2
                         });
+
+                        // Unlock header after animation finishes
+                        setTimeout(() => { isAutomatedScrolling.current = false; }, isExtremeJump ? 100 : 1000);
                       }
+
 
                       // Close modal after successful scroll initiation
                       setGoToModalVisible(false);
@@ -2023,195 +2113,212 @@ export default function ReadScreen() {
         </View>
       </Modal>
 
-      <View style={styles.headerContainer}>
-        <View style={styles.headerTopRow}>
-          <TouchableOpacity onPress={handleBackToSurahs} style={{ marginRight: 12 }}>
-            <ArrowLeft size={28} color="#C5A059" />
-          </TouchableOpacity>
-          {selectedSurah ? (
-            <View style={[styles.headerTitleContainer, { alignItems: 'center' }]}>
-              <View style={{ width: '100%', marginBottom: 4 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                  <AutoSizeText
-                    numberOfLines={1}
-                    mode={ResizeTextMode.min_font_size}
-                    fontSize={20}
-                    minFontSize={12}
-                    style={styles.headerTitle}
-                  >
-                    {`${selectedSurah.id}. ${selectedSurah.englishName}`}
-                  </AutoSizeText>
-                </View>
+      {/* ============================================ */}
+      {/* SMART PROGRESSIVE HEADER (Verse View Only) */}
+      {/* ============================================ */}
+      {selectedSurah || selectedJuz != null ? (
+        <View style={[
+          styles.smartHeader,
+          headerState === 'minimal' && styles.smartHeaderMinimal,
+          headerState === 'collapsed' && styles.smartHeaderCollapsed,
+          { minHeight: headerState === 'collapsed' ? HEADER_HEIGHT_COLLAPSED : headerState === 'minimal' ? HEADER_HEIGHT_MINIMAL : HEADER_HEIGHT_FULL }
+        ]}>
 
-                {/* Icon row: centered, equal-size circles */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', marginTop: 8 }}>
-                  <TouchableOpacity
-                    onPress={() => { if (isPageModeActive) void handleTogglePageAudio(); else void handleToggleSurahAudio(); }}
-                    onLongPress={async () => {
-                      if (!pageAudioManagerRef.current) pageAudioManagerRef.current = getPageAudioManager();
-                      const mgr = pageAudioManagerRef.current;
-                      if (isPageModeActive) {
-                        try {
-                          await mgr.stop();
-                        } catch (e) {
-                          console.warn('[read] page audio stop failed', e);
-                        }
-                        pagePlayAbortRef.current.aborted = true;
-                        setIsPlayingPage(false);
-                        setIsPagePaused(false);
-                        setIsPageDownloading(false);
-                        setPageDownloadProgress(0);
-                      } else {
-                        try {
-                          await stopSurahAudio();
-                          setIsPlayingSurah(false);
-                          setIsSurahPaused(false);
-                        } catch (e) {
-                          console.warn('[read] stop surah audio failed', e);
-                        }
-                      }
-                    }}
-                    style={{
-                      backgroundColor: isPageModeActive ? (isPlayingPage ? '#C5A059' : '#333333') : (isPlayingSurah ? '#C5A059' : '#333333'),
-                      borderRadius: 22,
-                      width: 44,
-                      height: 44,
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      borderWidth: 1,
-                      borderColor: isPageModeActive ? (isPlayingPage ? '#C5A059' : '#555555') : (isPlayingSurah ? '#C5A059' : '#555555'),
-                      marginRight: 12,
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    {isPageModeActive ? (
-                      isPageDownloading ? (
-                        <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-                          <ActivityIndicator size="small" color="#C5A059" />
-                          <Text style={{ color: '#C5A059', fontSize: 10, marginTop: 2 }}>{Math.round(pageDownloadProgress)}%</Text>
-                        </View>
-                      ) : (
-                        isPlayingPage ? <Pause size={22} color="#1a1a1a" /> : <Play size={22} color="#C5A059" />
-                      )
-                    ) : (
-                      isPlayingSurah ? <Pause size={22} color="#1a1a1a" /> : <Play size={22} color="#C5A059" />
-                    )}
-                  </TouchableOpacity>
+          {/* ROW 1: Always Visible (even when collapsed) */}
+          <View style={styles.alwaysVisibleRow}>
+            {/* Back button - ALWAYS VISIBLE */}
+            <TouchableOpacity onPress={handleBackToSurahs} style={{ marginRight: 8 }}>
+              <ArrowLeft size={24} color="#C5A059" />
+            </TouchableOpacity>
 
+            {/* Core Info - ALWAYS VISIBLE */}
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+              {selectedSurah ? (
+                <>
+                  <Text style={styles.compactSurahNumber}>{selectedSurah.id}.</Text>
+                  <Text style={styles.compactSurahName} numberOfLines={1}>
+                    {selectedSurah.englishName}
+                  </Text>
+                  {/* Arabic name - hide ONLY in COLLAPSED */}
+                  {headerState !== 'collapsed' && (
+                    <Text style={styles.compactSurahArabic} numberOfLines={1}>
+                      {selectedSurah.arabicName}
+                    </Text>
+                  )}
+                </>
+              ) : (
+                <Text style={styles.compactSurahName} numberOfLines={1}>Juz {selectedJuz}</Text>
+              )}
+            </View>
+
+            {/* Play button - ONLY if Surah selected OR in Page Mode */}
+            {(selectedSurah || isPageModeActive) && (
+              <TouchableOpacity
+                onPress={() => {
+                  if (isPageModeActive) void handleTogglePageAudio();
+                  else void handleToggleSurahAudio();
+                }}
+                onLongPress={async () => {
+                  if (!pageAudioManagerRef.current) pageAudioManagerRef.current = getPageAudioManager();
+                  const mgr = pageAudioManagerRef.current;
+                  if (isPageModeActive) {
+                    try { await mgr.stop(); } catch (e) { console.warn('[read] page audio stop failed', e); }
+                    pagePlayAbortRef.current.aborted = true;
+                    setIsPlayingPage(false);
+                    setIsPagePaused(false);
+                    setIsPageDownloading(false);
+                    setPageDownloadProgress(0);
+                  } else {
+                    try {
+                      await stopSurahAudio();
+                      setIsPlayingSurah(false);
+                      setIsSurahPaused(false);
+                    } catch (e) { console.warn('[read] stop surah audio failed', e); }
+                  }
+                }}
+                style={[
+                  styles.compactPlayButton,
+                  (isPlayingSurah || isPlayingPage) && { backgroundColor: '#C5A059', borderColor: '#C5A059' }
+                ]}
+                activeOpacity={0.8}
+              >
+                {isPageDownloading ? (
+                  <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                    <ActivityIndicator size="small" color="#C5A059" />
+                  </View>
+                ) : (isPlayingSurah || isPlayingPage) ? (
+                  <Pause size={18} color="#1a1a1a" />
+                ) : (
+                  <Play size={18} color="#C5A059" />
+                )}
+              </TouchableOpacity>
+            )}
+
+
+            {/* Go To Verse - ALWAYS VISIBLE */}
+            <Pressable
+              onPress={() => setGoToModalVisible(true)}
+              style={styles.miniButton}
+            >
+              <ArrowRight size={16} color="#C5A059" />
+            </Pressable>
+
+            {/* Page Mode - ALWAYS VISIBLE */}
+            <PageModeButton
+              onPress={() => {
+                const defaultScope = selectedSurah ? 'surah' : (selectedJuz != null ? 'juz' : pageModeScope);
+                setPageModeScope(defaultScope);
+                setPageModeVisible(true);
+              }}
+              onLongPress={() => showToast('Page Mode', 1200)}
+              isActive={isPageModeActive}
+              style={{ width: 36, height: 36, marginLeft: 8 }}
+            />
+
+            {/* Expand menu (⋮) - ONLY if Surah selected OR in Page Mode OR Juz selected */}
+            {headerState !== 'full' && (selectedSurah || selectedJuz != null || isPageModeActive) && (
+              <TouchableOpacity
+                onPress={() => setHeaderState('full')}
+                style={styles.expandButton}
+                accessibilityLabel="Show all controls"
+              >
+                <Text style={{ color: '#C5A059', fontSize: 22, fontWeight: '700' }}>⋮</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* If neither Surah nor Page Mode, provide a small spacer to maintain right-alignment alignment */}
+            {headerState !== 'full' && !(selectedSurah || isPageModeActive) && (
+              <View style={{ width: 8 }} />
+            )}
+
+          </View>
+
+          {/* ROW 2 (Secondary Info) REMOVED in refined layout */}
+
+
+          {/* ROW 3: ONLY in FULL state (bulk actions) */}
+          {headerState === 'full' && (
+            <View style={styles.bulkActionsRow}>
+              {/* Page Mode: Show page-level buttons */}
+              {isPageModeActive && (pageModeScope === 'surah' || pageModeScope === 'juz') ? (
+                <>
                   <Pressable
-                    onPress={() => setGoToModalVisible(true)}
-                    style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255, 255, 255, 0.08)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}
+                    style={({ pressed }) => [
+                      styles.bulkActionButton,
+                      isCurrentPageMemorized && styles.bulkActionButtonActive,
+                      { opacity: (!currentPageVerses.length || pressed) ? 0.7 : 1 }
+                    ]}
+                    onPress={handleMarkPageMemorized}
+                    disabled={!currentPageVerses.length}
                   >
-                    <ArrowRight size={18} color="#C5A059" />
+                    <Check size={14} color="#ffffff" />
+                    <Text style={styles.bulkActionText} numberOfLines={1}>
+                      {isCurrentPageMemorized ? 'Page Memorized' : 'Mark Page'}
+                    </Text>
                   </Pressable>
 
-                  <PageModeButton
-                    onPress={() => {
-                      const defaultScope = selectedSurah ? 'surah' : (selectedJuz != null ? 'juz' : pageModeScope);
-                      setPageModeScope(defaultScope);
-                      setPageModeVisible(true);
-                    }}
-                    onLongPress={() => showToast('Page Mode', 1200)}
-                    isActive={isPageModeActive}
-                    style={{ width: 44, height: 44 }}
-                  />
-                </View>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingHorizontal: 8, marginTop: 6 }}>
-                <Text style={{ color: '#ffffff', fontSize: 12 }}>
-                  {selectedSurah.revelationType === 'Medinan' ? 'Madani' : 'Makki'}
-                </Text>
-                <AutoSizeText
-                  numberOfLines={1}
-                  mode={ResizeTextMode.min_font_size}
-                  fontSize={arabicTypography.fontSize}
-                  minFontSize={14}
-                  style={[styles.headerSubtitle, { fontFamily: arabicFontFamily, lineHeight: arabicTypography.lineHeight, textAlign: 'center', color: '#ffffff' }]}
-                >
-                  {selectedSurah.arabicName}
-                </AutoSizeText>
-                <Text style={{ color: '#ffffff', fontSize: 12 }}>{selectedSurah.versesCount} verses</Text>
-              </View>
-            </View>
-          ) : selectedJuz != null ? (
-            <View style={[styles.headerTitleContainer, { alignItems: 'center' }]}>
-              <View style={{ width: '100%', marginBottom: 4 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                  <AutoSizeText
-                    numberOfLines={1}
-                    mode={ResizeTextMode.min_font_size}
-                    fontSize={20}
-                    minFontSize={12}
-                    style={styles.headerTitle}
-                  >
-                    {`Juz ${selectedJuz}`}
-                  </AutoSizeText>
-                </View>
-
-                {/* Centered icon row for Juz header */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', marginTop: 8 }}>
-                  {isPageModeActive && pageModeScope === 'juz' ? (
-                    <TouchableOpacity
-                      onPress={() => { if (isPageModeActive) void handleTogglePageAudio(); }}
-                      onLongPress={async () => {
-                        if (!pageAudioManagerRef.current) pageAudioManagerRef.current = getPageAudioManager();
-                        const mgr = pageAudioManagerRef.current;
-                        try { await mgr.stop(); } catch (e) { console.warn('[read] page audio stop failed', e); }
-                        pagePlayAbortRef.current.aborted = true;
-                        setIsPlayingPage(false);
-                        setIsPagePaused(false);
-                        setIsPageDownloading(false);
-                        setPageDownloadProgress(0);
-                      }}
-                      style={{
-                        backgroundColor: isPageModeActive ? (isPlayingPage ? '#C5A059' : '#333333') : '#333333',
-                        borderRadius: 22,
-                        width: 44,
-                        height: 44,
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        borderWidth: 1,
-                        borderColor: isPageModeActive ? (isPlayingPage ? '#C5A059' : '#555555') : '#555555',
-                        marginRight: 12,
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      {isPageDownloading ? (
-                        <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-                          <ActivityIndicator size="small" color="#C5A059" />
-                          <Text style={{ color: '#C5A059', fontSize: 10, marginTop: 2 }}>{Math.round(pageDownloadProgress)}%</Text>
-                        </View>
-                      ) : (
-                        isPlayingPage ? <Pause size={22} color="#1a1a1a" /> : <Play size={22} color="#C5A059" />
-                      )}
-                    </TouchableOpacity>
-                  ) : null}
-
                   <Pressable
-                    onPress={() => setGoToModalVisible(true)}
-                    style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255, 255, 255, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}
+                    style={({ pressed }) => [
+                      styles.bulkActionButton,
+                      isCurrentPageRevised && styles.bulkActionButtonRevised,
+                      { opacity: (!currentPageVerses.length || pressed) ? 0.7 : 1 }
+                    ]}
+                    onPress={handleMarkPageRevised}
+                    disabled={!currentPageVerses.length}
                   >
-                    <ArrowRight size={18} color="#C5A059" />
+                    <RefreshCw size={14} color="#ffffff" />
+                    <Text style={styles.bulkActionText} numberOfLines={1}>
+                      {isCurrentPageRevised ? 'Page Revised' : 'Mark Revised'}
+                    </Text>
+                  </Pressable>
+                </>
+              ) : selectedSurah ? (
+                // Surah Mode: Show surah-level "Mark All" buttons
+                <>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.bulkActionButton,
+                      surahStatus.isMemorized && styles.bulkActionButtonActive,
+                      { opacity: pressed ? 0.7 : 1 }
+                    ]}
+                    onPress={handleMarkAllMemorized}
+                  >
+                    <Check size={14} color="#ffffff" />
+                    <Text style={styles.bulkActionText} numberOfLines={1}>
+                      {surahStatus.isMemorized ? 'All Memorized' : 'Mark All Verses'}
+                    </Text>
                   </Pressable>
 
-                  <PageModeButton
-                    onPress={() => {
-                      // Auto-detect default Page Mode scope based on current view
-                      const defaultScope = selectedSurah ? 'surah' : (selectedJuz != null ? 'juz' : pageModeScope);
-                      setPageModeScope(defaultScope);
-                      setPageModeVisible(true);
-                    }}
-                    onLongPress={() => showToast('Page Mode', 1200)}
-                    isActive={isPageModeActive}
-                    style={{ width: 44, height: 44 }}
-                  />
-                </View>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', paddingHorizontal: 8, marginTop: 6 }}>
-                <Text style={{ color: '#888888', fontSize: 12 }}>{juzVerses.length} verses</Text>
-              </View>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.bulkActionButton,
+                      surahStatus.isRevised && styles.bulkActionButtonRevised,
+                      { opacity: pressed ? 0.7 : 1 }
+                    ]}
+                    onPress={handleMarkAllRevised}
+                  >
+                    <RefreshCw size={14} color="#ffffff" />
+                    <Text style={styles.bulkActionText} numberOfLines={1}>
+                      {surahStatus.isRevised ? 'All Revised' : 'Mark All Revised'}
+                    </Text>
+                  </Pressable>
+                </>
+              ) : null}
             </View>
-          ) : (
+          )}
+
+          {/* Separator line */}
+          <View style={styles.headerSeparator} />
+        </View>
+      ) : (
+        /* ============================================ */
+        /* ORIGINAL HEADER (List View - Unchanged)     */
+        /* ============================================ */
+        <View style={styles.headerContainer}>
+          <View style={styles.headerTopRow}>
+            <TouchableOpacity onPress={handleBackToSurahs} style={{ marginRight: 12 }}>
+              <ArrowLeft size={28} color="#C5A059" />
+            </TouchableOpacity>
             <View style={styles.headerTitleContainer}>
               <AutoSizeText
                 numberOfLines={2}
@@ -2223,158 +2330,9 @@ export default function ReadScreen() {
                 Recite Qur'an in measured and rhythmic tone!
               </AutoSizeText>
             </View>
-          )}
-        </View>
-
-        {(selectedSurah || (isPageModeActive && pageModeScope === 'juz' && selectedJuz != null)) && (
-          <View style={styles.headerActions}>
-            {/* Show Page Mode buttons when page-mode is active (surah or juz), otherwise show Surah "All" buttons */}
-            {isPageModeActive && (pageModeScope === 'surah' || pageModeScope === 'juz') ? (
-              <>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.actionButton,
-                    {
-                      backgroundColor: isCurrentPageMemorized ? '#4CAF50' : '#1a1a1a',
-                      borderColor: isCurrentPageMemorized ? '#4CAF50' : '#444444',
-                      borderWidth: isCurrentPageMemorized ? 2 : 1,
-                      opacity: (!currentPageVerses.length || pressed) ? 0.7 : 1,
-                      elevation: isCurrentPageMemorized ? 2 : 0,
-                    }
-                  ]}
-                  onPress={handleMarkPageMemorized}
-                  disabled={!currentPageVerses.length}
-                >
-                  <Check size={14} color="#ffffff" />
-                  <Text style={styles.actionButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-                    {isCurrentPageMemorized ? 'Page Memorized' : 'Mark Page'}
-                  </Text>
-                  <View style={{
-                    marginLeft: 4,
-                    padding: 2,
-                    borderRadius: 10,
-                    backgroundColor: isCurrentPageMemorized ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
-                    width: 20,
-                    height: 20,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    {isCurrentPageMemorized && <ArrowLeft size={12} color="#ffffff" />}
-                  </View>
-                </Pressable>
-
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.actionButton,
-                    {
-                      backgroundColor: isCurrentPageRevised ? '#FF9800' : '#1a1a1a',
-                      borderColor: isCurrentPageRevised ? '#FF9800' : '#444444',
-                      borderWidth: isCurrentPageRevised ? 2 : 1,
-                      opacity: (!currentPageVerses.length || pressed) ? 0.7 : 1,
-                      elevation: isCurrentPageRevised ? 2 : 0,
-                    }
-                  ]}
-                  onPress={handleMarkPageRevised}
-                  disabled={!currentPageVerses.length}
-                >
-                  <RefreshCw size={14} color="#ffffff" />
-                  <Text style={styles.actionButtonText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-                    {isCurrentPageRevised ? 'Page Revised' : 'Mark Revised'}
-                  </Text>
-                  <View style={{
-                    marginLeft: 4,
-                    padding: 2,
-                    borderRadius: 10,
-                    backgroundColor: isCurrentPageRevised ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
-                    width: 20,
-                    height: 20,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    {isCurrentPageRevised && <ArrowLeft size={12} color="#ffffff" />}
-                  </View>
-                </Pressable>
-              </>
-            ) : selectedSurah ? (
-              <>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.actionButton,
-                    {
-                      backgroundColor: surahStatus.isMemorized ? '#4CAF50' : '#1a1a1a',
-                      borderColor: surahStatus.isMemorized ? '#4CAF50' : '#444444',
-                      borderWidth: surahStatus.isMemorized ? 2 : 1,
-                      opacity: pressed ? 0.7 : 1,
-                      shadowColor: surahStatus.isMemorized ? '#4CAF50' : 'transparent',
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.3,
-                      shadowRadius: 4,
-                      elevation: surahStatus.isMemorized ? 3 : 0,
-                      paddingLeft: 16,
-                      paddingRight: 10,
-                    },
-                  ]}
-                  onPress={handleMarkAllMemorized}
-                >
-                  <Check size={16} color="#ffffff" />
-                  <Text style={[styles.actionButtonText, { marginLeft: 6 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-                    {surahStatus.isMemorized ? 'All Memorized' : 'Mark All Verses'}
-                  </Text>
-                  <View style={{
-                    marginLeft: 4,
-                    padding: 4,
-                    borderRadius: 12,
-                    backgroundColor: surahStatus.isMemorized ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
-                    width: 22,
-                    height: 22,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    {surahStatus.isMemorized && <ArrowLeft size={14} color="#ffffff" />}
-                  </View>
-                </Pressable>
-
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.actionButton,
-                    {
-                      backgroundColor: surahStatus.isRevised ? '#FF9800' : '#1a1a1a',
-                      borderColor: surahStatus.isRevised ? '#FF9800' : '#444444',
-                      borderWidth: surahStatus.isRevised ? 2 : 1,
-                      opacity: pressed ? 0.7 : 1,
-                      shadowColor: surahStatus.isRevised ? '#FF9800' : 'transparent',
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.3,
-                      shadowRadius: 4,
-                      elevation: surahStatus.isRevised ? 3 : 0,
-                      paddingLeft: 16,
-                      paddingRight: 10,
-                    },
-                  ]}
-                  onPress={handleMarkAllRevised}
-                >
-                  <RefreshCw size={16} color="#ffffff" />
-                  <Text style={[styles.actionButtonText, { marginLeft: 6 }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-                    {surahStatus.isRevised ? 'All Revised' : 'Mark All Revised'}
-                  </Text>
-                  <View style={{
-                    marginLeft: 4,
-                    padding: 4,
-                    borderRadius: 12,
-                    backgroundColor: surahStatus.isRevised ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
-                    width: 22,
-                    height: 22,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    {surahStatus.isRevised && <ArrowLeft size={14} color="#ffffff" />}
-                  </View>
-                </Pressable>
-              </>
-            ) : null}
           </View>
-        )}
-      </View>
+        </View>
+      )}
 
       {!selectedSurah && selectedJuz == null && navigationSource !== 'mustahabbah' && navigationSource !== 'stats' && (
         <View style={[styles.searchBarContainer, { flexDirection: 'row', alignItems: 'center', gap: 12 }]}>
@@ -2440,21 +2398,27 @@ export default function ReadScreen() {
                     ref={flatListRef}
                     data={surahPages[currentPageIndex]?.verses || []}
                     renderItem={renderVerseOptimized}
+                    getItemType={getVerseType}
                     keyExtractor={(item: any) => `verse-${item.id}-${item.surahId}-${item.verseNumber}`}
                     {...({ estimatedItemSize: ESTIMATED_ITEM_HEIGHT } as any)}
                     ListEmptyComponent={renderEmpty}
                     contentContainerStyle={styles.verseList}
+                    onScroll={handleVerseScroll}
+                    scrollEventThrottle={16}
                   />
                 ) : (
                   <FlashList
                     key={`verse-list-${verseListKey}`}
                     ref={flatListRef}
                     data={verses}
+                    getItemType={getVerseType}
                     renderItem={renderVerseOptimized}
                     keyExtractor={(item: any) => `verse-${item.id}-${item.surahId}-${item.verseNumber}`}
                     {...({ estimatedItemSize: ESTIMATED_ITEM_HEIGHT } as any)}
                     ListEmptyComponent={renderEmpty}
                     contentContainerStyle={styles.verseList}
+                    onScroll={handleVerseScroll}
+                    scrollEventThrottle={16}
                   />
                 )}
               </Animated.View>
@@ -2484,18 +2448,24 @@ export default function ReadScreen() {
                     key={`pagemode-juz-${selectedJuz}-${currentPageIndex}-${juzListKey}`}
                     ref={flatListRef}
                     data={juzPages[currentPageIndex]?.verses || []}
+                    getItemType={getVerseType}
                     keyExtractor={(item: any, index: number) => `juz-${item.id ?? item.verse_id}-${index}`}
                     {...({ estimatedItemSize: ESTIMATED_ITEM_HEIGHT } as any)}
                     renderItem={renderJuzPageVerse}
                     contentContainerStyle={[styles.versesContent, { backgroundColor: '#1a1a1a' }]}
+                    onScroll={handleVerseScroll}
+                    scrollEventThrottle={16}
                   />
                 ) : (
                   <FlashList
                     key={`juz-list-${juzListKey}`}
                     ref={flatListRef}
                     data={juzVerses}
+                    getItemType={getVerseType}
                     keyExtractor={(item: any, index: number) => `juz-${item.verse_id}-${item.chapter_id}-${item.verse_number}`}
                     {...({ estimatedItemSize: ESTIMATED_ITEM_HEIGHT } as any)}
+                    onScroll={handleVerseScroll}
+                    scrollEventThrottle={16}
                     renderItem={({ item, index }: { item: any; index: number }) => {
                       const isPlaying = currentlyPlayingVerse !== null &&
                         currentlyPlayingVerse.surahId === item.chapter_id &&
@@ -2541,6 +2511,7 @@ export default function ReadScreen() {
               contentContainerStyle={[styles.surahListContent, { backgroundColor: '#0B0E14' }]}
               onScroll={handleSurahListScroll}
               scrollEventThrottle={16}
+              estimatedItemSize={80}
             />
             <LinearGradient
               colors={['rgba(11, 14, 20, 0.8)', 'transparent']}
@@ -2698,5 +2669,123 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)'
+  },
+
+  // === Smart Progressive Header Styles ===
+  smartHeader: {
+    backgroundColor: '#1a1a1a',
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 8,
+  },
+  smartHeaderMinimal: {
+    paddingTop: 12,
+    paddingBottom: 6,
+  },
+  smartHeaderCollapsed: {
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+
+  // Row 1: Always visible
+  alwaysVisibleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 40,
+    marginBottom: 4,
+  },
+  compactSurahNumber: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#C5A059',
+    marginRight: 4,
+  },
+  compactSurahName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginRight: 8,
+    maxWidth: '35%',
+  },
+  compactSurahArabic: {
+    fontSize: 16,
+    fontFamily: 'ScheherazadeNew-Regular',
+    color: '#C5A059',
+    marginLeft: 4,
+    flex: 1,
+  },
+  compactPlayButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#333',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+    borderWidth: 1,
+    borderColor: '#555',
+  },
+  expandButton: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
+  },
+
+  // Row 2: Removed in refined layout
+
+  miniButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#333',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#555',
+    marginLeft: 8,
+  },
+
+  // Row 3: Only in full state
+  bulkActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    marginBottom: 4,
+    gap: 8,
+  },
+  bulkActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1a1a1a',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  bulkActionButtonActive: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+    borderWidth: 2,
+  },
+  bulkActionButtonRevised: {
+    backgroundColor: '#FF9800',
+    borderColor: '#FF9800',
+    borderWidth: 2,
+  },
+  bulkActionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#ffffff',
+    marginLeft: 6,
+  },
+  headerSeparator: {
+    height: 1,
+    backgroundColor: '#333',
+    marginTop: 8,
   },
 });

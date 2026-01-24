@@ -28,6 +28,7 @@ import { runFullDiagnostic } from './mushaf/utils/mushafDiagnostics';
 
 export default function SettingsScreen() {
   const colors = useCustomColors();
+  const [debugTapCount, setDebugTapCount] = useState(0);
 
   const {
     userName,
@@ -872,10 +873,22 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* App version label */}
-        <View style={styles.versionRow}>
+        {/* App version label - Tap 7 times to access debug screen */}
+        <TouchableOpacity 
+          style={styles.versionRow}
+          onPress={() => {
+            const newCount = debugTapCount + 1;
+            setDebugTapCount(newCount);
+            if (newCount >= 7) {
+              setDebugTapCount(0);
+              router.push('/push-debug');
+            }
+            // Reset counter after 2 seconds of inactivity
+            setTimeout(() => setDebugTapCount(0), 2000);
+          }}
+        >
           <Text style={styles.versionText}>Ver-2.0.0</Text>
-        </View>
+        </TouchableOpacity>
         <PageSettings
           visible={pageSettingsVisible}
           currentValue={defaultVersesPerPage}

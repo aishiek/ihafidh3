@@ -4,17 +4,16 @@ import { useCallback, useEffect, useState } from 'react';
 const MUSHAF_BOOKMARKS_KEY = '@mushaf:bookmarks';
 const MUSHAF_LAST_READ_KEY = '@mushaf:lastRead';
 
-interface LastReadData {
-  page: number;
-  timestamp: number;
-}
-
 /**
  * Hook to manage Mushaf bookmarks
  * Bookmarks are stored as a Set<number> of page numbers
  */
+/**
+ * Hook to manage Mushaf bookmarks
+ * Bookmarks are stored as a Set of page numbers
+ */
 export function useMushafBookmarks() {
-  const [bookmarks, setBookmarks] = useState<Set<number>>(new Set());
+  const [bookmarks, setBookmarks] = useState(new Set());
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Load bookmarks on mount
@@ -26,7 +25,7 @@ export function useMushafBookmarks() {
     try {
       const stored = await AsyncStorage.getItem(MUSHAF_BOOKMARKS_KEY);
       if (stored) {
-  const pages = JSON.parse(stored);
+        const pages = JSON.parse(stored);
         setBookmarks(new Set(pages));
       }
       setIsLoaded(true);
@@ -35,8 +34,7 @@ export function useMushafBookmarks() {
       setIsLoaded(true);
     }
   }, []);
-
-  const saveBookmarks = useCallback(async (newBookmarks: Set<number>) => {
+  const saveBookmarks = useCallback(async (newBookmarks) => {
     try {
       const pages = Array.from(newBookmarks);
       await AsyncStorage.setItem(MUSHAF_BOOKMARKS_KEY, JSON.stringify(pages));
@@ -51,7 +49,7 @@ export function useMushafBookmarks() {
    * If page is bookmarked, remove it. Otherwise, add it.
    */
   const toggleBookmark = useCallback(
-    (page: number) => {
+    (page) => {
       setBookmarks(prevBookmarks => {
         const newBookmarks = new Set(prevBookmarks);
         if (newBookmarks.has(page)) {
@@ -70,7 +68,7 @@ export function useMushafBookmarks() {
    * Add a bookmark for a page
    */
   const addBookmark = useCallback(
-    (page: number) => {
+    (page) => {
       setBookmarks(prevBookmarks => {
         if (prevBookmarks.has(page)) {
           return prevBookmarks; // Already bookmarked
@@ -88,7 +86,7 @@ export function useMushafBookmarks() {
    * Remove a bookmark for a page
    */
   const removeBookmark = useCallback(
-    (page: number) => {
+    (page) => {
       setBookmarks(prevBookmarks => {
         if (!prevBookmarks.has(page)) {
           return prevBookmarks; // Not bookmarked
@@ -106,7 +104,7 @@ export function useMushafBookmarks() {
    * Check if a page is bookmarked
    */
   const isBookmarked = useCallback(
-    (page: number): boolean => {
+    (page) => {
       return bookmarks.has(page);
     },
     [bookmarks]
@@ -127,9 +125,9 @@ export function useMushafBookmarks() {
   /**
    * Save last read page and timestamp
    */
-  const saveLastRead = useCallback(async (page: number) => {
+  const saveLastRead = useCallback(async (page) => {
     try {
-      const data: LastReadData = {
+      const data = {
         page,
         timestamp: Date.now(),
       };
@@ -142,11 +140,11 @@ export function useMushafBookmarks() {
   /**
    * Get last read page
    */
-  const getLastRead = useCallback(async (): Promise<LastReadData | null> => {
+  const getLastRead = useCallback(async () => {
     try {
       const stored = await AsyncStorage.getItem(MUSHAF_LAST_READ_KEY);
       if (stored) {
-  return JSON.parse(stored);
+        return JSON.parse(stored);
       }
       return null;
     } catch (error) {

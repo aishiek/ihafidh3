@@ -103,7 +103,7 @@ const TAJWEED_COLORS: Record<string, string> = {
   lam_shamsiyyah: '#AAAAAA',
   slnt: '#AAAAAA',
   silent: '#AAAAAA',
-  
+
   // Madd Rules - Orange (fixed from blue to match guide)
   madda_normal: '#FF9632',         // Orange - 2 beats
   madda_permissible: '#FF9632',    // Orange - 2-6 beats
@@ -112,25 +112,25 @@ const TAJWEED_COLORS: Record<string, string> = {
   madda_246: '#FF9632',
   madda_6: '#FF9632',
   madda_24: '#FF9632',
-  
+
   // Qalqalah - Red
   qalqalah: '#DD0008',
   qalqala: '#DD0008',
   qalaqah: '#DD0008',
   qlq: '#DD0008',
-  
+
   // Ghunnah & Nasal - Yellow (fixed from orange to match guide)
   ghunnah: '#FFD700',              // Yellow (not orange!)
   ghunna: '#FFD700',
   ghn: '#FFD700',
-  
+
   // Ikhfa - Pink
   ikhfa: '#FFB6C1',                // Pink
   ikhafa: '#FFB6C1',
   ikhfa_shaddah: '#FFB6C1',
   ikhafa_shaddah: '#FFB6C1',
   ikhf: '#FFB6C1',
-  
+
   // Idgham - Green
   idgham_wo_ghunnah: '#00C853',    // Green
   idgham_wo_ghunna: '#00C853',
@@ -147,7 +147,7 @@ const TAJWEED_COLORS: Record<string, string> = {
   idgh_ghn: '#00C853',
   idgh_w_ghn: '#00C853',
   idgh_mus: '#00C853',
-  
+
   // Meem Sakinah - Purple/Light Green
   ikhfa_shafawi: '#DDA0DD',        // Purple
   ikhafa_shafawi: '#DDA0DD',
@@ -155,7 +155,7 @@ const TAJWEED_COLORS: Record<string, string> = {
   idgham_shafawi: '#96CEB4',       // Light Green
   idghaam_shafawi: '#96CEB4',
   idghm_shfw: '#96CEB4',
-  
+
   // Iqlab - Blue
   iqlab: '#007AFF',
   iqlb: '#007AFF',
@@ -177,17 +177,19 @@ function parseAPITags(html: string): TajweedSegment[] {
   }
 
   const segments: TajweedSegment[] = [];
-  
+
   // Regex to match: <tajweed class="rule_name">text</tajweed>
-  const tajweedRegex = /<tajweed\s+class\s*=\s*["']([^"']+)["']\s*>([\s\S]*?)<\/tajweed>/gi;
-  
+  // Regex to match: <tajweed class="rule_name">text</tajweed>
+  // UPDATED: supports unquoted attributes too (common in API responses)
+  const tajweedRegex = /<tajweed\s+class\s*=\s*["']?([^"'\s>]+)["']?\s*>([\s\S]*?)<\/tajweed>/gi;
+
   let lastIndex = 0;
   const matches = Array.from(html.matchAll(tajweedRegex));
-  
+
   for (const match of matches) {
     const matchStart = match.index!;
     const matchEnd = matchStart + match[0].length;
-    
+
     // Add plain text before this tajweed tag
     if (matchStart > lastIndex) {
       const plainText = html.substring(lastIndex, matchStart);
@@ -201,12 +203,12 @@ function parseAPITags(html: string): TajweedSegment[] {
         });
       }
     }
-    
+
     // Add the tajweed segment from API
     const tajweedClass = match[1].toLowerCase();
     const text = cleanText(match[2]);
     const color = TAJWEED_COLORS[tajweedClass] || '#FFFFFF';
-    
+
     if (text) {
       segments.push({
         text,
@@ -215,10 +217,10 @@ function parseAPITags(html: string): TajweedSegment[] {
         source: 'api',
       });
     }
-    
+
     lastIndex = matchEnd;
   }
-  
+
   // Add remaining text after last tag
   if (lastIndex < html.length) {
     const remaining = html.substring(lastIndex);
@@ -232,12 +234,12 @@ function parseAPITags(html: string): TajweedSegment[] {
       });
     }
   }
-  
+
   // If no segments were found, return the entire text as plain
   if (segments.length === 0 && html) {
     return [{ text: cleanText(html) || html, color: '#FFFFFF', tajweedClass: null, source: 'api' }];
   }
-  
+
   return segments;
 }
 
@@ -247,17 +249,17 @@ function parseAPITags(html: string): TajweedSegment[] {
  */
 function applyAlgorithmicRules(segments: TajweedSegment[]): TajweedSegment[] {
   const enhanced: TajweedSegment[] = [];
-  
+
   for (const segment of segments) {
     // Skip segments that already have API tajweed tags
     if (segment.tajweedClass && API_TAGGED_RULES.has(segment.tajweedClass)) {
       enhanced.push(segment);
       continue;
     }
-    
+
     // Apply algorithmic detection to plain text segments
     const algorithmicSegments = TajweedParser.parse(segment.text);
-    
+
     for (const algSeg of algorithmicSegments) {
       // Check if algorithmic parser found a WASL-SAFE rule
       const rule = algSeg.rule?.toLowerCase();
@@ -270,13 +272,13 @@ function applyAlgorithmicRules(segments: TajweedSegment[]): TajweedSegment[] {
         rule.includes('idghaam') ||
         rule.includes('iqlab')
       );
-      
+
       // IMPORTANT: Exclude qalqalah from this pass
       const isQalqalah = rule && (
         rule.includes('qalqalah') ||
         rule.includes('qalqala')
       );
-      
+
       if (isWaslSafeRule && !isQalqalah) {
         enhanced.push({
           text: algSeg.text,
@@ -295,7 +297,7 @@ function applyAlgorithmicRules(segments: TajweedSegment[]): TajweedSegment[] {
       }
     }
   }
-  
+
   return enhanced;
 }
 
@@ -321,19 +323,19 @@ function applyAlgorithmicRules(segments: TajweedSegment[]): TajweedSegment[] {
 export function applyStopRules(segments: TajweedSegment[]): TajweedSegment[] {
   return segments.flatMap((seg, index) => {
     if (!seg.text) return [seg];
-    
+
     // Match: (prefix)(qalqalah_letter)(ALL_QURANIC_MARKS)
     // Includes: tanween, sukoon, madd alif (0670), stop symbols (06D6-06ED)
     // Example: "أَحَدٌ" → ["أَحَ", "د", "ٌ"]
     const match = seg.text.match(
       /^(.*?)([قطبجد])([\u064B-\u0652\u06D6-\u06ED\u0670]*)/
     );
-    
+
     // No qalqalah letter at end → return unchanged
     if (!match) return [seg];
-    
+
     const [, before, letter, marks] = match;
-    
+
     // Check if this is at a stop position (word/verse end)
     // Must check for: space, NBSP, zero-width chars, Quranic stop symbols
     const isEnd =
@@ -341,13 +343,13 @@ export function applyStopRules(segments: TajweedSegment[]): TajweedSegment[] {
       /^[\s\u00A0\u200B\u200C\u06D6-\u06ED]/.test(
         segments[index + 1].text
       );
-    
+
     // Not at stop → return unchanged (qalqalah only at waqf)
     if (!isEnd) return [seg];
-    
+
     // Split segment: white prefix + red qalqalah
     const result: TajweedSegment[] = [];
-    
+
     if (before) {
       result.push({
         text: before,
@@ -356,14 +358,14 @@ export function applyStopRules(segments: TajweedSegment[]): TajweedSegment[] {
         source: seg.source,
       });
     }
-    
+
     result.push({
       text: letter + marks,
       color: TAJWEED_COLORS.qalqalah,
       tajweedClass: 'qalqalah_waqf',
       source: 'algorithmic',
     });
-    
+
     return result;
   });
 }
@@ -383,27 +385,27 @@ export function applyStopRules(segments: TajweedSegment[]): TajweedSegment[] {
  * 3. Optional stop rules (Qalqalah at waqf - only if enableStopRules=true)
  */
 export function parseTajweedHTML(
-  html: string, 
+  html: string,
   options: TajweedOptions = {}
 ): TajweedSegment[] {
   const {
     enableAlgorithmic = true,
     enableStopRules = false,
   } = options;
-  
+
   if (!html) return [{ text: '', color: '#FFFFFF', tajweedClass: null, source: 'api' }];
 
   // Step 1: Parse API tags (Ham Wasl, Lam Shamsiyyah, Madd, Silent)
   let segments = parseAPITags(html);
-  
+
   // Step 2: Apply algorithmic detection for wasl-safe rules (Ghunnah, Ikhfa, etc.)
   if (enableAlgorithmic) {
     segments = applyAlgorithmicRules(segments);
   }
-  
+
   // NOTE: Stop rules (qalqalah) are applied AFTER sanitization in TajweedText.tsx
   // to prevent segment merging from destroying red coloring
-  
+
   return segments;
 }
 
@@ -411,7 +413,18 @@ export function parseTajweedHTML(
  * Clean text - remove HTML entities and extra tags
  */
 function cleanText(text: string): string {
-  return text
+  if (!text) return '';
+
+  // Preserve verse endings: <span class=end>١</span> -> ۝
+  // We use the glyph (U+06DD) as a logical marker. 
+  // The TajweedText component will manually overlay the correct verse number 
+  // inside this glyph to ensure perfect centering and alignment.
+  const withEndings = text.replace(
+    /<span\s+class\s*=\s*["']?end["']?\s*>\s*([0-9\u0660-\u0669]+)\s*<\/span>/gi,
+    '\u06DD'
+  );
+
+  return withEndings
     .replace(/<[^>]+>/g, '') // Remove any HTML tags
     .replace(/&nbsp;/g, ' ')
     .replace(/&lt;/g, '<')
@@ -426,32 +439,32 @@ function cleanText(text: string): string {
  * Debug helper - Shows hybrid parsing results
  */
 export function debugTajweedParsing(
-  html: string, 
+  html: string,
   options: TajweedOptions = {}
 ): void {
   if (!__DEV__) return; // Skip debug output in production
-  
+
   const {
     enableAlgorithmic = true,
     enableStopRules = false,
   } = options;
-  
+
   console.log('\n=== HYBRID TAJWEED PARSING DEBUG ===');
   console.log('Input HTML (first 150 chars):', html.substring(0, 150));
   console.log('Algorithmic detection:', enableAlgorithmic ? 'ENABLED' : 'DISABLED');
   console.log('Stop rules (Qalqalah):', enableStopRules ? 'ENABLED ⭐' : 'DISABLED');
-  
+
   const segments = parseTajweedHTML(html, options);
   console.log(`\nParsed ${segments.length} segments:`);
-  
+
   const apiCount = segments.filter(s => s.source === 'api' && s.tajweedClass).length;
   const algoCount = segments.filter(s => s.source === 'algorithmic' && s.tajweedClass).length;
   const qalqalahCount = segments.filter(s => s.tajweedClass?.includes('qalqalah')).length;
-  
+
   console.log(`  - API tags: ${apiCount}`);
   console.log(`  - Algorithmic (wasl-safe): ${algoCount - qalqalahCount}`);
   console.log(`  - Stop rules (Qalqalah): ${qalqalahCount}`);
-  
+
   segments.forEach((seg, i) => {
     if (seg.tajweedClass) {
       const preview = seg.text.length > 20 ? seg.text.substring(0, 20) + '...' : seg.text;
@@ -459,7 +472,7 @@ export function debugTajweedParsing(
       console.log(`  [${i}] "${preview}" → ${seg.color} (${seg.tajweedClass}) [${seg.source}] [${colorName}]`);
     }
   });
-  
+
   // Show Qalqalah specifically (critical for user's requirement!)
   const qalqalahSegments = segments.filter(s => s.tajweedClass?.includes('qalqalah') || s.tajweedClass?.includes('qalqala'));
   if (qalqalahSegments.length > 0) {
@@ -470,7 +483,7 @@ export function debugTajweedParsing(
   } else {
     console.log('\n⚠️ No Qalqalah segments found');
   }
-  
+
   // Show color usage stats
   const colorCounts = segments.reduce((acc, seg) => {
     if (seg.tajweedClass) {
@@ -478,7 +491,7 @@ export function debugTajweedParsing(
     }
     return acc;
   }, {} as Record<string, number>);
-  
+
   if (Object.keys(colorCounts).length > 0) {
     console.log('\nTajweed rule usage:');
     Object.entries(colorCounts).forEach(([rule, count]) => {
@@ -486,7 +499,7 @@ export function debugTajweedParsing(
       console.log(`  ${rule}: ${count}x [${source}]`);
     });
   }
-  
+
   console.log('=====================================\n');
 }
 

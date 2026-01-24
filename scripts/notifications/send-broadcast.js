@@ -102,8 +102,13 @@ async function sendBroadcast() {
                         },
                         payload: {
                             aps: {
+                                alert: {
+                                    title: title,
+                                    body: body,
+                                },
                                 sound: 'default',
                                 badge: 1,
+                                'content-available': 1,
                             }
                         }
                     },

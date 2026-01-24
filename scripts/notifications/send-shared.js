@@ -160,7 +160,17 @@ async function main() {
                         },
                         apns: {
                             headers: { 'apns-priority': '10' },
-                            payload: { aps: { sound: 'default', badge: 1 } }
+                            payload: {
+                                aps: {
+                                    alert: {
+                                        title: title,
+                                        body: body
+                                    },
+                                    sound: 'default',
+                                    badge: 1,
+                                    'content-available': 1
+                                }
+                            }
                         }
                     });
                     console.log(`✅ Fasting notification sent successfully (Message ID: ${result})`);
@@ -195,7 +205,17 @@ async function main() {
                     },
                     apns: {
                         headers: { 'apns-priority': '10' },
-                        payload: { aps: { sound: 'default', badge: 1 } }
+                        payload: {
+                            aps: {
+                                alert: {
+                                    title: "Daily Ayah",
+                                    body: "Read your Ayah of the Day"
+                                },
+                                sound: 'default',
+                                badge: 1,
+                                'content-available': 1
+                            }
+                        }
                     }
                 });
                 console.log(`✅ Daily Ayah sent successfully (Message ID: ${result})`);

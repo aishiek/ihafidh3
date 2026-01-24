@@ -1,6 +1,6 @@
 import notifee, { AndroidImportance } from '@notifee/react-native';
 import messaging from '@react-native-firebase/messaging';
-import { Platform } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
 
 export class PushNotificationService {
     /**
@@ -23,14 +23,34 @@ export class PushNotificationService {
      */
     private static async ensureIosRegistered(): Promise<boolean> {
         if (Platform.OS !== 'ios') return true;
-        
+
         try {
-            // FIX: Call as a function, not a property
-            const isReg = await messaging().isDeviceRegisteredForRemoteMessages();
-            
-            if (!isReg) {
-                await messaging().registerDeviceForRemoteMessages();
+            const ms = messaging();
+
+            // Some RNFB versions may not expose isDeviceRegisteredForRemoteMessages()
+            const hasIsRegistered = typeof ms.isDeviceRegisteredForRemoteMessages === 'function';
+            let isReg = false;
+
+            if (hasIsRegistered) {
+                try {
+                    isReg = await ms.isDeviceRegisteredForRemoteMessages();
+                } catch (e) {
+                    console.warn('[Push] isDeviceRegisteredForRemoteMessages threw:', e);
+                    isReg = false;
+                }
             }
+
+            if (!isReg) {
+                try {
+                    await ms.registerDeviceForRemoteMessages();
+                    // give native a moment
+                    return true;
+                } catch (regErr) {
+                    console.warn('[Push] registerDeviceForRemoteMessages failed:', regErr);
+                    return false;
+                }
+            }
+
             return true;
         } catch (e) {
             console.warn('[Push] iOS Registration Check Failed:', e);
@@ -63,10 +83,28 @@ export class PushNotificationService {
                 return;
             }
 
-            // 3. Permission Request
-            const authStatus = await messaging().requestPermission();
-            const enabled = authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-                           authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+            // 3. Permission Request (Platform-specific)
+            let enabled = false;
+            
+            if (Platform.OS === 'android') {
+                // Android 13+ requires POST_NOTIFICATIONS runtime permission
+                if (Platform.Version >= 33) {
+                    const granted = await PermissionsAndroid.request(
+                        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+                    );
+                    enabled = granted === PermissionsAndroid.RESULTS.GRANTED;
+                    console.log('[Push] Android 13+ permission:', granted);
+                } else {
+                    // Android 12 and below - notifications enabled by default
+                    enabled = true;
+                    console.log('[Push] Android <13 - notifications enabled by default');
+                }
+            } else {
+                // iOS
+                const authStatus = await messaging().requestPermission();
+                enabled = authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+                         authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+            }
 
             if (!enabled) {
                 console.log('[Push] Permission denied - notifications will not work');
@@ -74,12 +112,24 @@ export class PushNotificationService {
                 return;
             }
 
-            if (__DEV__) console.log('✅ Notification permission granted');
+            console.log('[Push] ✅ Notification permission granted');
 
             // 4. Token Logic
+            if (Platform.OS === 'ios') {
+                const apnsToken = await messaging().getAPNSToken();
+                if (apnsToken) {
+                    console.log('[Push] APNS Token linked:', apnsToken);
+                } else {
+                    console.error('[Push] Critical: No APNS Token. Check Xcode Capabilities.');
+                }
+            }
             try {
                 const token = await messaging().getToken();
-                console.log('[Push] FCM Token obtained:', token.substring(0, 30) + '...');
+                console.log('[Push] FCM Token obtained:', token);
+                // For easy copy-paste:
+                console.log('==== COPY THIS FCM TOKEN FOR TESTING ====');
+                console.log(token);
+                console.log('==========================================');
             } catch (tokenError) {
                 console.log('[Push] Failed to get token (expected on simulator):', tokenError);
             }
@@ -125,22 +175,36 @@ export class PushNotificationService {
 
             // 9. Topic Sync: Auto-subscribe to broadcast
             const offset = this.getTimezoneOffset();
-            await messaging().subscribeToTopic(`broadcast_${offset}`);
-            console.log(`[Push] Subscribed to broadcast topic: broadcast_${offset}`);
-
-            if (__DEV__) {
-                console.log('');
-                console.log('📍 Timezone Information:');
-                console.log(`   Offset: ${offset}`);
-                console.log(`   Topics subscribed: broadcast_${offset}`);
-                console.log('');
-                console.log('💡 Topic subscription happens when:');
-                console.log('   - Fasting notifications: Settings > Enable Fasting Reminders');
-                console.log('   - Daily Ayah: Settings > Enable Daily Ayah');
-                console.log('═'.repeat(50));
+            console.log(`[Push] Attempting to subscribe to: broadcast_${offset}`);
+            try {
+                // On iOS, add delay to ensure APNs token is registered
+                if (Platform.OS === 'ios') {
+                    const apnsToken = await messaging().getAPNSToken();
+                    if (!apnsToken) {
+                        console.warn('[Push] Warning: No APNs token yet, subscription may fail');
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    } else {
+                        console.log('[Push] APNs token confirmed before topic subscription');
+                    }
+                }
+                
+                await messaging().subscribeToTopic(`broadcast_${offset}`);
+                console.log(`[Push] ✅ Subscribed to broadcast: broadcast_${offset}`);
+                console.log(`[Push] 📍 Your timezone: UTC${offset[0] === '-' ? offset : '+' + offset}`);
+            } catch (broadcastErr) {
+                console.error(`[Push] ❌ Failed to subscribe to broadcast_${offset}:`, broadcastErr);
+                // Retry once after a delay
+                try {
+                    console.log('[Push] Retrying broadcast subscription in 2s...');
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    await messaging().subscribeToTopic(`broadcast_${offset}`);
+                    console.log(`[Push] ✅ Retry succeeded: broadcast_${offset}`);
+                } catch (retryErr) {
+                    console.error('[Push] ❌ Retry failed:', retryErr);
+                }
             }
 
-            console.log('[Push] Initialization complete');
+            console.log('[Push] ✅ Initialization complete');
         } catch (error) {
             console.error('[Push] Initialization Error:', error);
         }
@@ -151,13 +215,20 @@ export class PushNotificationService {
      */
     private static async syncTopic(baseName: string, enabled: boolean) {
         const isReady = await this.ensureIosRegistered();
-        if (!isReady) return;
+        if (!isReady) {
+            console.warn(`[Push] iOS not ready, skipping ${baseName} sync`);
+            return;
+        }
 
         const offset = this.getTimezoneOffset();
         const topic = `${baseName}_${offset}`;
 
         try {
             if (enabled) {
+                // On iOS, add a small delay to ensure APNs token is ready
+                if (Platform.OS === 'ios') {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
                 await messaging().subscribeToTopic(topic);
                 await messaging().unsubscribeFromTopic(baseName); // Cleanup legacy
                 console.log(`[Push] ✅ Subscribed to: ${topic}`);
@@ -168,6 +239,7 @@ export class PushNotificationService {
             }
         } catch (e) {
             console.error(`[Push] Topic Sync Error (${topic}):`, e);
+            throw e; // Re-throw to propagate error
         }
     }
 
@@ -180,10 +252,79 @@ export class PushNotificationService {
     }
 
     /**
+     * Force re-subscribe to all topics (for debugging/manual refresh)
+     */
+    static async forceResubscribeAll(fastingEnabled: boolean, ayahEnabled: boolean): Promise<void> {
+        const isReady = await this.ensureIosRegistered();
+        if (!isReady) {
+            throw new Error('iOS device not ready for remote notifications');
+        }
+
+        const offset = this.getTimezoneOffset();
+        
+        // Verify APNs token on iOS
+        if (Platform.OS === 'ios') {
+            const apnsToken = await messaging().getAPNSToken();
+            if (!apnsToken) {
+                throw new Error('No APNs token available. Cannot subscribe to topics.');
+            }
+            console.log('[Push] APNs token verified:', apnsToken.substring(0, 20) + '...');
+        }
+
+        // Wait a moment for iOS to be fully ready
+        if (Platform.OS === 'ios') {
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        const results: string[] = [];
+        
+        // Subscribe to broadcast (always)
+        try {
+            await messaging().subscribeToTopic(`broadcast_${offset}`);
+            results.push(`✅ broadcast_${offset}`);
+            console.log(`[Push] ✅ Subscribed to: broadcast_${offset}`);
+        } catch (e: any) {
+            results.push(`❌ broadcast_${offset}: ${e.message}`);
+            throw new Error(`Failed to subscribe to broadcast: ${e.message}`);
+        }
+
+        // Subscribe to fasting if enabled
+        if (fastingEnabled) {
+            try {
+                await messaging().subscribeToTopic(`fasting_${offset}`);
+                results.push(`✅ fasting_${offset}`);
+                console.log(`[Push] ✅ Subscribed to: fasting_${offset}`);
+            } catch (e: any) {
+                results.push(`❌ fasting_${offset}: ${e.message}`);
+            }
+        }
+
+        // Subscribe to daily_ayah if enabled
+        if (ayahEnabled) {
+            try {
+                await messaging().subscribeToTopic(`daily_ayah_${offset}`);
+                results.push(`✅ daily_ayah_${offset}`);
+                console.log(`[Push] ✅ Subscribed to: daily_ayah_${offset}`);
+            } catch (e: any) {
+                results.push(`❌ daily_ayah_${offset}: ${e.message}`);
+            }
+        }
+
+        console.log('[Push] Re-subscribe results:', results);
+    }
+
+    /**
      * Get the current FCM token
      */
     static async getToken(): Promise<string | null> {
         try {
+            // Ensure iOS is registered for remote messages before retrieving token
+            const isReady = await this.ensureIosRegistered();
+            if (!isReady) {
+                console.error('[Push] Cannot get token: device not registered for remote messages');
+                return null;
+            }
+
             const token = await messaging().getToken();
             return token;
         } catch (error) {
@@ -197,11 +338,24 @@ export class PushNotificationService {
      */
     static async isEnabled(): Promise<boolean> {
         try {
-            const authStatus = await messaging().hasPermission();
-            return (
-                authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-                authStatus === messaging.AuthorizationStatus.PROVISIONAL
-            );
+            if (Platform.OS === 'android') {
+                // Android 13+ check
+                if (Platform.Version >= 33) {
+                    const result = await PermissionsAndroid.check(
+                        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+                    );
+                    return result;
+                }
+                // Android 12 and below - always enabled
+                return true;
+            } else {
+                // iOS
+                const authStatus = await messaging().hasPermission();
+                return (
+                    authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+                    authStatus === messaging.AuthorizationStatus.PROVISIONAL
+                );
+            }
         } catch (error) {
             console.error('[Push] Failed to check permission:', error);
             return false;

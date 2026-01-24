@@ -113,7 +113,9 @@ export function quranComTajweedHtmlToRnTajweedMarkup(input: string): string {
   );
 
   // Remove Quran.com end markers like: <span class=end>١</span>
-  out = out.replace(/<span\s+class\s*=\s*"?end"?\s*>\s*([^<]*?)\s*<\/span>/g, '$1');
+  // We replace with the decorative marker (U+06DD) and remove the raw digit
+  // so TajweedText can manually overlay the correct number with perfect alignment.
+  out = out.replace(/<span\s+class\s*=\s*"?end"?\s*>\s*([^<]*?)\s*<\/span>/g, '\u06DD');
 
   // Drop any other tags defensively
   out = out.replace(/<[^>]+>/g, '');

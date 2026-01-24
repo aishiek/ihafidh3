@@ -85,34 +85,9 @@ export interface SettingsState extends AppSettings {
   setLastDismissedVersion: (version: string) => void;
 }
 
-// Initialize store with values from AsyncStorage
-const initializeStore = async (set: any) => {
-  try {
-    const [userName, userEmail] = await Promise.all([
-      AsyncStorage.getItem('user_name'),
-      AsyncStorage.getItem('user_email')
-    ]);
-
-    if (userName) {
-      console.log('Initializing store with values from AsyncStorage:', { userName });
-      set({
-        userName: userName || '',
-      });
-    }
-    if (userEmail) {
-      set({ userEmail: userEmail || '' });
-    }
-  } catch (error) {
-    console.error('Error initializing settings store:', error);
-  }
-};
-
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => {
-      // Initialize store when created
-      initializeStore(set);
-
       return {
         theme: 'dark',
         repeatMode: 1,
@@ -122,7 +97,7 @@ export const useSettingsStore = create<SettingsState>()(
         showTranslation: true,
         showTransliteration: false,
         autoPlayAudio: false,
-        notificationsEnabled: false,
+        notificationsEnabled: true,
         reminderTime: '09:00',
         userName: '',
         userEmail: '',
@@ -135,7 +110,7 @@ export const useSettingsStore = create<SettingsState>()(
         mushafRepeatMode: 1,
         mushafInfiniteLoop: false,
         mushafRepeatScope: 'verse',
-        ayahDailyNotificationsEnabled: false,
+        ayahDailyNotificationsEnabled: true,
         notificationSettings: {
           dailyAyah: false,
           dailyVerseReminder: false,
