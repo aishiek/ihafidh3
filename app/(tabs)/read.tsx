@@ -12,17 +12,17 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import PageAudioManager, { AudioState, getPageAudioManager } from '../audio/PageAudioManager';
 
 import {
-    ActivityIndicator,
-    Alert,
-    Animated,
-    Modal,
-    PanResponder,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Modal,
+  PanResponder,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 import JuzMemorization from '@/components/JuzMemorization';
@@ -35,13 +35,13 @@ import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import type { Surah, Verse } from '@/types';
 import {
-    getAudioUrl,
-    pauseAudio,
-    pauseSurahAudio,
-    playAudio,
-    playSurahAudioWithFallback,
-    resumeSurahAudio,
-    stopSurahAudio,
+  getAudioUrl,
+  pauseAudio,
+  pauseSurahAudio,
+  playAudio,
+  playSurahAudioWithFallback,
+  resumeSurahAudio,
+  stopSurahAudio,
 } from '@/utils/audioUtils';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
@@ -158,6 +158,7 @@ export default function ReadScreen() {
 
   // Local transient toast (small non-blocking feedback)
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [hasSeenBulkHint, setHasSeenBulkHint] = useState(false);
   const toastAnim = useRef(new Animated.Value(0)).current;
   const showToast = useCallback((msg: string, duration = 1400) => {
     setToastMessage(msg);
@@ -166,6 +167,18 @@ export default function ReadScreen() {
       Animated.timing(toastAnim, { toValue: 0, duration: 220, useNativeDriver: true }).start(() => setToastMessage(null));
     }, duration);
   }, [toastAnim]);
+
+  // Load first-time hint status from AsyncStorage
+  useEffect(() => {
+    (async () => {
+      try {
+        const seen = await AsyncStorage.getItem('@bulk_hint_seen');
+        setHasSeenBulkHint(seen === 'true');
+      } catch (e) {
+        console.error('[read] Failed to load bulk hint status', e);
+      }
+    })();
+  }, []);
 
   // CRITICAL FIX: Force FlashList to rebuild when verse data changes (Fix for recycling issues)
   const [verseListKey, setVerseListKey] = useState(0);
@@ -206,15 +219,15 @@ export default function ReadScreen() {
   const lastScrollY = useRef(0);
   const lastHeaderStateChangeY = useRef(0); // For hysteresis - track last state change position
 
-  // Explicit header heights per state (for layout stability)
-  const HEADER_HEIGHT_FULL = 120; // Full header with all controls and bulk actions (no metadata row)
-  const HEADER_HEIGHT_MINIMAL = 56; // Single row with all controls, no bulk actions
-  const HEADER_HEIGHT_COLLAPSED = 56; // Same as minimal, just Arabic name hidden
+  // Explicit header heights per state (FIXED HEIGHT TO ELIMINATE JITTER)
+  const HEADER_HEIGHT_FULL = 100;
+  const HEADER_HEIGHT_MINIMAL = 100;
+  const HEADER_HEIGHT_COLLAPSED = 100;
 
   // Scroll thresholds with hysteresis buffer to prevent jittery state changes
   const SCROLL_THRESHOLD_MINIMAL = 100; // Collapse to minimal at 100px
   const SCROLL_THRESHOLD_COLLAPSED = 300; // Collapse to collapsed at 300px
-  const HYSTERESIS_BUFFER = 30; // Require 30px scroll in opposite direction to undo state change
+  const HYSTERESIS_BUFFER = 60; // Increased buffer for smoother transitions
 
   // Guard against FlashList scroll jumps (sudden large scroll position changes)
   const MAX_SCROLL_JUMP = 500; // Ignore scroll events with jumps larger than this
@@ -586,23 +599,25 @@ export default function ReadScreen() {
     const distanceSinceLastChange = Math.abs(currentScrollY - lastHeaderStateChangeY.current);
 
     if (direction === 'down') {
-      // Scrolling down - progressively collapse
-      if (currentScrollY > SCROLL_THRESHOLD_COLLAPSED && headerState !== 'collapsed') {
+      // Scrolling down - collapse to single row, show Arabic only
+      if (currentScrollY > SCROLL_THRESHOLD_MINIMAL && headerState === 'full') {
         setHeaderState('collapsed');
         lastHeaderStateChangeY.current = currentScrollY;
-      } else if (currentScrollY > SCROLL_THRESHOLD_MINIMAL && headerState === 'full') {
-        setHeaderState('minimal');
-        lastHeaderStateChangeY.current = currentScrollY;
+
+        // One-time hint for bulk actions
+        if (!hasSeenBulkHint) {
+          showToast('Tap ⋮ for bulk actions', 2500);
+          setHasSeenBulkHint(true);
+          AsyncStorage.setItem('@bulk_hint_seen', 'true').catch(e =>
+            console.error('[read] Failed to save bulk hint status', e)
+          );
+        }
       }
     } else {
-      // Scrolling up - progressively expand (with hysteresis)
-      // Only expand if we've scrolled far enough in the opposite direction
+      // Scrolling up - expand back to full view
       if (distanceSinceLastChange > HYSTERESIS_BUFFER) {
         if (currentScrollY < SCROLL_THRESHOLD_MINIMAL && headerState !== 'full') {
           setHeaderState('full');
-          lastHeaderStateChangeY.current = currentScrollY;
-        } else if (currentScrollY < SCROLL_THRESHOLD_COLLAPSED && headerState === 'collapsed') {
-          setHeaderState('minimal');
           lastHeaderStateChangeY.current = currentScrollY;
         }
       }
@@ -2233,15 +2248,16 @@ export default function ReadScreen() {
               {selectedSurah ? (
                 <>
                   <Text style={styles.compactSurahNumber}>{selectedSurah.id}.</Text>
-                  <Text style={styles.compactSurahName} numberOfLines={1}>
-                    {selectedSurah.englishName}
-                  </Text>
-                  {/* Arabic name - hide ONLY in COLLAPSED */}
-                  {headerState !== 'collapsed' && (
-                    <Text style={styles.compactSurahArabic} numberOfLines={1}>
-                      {selectedSurah.arabicName}
+                  {/* English name - HIDE in collapsed to save space */}
+                  {headerState === 'full' && (
+                    <Text style={styles.compactSurahName} numberOfLines={1}>
+                      {selectedSurah.englishName}
                     </Text>
                   )}
+                  {/* Arabic name - ALWAYS visible in this new simplified design */}
+                  <Text style={styles.compactSurahArabic} numberOfLines={1}>
+                    {selectedSurah.arabicName}
+                  </Text>
                 </>
               ) : (
                 <Text style={styles.compactSurahName} numberOfLines={1}>Juz {selectedJuz}</Text>
@@ -2315,7 +2331,10 @@ export default function ReadScreen() {
             {/* Expand menu (⋮) - ONLY if Surah selected OR in Page Mode OR Juz selected */}
             {headerState !== 'full' && (selectedSurah || selectedJuz != null || isPageModeActive) && (
               <TouchableOpacity
-                onPress={() => setHeaderState('full')}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setHeaderState('full');
+                }}
                 style={styles.expandButton}
                 accessibilityLabel="Show all controls"
               >
