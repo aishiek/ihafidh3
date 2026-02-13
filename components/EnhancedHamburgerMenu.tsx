@@ -10,21 +10,23 @@ import { StateMigrationUtils, useContextAwareTheme } from '@/utils/stateManageme
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import {
-    Bookmark as BookmarkIcon,
-    Calendar,
-    MapPin,
-    Menu,
-    Moon,
-    X,
+  Bookmark as BookmarkIcon,
+  Calendar,
+  MapPin,
+  Menu,
+  Moon,
+  Sparkles,
+  X
 } from 'lucide-react-native';
+
 import React, { useState } from 'react';
 import {
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useMushafBookmarks } from '../app/mushaf/hooks/useMushafBookmarks';
 
@@ -58,7 +60,7 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
 
   // Use unified theme with automatic detection
   const { theme, isDark, setTheme, setColorScheme, raw } = useUnifiedTheme('auto', fastingContext);
-  
+
   // Demonstrate feature-specific theming
   const fastingTheme = useContextAwareTheme('fasting', fastingContext);
   const quranTheme = useContextAwareTheme('quran');
@@ -92,6 +94,19 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
       }
     },
     {
+      id: 'quranic-duas',
+      title: 'Quranic Duas',
+      subtitle: 'Supplications from the Quran',
+      icon: Sparkles,
+      color: '#D4AF37',
+      feature: 'quran',
+      onPress: () => {
+        setSelectedFeature('quran');
+        setIsMenuVisible(false);
+        router.push('/(tabs)/duas');
+      }
+    },
+    {
       id: 'bookmarks',
       title: 'Bookmarks',
       subtitle: 'Your saved verses',
@@ -99,7 +114,7 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
       color: '#9C27B0',
       feature: 'quran',
       onPress: async () => {
-        try { await Haptics.selectionAsync(); } catch {}
+        try { await Haptics.selectionAsync(); } catch { }
         setSelectedFeature('quran');
         setIsMenuVisible(false);
         router.push('/bookmarks');
@@ -244,6 +259,8 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
       justifyContent: 'center',
       alignItems: 'center',
       marginRight: 16,
+      borderWidth: 1,
+      borderColor: 'rgba(212, 175, 55, 0.2)',
     },
     menuItemContent: {
       flex: 1,
@@ -351,15 +368,15 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
               {/* Menu Items */}
               {menuItems.map((item) => {
                 const isSelected = selectedFeature === item.feature;
-                
+
                 return (
                   <TouchableOpacity
                     key={item.id}
                     style={[
                       styles.menuItem,
-                      { 
+                      {
                         borderLeftColor: item.color,
-                        backgroundColor: isSelected ? theme.surfaceElevated : theme.surface 
+                        backgroundColor: isSelected ? theme.surfaceElevated : theme.surface
                       }
                     ]}
                     onPress={item.onPress}

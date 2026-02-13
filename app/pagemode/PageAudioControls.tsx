@@ -96,9 +96,9 @@ export const PageAudioControls: React.FC<PageAudioControlsProps> = ({ verses, re
 
   return (
     <View style={styles.controlsContainer}>
-      <TouchableOpacity 
-        onPress={handlePlayPress} 
-        style={[styles.playButton, isPlaying && styles.disabled]} 
+      <TouchableOpacity
+        onPress={handlePlayPress}
+        style={[styles.playButton, isPlaying && styles.disabled]}
         disabled={isPlaying}
         accessibilityLabel={isPlaying ? 'Audio playing' : 'Play page audio'}
         accessibilityRole="button"
@@ -125,8 +125,8 @@ export const PageAudioControls: React.FC<PageAudioControlsProps> = ({ verses, re
       </TouchableOpacity>
 
       {isPlaying && (
-        <TouchableOpacity 
-          onPress={handlePauseResume} 
+        <TouchableOpacity
+          onPress={handlePauseResume}
           style={styles.inlineButton}
           accessibilityLabel={isPaused ? 'Resume playback' : 'Pause playback'}
           accessibilityRole="button"
@@ -136,8 +136,8 @@ export const PageAudioControls: React.FC<PageAudioControlsProps> = ({ verses, re
       )}
 
       {isPlaying && (
-        <TouchableOpacity 
-          onPress={handleStop} 
+        <TouchableOpacity
+          onPress={handleStop}
           style={styles.inlineButton}
           accessibilityLabel="Stop playback"
           accessibilityRole="button"
@@ -148,7 +148,7 @@ export const PageAudioControls: React.FC<PageAudioControlsProps> = ({ verses, re
 
       {isPlaying && (
         <View style={styles.verseIndicatorContainer}>
-          <Text style={styles.verseIndicator}>Verse {currentVerse + 1} of {verses.length}</Text>
+          <Text style={styles.verseIndicator}>{currentVerse + 1} of {verses.length}</Text>
         </View>
       )}
 
@@ -160,8 +160,8 @@ export const PageAudioControls: React.FC<PageAudioControlsProps> = ({ verses, re
 const styles = StyleSheet.create({
   downloadContainer: { padding: 12, alignItems: 'center', backgroundColor: '#111', borderRadius: 8 },
   downloadText: { marginTop: 8, color: '#ddd' },
-  controlsContainer: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 8 },
-  playButton: { backgroundColor: '#FFD700', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8 },
+  controlsContainer: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 6 },
+  playButton: { backgroundColor: '#FFD700', paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8 },
   playButtonText: { color: '#111', fontWeight: '700' },
   repeatButton: {
     backgroundColor: '#FFD700',
@@ -178,7 +178,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   inlineButton: { marginLeft: 8 },
-  verseIndicatorContainer: { flex: 1, alignItems: 'center' },
+  verseIndicatorContainer: { alignItems: 'center', minWidth: 40 },
   verseIndicator: { color: '#aaa', fontSize: 12 },
   disabled: { opacity: 0.6 }
 });

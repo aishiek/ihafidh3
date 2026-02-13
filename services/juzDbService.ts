@@ -19,10 +19,10 @@ let initPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 async function isConnectionAlive(): Promise<boolean> {
   if (!db) return false;
   try {
-  // Simple lightweight query to validate connection
-  // Use getFirstAsync for consistency with other calls
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (db as any).getFirstAsync('SELECT 1 as ok', []);
+    // Simple lightweight query to validate connection
+    // Use getFirstAsync for consistency with other calls
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (db as any).getFirstAsync('SELECT 1 as ok', []);
     return true;
   } catch (err) {
     logError('juzDbService', 'Connection health check failed', err);
@@ -47,15 +47,15 @@ async function loadAssetPath(): Promise<string> {
     return ASSET_PATH;
   }
   try {
-  // For binary files like .sqlite3, use Asset.fromModule with require
-  // But specify it as a module reference. Use a single-level relative path
-  // from the `services` directory to the project's `assets` folder.
-  const asset = Asset.fromModule(require('../assets/database/AlQurandb.sqlite3'));
-    
+    // For binary files like .sqlite3, use Asset.fromModule with require
+    // But specify it as a module reference. Use a single-level relative path
+    // from the `services` directory to the project's `assets` folder.
+    const asset = Asset.fromModule(require('../assets/database/AlQurandb.sqlite3'));
+
     if (!asset) {
       throw new Error('Unable to resolve AlQurandb.sqlite3 asset');
     }
-    
+
     log('juzDbService', 'Asset module found, downloading...');
     await asset.downloadAsync();
     ASSET_PATH = asset.localUri || asset.uri;
@@ -63,7 +63,7 @@ async function loadAssetPath(): Promise<string> {
     return ASSET_PATH;
   } catch (err) {
     logError('juzDbService', 'Failed to load asset path', err);
-    
+
     // Fallback: try to load from app bundle directly
     try {
       const bundlePath = `${FileSystem.documentDirectory}../AlQurandb.sqlite3`;
@@ -76,7 +76,7 @@ async function loadAssetPath(): Promise<string> {
     } catch (fallbackErr) {
       logError('juzDbService', 'Fallback also failed', fallbackErr);
     }
-    
+
     throw new Error('Unable to resolve AlQurandb.sqlite3 asset.');
   }
 }
@@ -105,14 +105,14 @@ async function copyDatabaseFile(): Promise<void> {
         to: DB_PATH,
       });
       log('juzDbService', 'Successfully copied DB to SQLite directory');
-      
+
       // CRITICAL: Android needs time for file system to sync
       // Without this, SQLite may try to open the file before it's fully written
       if (Platform.OS === 'android') {
         log('juzDbService', 'Android detected - waiting for file system sync...');
         await new Promise(resolve => setTimeout(resolve, 800));
       }
-      
+
       // Validate the copied file
       const copiedInfo = await FileSystem.getInfoAsync(DB_PATH);
       if (!copiedInfo.exists) {
@@ -194,49 +194,49 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 
 async function initializeDatabase(): Promise<SQLite.SQLiteDatabase> {
   log('juzDbService', 'Starting database initialization...');
-  
+
   try {
     // Ensure DB is copied to the file system
     await ensureDbCopied();
-    
+
     // Try to open database with retry logic
     let database: SQLite.SQLiteDatabase | null = null;
     let lastError: Error | null = null;
-    
+
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         log('juzDbService', `Attempting to open database (attempt ${attempt}/3)...`);
-        
+
         // Use async version for better Android compatibility
         database = await SQLite.openDatabaseAsync(DB_NAME);
-        
+
         // Validate database is readable with a test query
         const testResult = await database.getFirstAsync<{ ok: number }>(
           'SELECT 1 as ok'
         );
-        
+
         if (!testResult || testResult.ok !== 1) {
           throw new Error('Database validation failed - test query returned unexpected result');
         }
-        
+
         // Verify verses table exists and has data
         const verseCount = await database.getFirstAsync<{ count: number }>(
           'SELECT COUNT(*) as count FROM verses LIMIT 1'
         );
-        
+
         log('juzDbService', 'Database opened and validated successfully:', {
           testQuery: testResult,
           hasVerses: verseCount && verseCount.count > 0,
         });
-        
+
         // Success!
         isInitialized = true;
         break;
-        
+
       } catch (err) {
         lastError = err as Error;
         logError('juzDbService', `Database open attempt ${attempt} failed:`, err);
-        
+
         // Close any partially opened connection
         if (database) {
           try {
@@ -246,7 +246,7 @@ async function initializeDatabase(): Promise<SQLite.SQLiteDatabase> {
           }
           database = null;
         }
-        
+
         if (attempt < 3) {
           // Exponential backoff: 500ms, 1000ms
           const delay = 500 * attempt;
@@ -255,26 +255,26 @@ async function initializeDatabase(): Promise<SQLite.SQLiteDatabase> {
         }
       }
     }
-    
+
     if (!database) {
       const errorMsg = `Failed to open database after 3 attempts. Last error: ${lastError?.message || 'Unknown error'}`;
       logError('juzDbService', errorMsg);
-      
+
       // Show user-facing error on device
       Alert.alert(
         '❌ Database Error',
         'Unable to load Quran database. Please restart the app. If the problem persists, try reinstalling the app.\n\nError: ' + (lastError?.message || 'Unknown'),
         [{ text: 'OK' }]
       );
-      
+
       throw new Error(errorMsg);
     }
-    
+
     return database;
-    
+
   } catch (error) {
     logError('juzDbService', 'Database initialization failed completely:', error);
-    
+
     // Show critical error to user
     if (error instanceof Error && !error.message.includes('Failed to open database')) {
       Alert.alert(
@@ -283,7 +283,7 @@ async function initializeDatabase(): Promise<SQLite.SQLiteDatabase> {
         [{ text: 'OK' }]
       );
     }
-    
+
     throw error;
   }
 }
@@ -352,23 +352,23 @@ export async function fetchVersesForJuz(juzId: number): Promise<JuzVerse[]> {
     log('juzDbService', 'Executing SQL query with juzId:', juzId);
     const rows = await database.getAllAsync<JuzVerse>(sql, [juzId]);
     log('juzDbService', `Query returned ${rows.length} verses`);
-    
+
     if (!rows || rows.length === 0) {
       throw new Error(`No verses found for Juz ${juzId} in database`);
     }
-    
+
     return rows;
   } catch (error) {
     const errorMsg = `Failed to fetch verses for Juz ${juzId}: ${error instanceof Error ? error.message : 'Unknown error'}`;
     logError('juzDbService', 'Error fetching verses for juz', error);
-    
+
     // Show user-friendly error
     Alert.alert(
       '❌ Error Loading Juz',
       `Cannot load Juz ${juzId}. Please try again.\n\n${error instanceof Error ? error.message : 'Unknown error'}`,
       [{ text: 'OK' }]
     );
-    
+
     throw new Error(errorMsg);
   }
 }
@@ -397,6 +397,36 @@ export async function fetchVerseById(verseId: number): Promise<JuzVerse | null> 
   } catch (error) {
     logError('juzDbService', 'Error fetching verse by ID', error);
     throw new Error(`Failed to fetch verse ${verseId}`);
+  }
+}
+
+export async function fetchVersesByIds(verseIds: number[]): Promise<JuzVerse[]> {
+  log('juzDbService', 'fetchVersesByIds called with count:', verseIds.length);
+  if (verseIds.length === 0) return [];
+
+  try {
+    const database = await getDatabase();
+    const placeholders = verseIds.map(() => '?').join(',');
+    const sql = `
+      SELECT 
+        v.id as verse_id, 
+        v.chapter_id, 
+        v.number as verse_number, 
+        v.content as ayah, 
+        v.page_id as page_id,
+        v.part_id as part_id,
+        MAX(CASE WHEN i.collection_id = 2 THEN i.content ELSE NULL END) as translation, 
+        MAX(CASE WHEN i.collection_id = 3 THEN i.content ELSE NULL END) as transliteration 
+      FROM verses v 
+      LEFT JOIN items i ON v.id = i.verse_id 
+      WHERE v.id IN (${placeholders})
+      GROUP BY v.id
+    `;
+    const rows = await database.getAllAsync<JuzVerse>(sql, verseIds);
+    return rows;
+  } catch (error) {
+    logError('juzDbService', 'Error fetching verses by IDs', error);
+    throw new Error(`Failed to fetch verses batch`);
   }
 }
 
@@ -434,23 +464,23 @@ export async function fetchVersesByChapter(chapterId: number): Promise<JuzVerse[
       // keep quiet on inspection failures
       log('juzDbService', 'Warning: failed to validate chapter_id on returned rows', e);
     }
-    
+
     if (!rows || rows.length === 0) {
       throw new Error(`No verses found for chapter ${chapterId} in database`);
     }
-    
+
     return rows;
   } catch (error) {
     const errorMsg = `Failed to fetch verses for chapter ${chapterId}: ${error instanceof Error ? error.message : 'Unknown error'}`;
     logError('juzDbService', 'Error fetching verses by chapter', error);
-    
+
     // Show user-friendly error
     Alert.alert(
       '❌ Error Loading Surah',
       `Cannot load Surah ${chapterId}. Please try again.\n\n${error instanceof Error ? error.message : 'Unknown error'}`,
       [{ text: 'OK' }]
     );
-    
+
     throw new Error(errorMsg);
   }
 }

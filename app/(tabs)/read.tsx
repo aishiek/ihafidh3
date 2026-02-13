@@ -104,7 +104,7 @@ export default function ReadScreen() {
   const [tab, setTab] = useState<'surah' | 'juz'>('surah');
   const [selectedSurah, setSelectedSurah] = useState<Surah | null>(null);
   const [selectedJuz, setSelectedJuz] = useState<number | null>(null);
-  const [navigationSource, setNavigationSource] = useState<'surahList' | 'juzList' | 'mustahabbah' | 'continueReading' | 'stats' | null>(null);
+  const [navigationSource, setNavigationSource] = useState<'surahList' | 'juzList' | 'mustahabbah' | 'continueReading' | 'stats' | 'quranic_duas' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [verses, setVerses] = useState<Verse[]>([]);
   const [juzVerses, setJuzVerses] = useState<JuzVerse[]>([]);
@@ -868,6 +868,15 @@ export default function ReadScreen() {
         // Ensure Page Mode is exited when going back to lists
         try { exitPageMode(); } catch { }
         console.log('[read] Back from verses to list view - clearing params');
+
+        // Custom back navigation for Dua list
+        if (navigationSource === 'quranic_duas') {
+          router.push('/(tabs)/duas');
+          setNavigationSource(null);
+          setSelectedSurah(null);
+          return;
+        }
+
         // CRITICAL: Clear URL params to allow fresh navigation next time
         router.replace('/(tabs)/read');
         setSelectedJuz(null);
@@ -1748,6 +1757,8 @@ export default function ReadScreen() {
           setNavigationSource('mustahabbah');
         } else if (paramSource === 'stats') {
           setNavigationSource('stats');
+        } else if (paramSource === 'quranic_duas') {
+          setNavigationSource('quranic_duas');
         } else if (paramSource === 'continueReading' || !paramSource) {
           // Continue Reading doesn't pass source, or no source = from home
           setNavigationSource('continueReading');

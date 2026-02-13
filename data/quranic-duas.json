@@ -1,0 +1,1010 @@
+[
+    {
+        "id": "rabbana_001",
+        "surahNumber": 2,
+        "verseNumber": 127,
+        "category": "Rabbana",
+        "theme": "Acceptance of service",
+        "juz": 1,
+        "arabicSnippet": "رَبَّنَا تَقَبَّلْ مِنَّا",
+        "prophet": "Ibrahim AS & Ismail AS",
+        "context": "Dua made while building the Ka'bah.",
+        "tags": [
+            "acceptance",
+            "service",
+            "worship"
+        ]
+    },
+    {
+        "id": "rabbana_002",
+        "surahNumber": 2,
+        "verseNumber": 128,
+        "category": "Rabbana",
+        "theme": "To live and die as a Muslim",
+        "juz": 1,
+        "arabicSnippet": "رَبَّنَا وَاجْعَلْنَا مُسْلِمَيْنِ لَكَ",
+        "prophet": "Ibrahim AS & Ismail AS",
+        "context": "Asking for their progeny to be Muslim.",
+        "tags": [
+            "progeny",
+            "submission",
+            "islam"
+        ]
+    },
+    {
+        "id": "rabbana_003",
+        "surahNumber": 2,
+        "verseNumber": 201,
+        "category": "Rabbana",
+        "theme": "Success in this life & hereafter",
+        "juz": 2,
+        "arabicSnippet": "رَبَّنَا آتِنَا فِي الدُّنْيَا حَسَنَةً",
+        "context": "Comprehensive dua for every good.",
+        "tags": [
+            "success",
+            "hereafter",
+            "protection"
+        ]
+    },
+    {
+        "id": "rabbana_004",
+        "surahNumber": 2,
+        "verseNumber": 250,
+        "category": "Rabbana",
+        "theme": "Patience & victory",
+        "juz": 2,
+        "arabicSnippet": "رَبَّنَا أَفْرِغْ عَلَيْنَا صَبْرًا",
+        "prophet": "Talut's soldiers",
+        "context": "Dua made when facing Jalut (Goliath).",
+        "tags": [
+            "patience",
+            "victory",
+            "strength"
+        ]
+    },
+    {
+        "id": "rabbana_005",
+        "surahNumber": 2,
+        "verseNumber": 286,
+        "category": "Rabbana",
+        "theme": "Forgiveness for forgetfulness",
+        "juz": 3,
+        "arabicSnippet": "رَبَّنَا لَا تُؤَاخِذْنَا إِن نَّسِينَا",
+        "context": "Seeking mercy for unintentional mistakes.",
+        "tags": [
+            "forgiveness",
+            "mercy",
+            "forgetfulness"
+        ]
+    },
+    {
+        "id": "rabbana_006",
+        "surahNumber": 2,
+        "verseNumber": 286,
+        "category": "Rabbana",
+        "theme": "Protection from heavy burdens",
+        "juz": 3,
+        "arabicSnippet": "رَبَّنَا وَلَا تَحْمِلْ عَلَيْنَا إِصْرًا",
+        "context": "Asking not to be tested beyond capacity.",
+        "tags": [
+            "protection",
+            "ease",
+            "testing"
+        ]
+    },
+    {
+        "id": "rabbana_007",
+        "surahNumber": 2,
+        "verseNumber": 286,
+        "category": "Rabbana",
+        "theme": "Burden beyond strength",
+        "juz": 3,
+        "arabicSnippet": "رَبَّنَا وَلَا تُحَمِّلْنَا مَا لَا طَاقَةَ لَنَا بِهِ",
+        "context": "Seeking help against disbelievers.",
+        "tags": [
+            "strength",
+            "victory",
+            "mercy"
+        ]
+    },
+    {
+        "id": "rabbana_008",
+        "surahNumber": 3,
+        "verseNumber": 8,
+        "category": "Rabbana",
+        "theme": "Firmness of heart",
+        "juz": 3,
+        "arabicSnippet": "رَبَّنَا لَا تُزِغْ قُلُوبَنَا",
+        "context": "Asking for guidance to remain firm.",
+        "tags": [
+            "guidance",
+            "heart",
+            "steadfastness"
+        ]
+    },
+    {
+        "id": "rabbana_009",
+        "surahNumber": 3,
+        "verseNumber": 9,
+        "category": "Rabbana",
+        "theme": "Day of Judgment",
+        "juz": 3,
+        "arabicSnippet": "رَبَّنَا إِنَّكَ جَامِعُ النَّاسِ",
+        "context": "Acknowledging the reality of the hereafter.",
+        "tags": [
+            "hereafter",
+            "promise",
+            "judgment"
+        ]
+    },
+    {
+        "id": "rabbana_010",
+        "surahNumber": 3,
+        "verseNumber": 16,
+        "category": "Rabbana",
+        "theme": "Protection from Fire",
+        "juz": 3,
+        "arabicSnippet": "رَبَّنَا إِنَّنَا آمَنَّا فَاغْفِرْ لَنَا",
+        "context": "Seeking forgiveness for believers.",
+        "tags": [
+            "forgiveness",
+            "hellfire",
+            "belief"
+        ]
+    },
+    {
+        "id": "rabbana_011",
+        "surahNumber": 3,
+        "verseNumber": 53,
+        "category": "Rabbana",
+        "theme": "Following the Messenger",
+        "juz": 4,
+        "arabicSnippet": "رَبَّنَا آمَنَّا بِمَا أَنزَلْتَ",
+        "context": "Seeking to be among the witnesses.",
+        "tags": [
+            "belief",
+            "witness",
+            "messenger"
+        ]
+    },
+    {
+        "id": "rabbana_012",
+        "surahNumber": 3,
+        "verseNumber": 147,
+        "category": "Rabbana",
+        "theme": "Forgiveness for excesses",
+        "juz": 4,
+        "arabicSnippet": "رَبَّنَا اغْفِرْ لَنَا ذُنُوبَنَا",
+        "context": "Dua for victory and steadfastness.",
+        "tags": [
+            "forgiveness",
+            "victory",
+            "moderation"
+        ]
+    },
+    {
+        "id": "rabbana_013",
+        "surahNumber": 3,
+        "verseNumber": 191,
+        "category": "Rabbana",
+        "theme": "Remembrance of Creation",
+        "juz": 4,
+        "arabicSnippet": "رَبَّنَا مَا خَلَقْتَ هَٰذَا بَاطِلًا",
+        "context": "Reflection on the universe.",
+        "tags": [
+            "creation",
+            "reflection",
+            "hellfire"
+        ]
+    },
+    {
+        "id": "rabbana_014",
+        "surahNumber": 3,
+        "verseNumber": 192,
+        "category": "Rabbana",
+        "theme": "Protection from disgrace",
+        "juz": 4,
+        "arabicSnippet": "رَبَّنَا إِنَّكَ مَن تُدْخِلِ النَّارَ",
+        "context": "Shielding from the shame of hellfire.",
+        "tags": [
+            "disgrace",
+            "protection",
+            "hellfire"
+        ]
+    },
+    {
+        "id": "rabbana_015",
+        "surahNumber": 3,
+        "verseNumber": 193,
+        "category": "Rabbana",
+        "theme": "Faith & Forgiveness",
+        "juz": 4,
+        "arabicSnippet": "رَبَّنَا إِنَّنَاسَمِعْنَا مُنَادِيًا",
+        "context": "Responding to the call of faith.",
+        "tags": [
+            "faith",
+            "forgiveness",
+            "righteous"
+        ]
+    },
+    {
+        "id": "rabbana_016",
+        "surahNumber": 3,
+        "verseNumber": 194,
+        "category": "Rabbana",
+        "theme": "Fulfillment of promises",
+        "juz": 4,
+        "arabicSnippet": "رَبَّنَا وَآتِنَا مَا وَعَدتَّنَا",
+        "context": "Asking for Allah's help and no disgrace.",
+        "tags": [
+            "promises",
+            "resurrection",
+            "grace"
+        ]
+    },
+    {
+        "id": "rabbana_017",
+        "surahNumber": 5,
+        "verseNumber": 83,
+        "category": "Rabbana",
+        "theme": "Witnessing the truth",
+        "juz": 7,
+        "arabicSnippet": "رَبَّنَا آمَنَّا فَاكْتُبْنَا",
+        "context": "Dua of those who recognize the truth.",
+        "tags": [
+            "truth",
+            "belief",
+            "witness"
+        ]
+    },
+    {
+        "id": "rabbana_018",
+        "surahNumber": 5,
+        "verseNumber": 114,
+        "category": "Rabbana",
+        "theme": "Provision (Rizq)",
+        "juz": 7,
+        "arabicSnippet": "رَبَّنَا أَنزِلْ عَلَيْنَا مَائِدَةً",
+        "prophet": "Isa AS",
+        "context": "Asking for a sign and sustenance.",
+        "tags": [
+            "provision",
+            "sustenance",
+            "isa"
+        ]
+    },
+    {
+        "id": "rabbana_019",
+        "surahNumber": 7,
+        "verseNumber": 23,
+        "category": "Rabbana",
+        "theme": "Repentance",
+        "juz": 8,
+        "arabicSnippet": "رَبَّنَا ظَلَمْنَا أَنفُسَنَا",
+        "prophet": "Adam AS & Hawa",
+        "context": "The first prayer of repentance in humanity.",
+        "tags": [
+            "repentance",
+            "mercy",
+            "adam"
+        ]
+    },
+    {
+        "id": "rabbana_020",
+        "surahNumber": 7,
+        "verseNumber": 47,
+        "category": "Rabbana",
+        "theme": "Protection from wrongdoers",
+        "juz": 8,
+        "arabicSnippet": "رَبَّنَا لَا تَجْعَلْنَا مَعَ الْقَوْمِ",
+        "context": "Dua of the people on the Heights (A'raf).",
+        "tags": [
+            "protection",
+            "oppressors",
+            "araf"
+        ]
+    },
+    {
+        "id": "rabbana_021",
+        "surahNumber": 7,
+        "verseNumber": 89,
+        "category": "Rabbana",
+        "theme": "Justice & Truth",
+        "juz": 9,
+        "arabicSnippet": "رَبَّنَا افْتَحْ بَيْنَنَا وَبَيْنَ قَوْمِنَا",
+        "prophet": "Shuayb AS",
+        "context": "Asking Allah to judge between them and people.",
+        "tags": [
+            "justice",
+            "truth",
+            "decision"
+        ]
+    },
+    {
+        "id": "rabbana_022",
+        "surahNumber": 7,
+        "verseNumber": 126,
+        "category": "Rabbana",
+        "theme": "Patience under trial",
+        "juz": 9,
+        "arabicSnippet": "رَبَّنَا أَفْرِغْ عَلَيْنَا صَبْرًا",
+        "context": "Dua of the magicians of Firawn after believing.",
+        "tags": [
+            "patience",
+            "perseverance",
+            "islam"
+        ]
+    },
+    {
+        "id": "rabbana_023",
+        "surahNumber": 10,
+        "verseNumber": 85,
+        "category": "Rabbana",
+        "theme": "Protection from trials",
+        "juz": 11,
+        "arabicSnippet": "رَبَّنَا لَا تَجْعَلْنَا فِتْنَةً",
+        "context": "Dua for believers against oppressors.",
+        "tags": [
+            "trial",
+            "protection",
+            "oppressors"
+        ]
+    },
+    {
+        "id": "rabbana_024",
+        "surahNumber": 14,
+        "verseNumber": 38,
+        "category": "Rabbana",
+        "theme": "Allah's Infinite Knowledge",
+        "juz": 13,
+        "arabicSnippet": "رَبَّنَا إِنَّكَ تَعْلَمُ مَا نُخْفِي",
+        "prophet": "Ibrahim AS",
+        "context": "Acknowledging that nothing is hidden from Allah.",
+        "tags": [
+            "knowledge",
+            "sincerity",
+            "ibrahim"
+        ]
+    },
+    {
+        "id": "rabbana_025",
+        "surahNumber": 14,
+        "verseNumber": 41,
+        "category": "Rabbana",
+        "theme": "For Parents & Believers",
+        "juz": 13,
+        "arabicSnippet": "رَبَّنَا اغْفِرْ لِي وَلِأَخِي",
+        "prophet": "Ibrahim AS",
+        "context": "Dua for the day of account.",
+        "tags": [
+            "parents",
+            "forgiveness",
+            "believers"
+        ]
+    },
+    {
+        "id": "rabbana_026",
+        "surahNumber": 18,
+        "verseNumber": 10,
+        "category": "Rabbana",
+        "theme": "Mercy & Guidance",
+        "juz": 15,
+        "arabicSnippet": "رَبَّنَا آتِنَا مِن لَّدُنكَ رَحْمَةً",
+        "context": "Dua of the People of the Cave (Ashab al-Kahf).",
+        "tags": [
+            "mercy",
+            "guidance",
+            "protection"
+        ]
+    },
+    {
+        "id": "rabbana_027",
+        "surahNumber": 23,
+        "verseNumber": 109,
+        "category": "Rabbana",
+        "theme": "Mercy for Believers",
+        "juz": 18,
+        "arabicSnippet": "رَبَّنَا آمَنَّا فَاغْفِرْ لَنَا",
+        "context": "Asking Allah for mercy as the Best of Merciful.",
+        "tags": [
+            "mercy",
+            "forgiveness",
+            "belief"
+        ]
+    },
+    {
+        "id": "rabbana_028",
+        "surahNumber": 25,
+        "verseNumber": 65,
+        "category": "Rabbana",
+        "theme": "Relief from Hellfire",
+        "juz": 19,
+        "arabicSnippet": "رَبَّنَا اصْرِفْ عَنَّا عَذَابَ جَهَنَّمَ",
+        "context": "Dua of the servants of the Most Merciful.",
+        "tags": [
+            "hellfire",
+            "protection",
+            "punishment"
+        ]
+    },
+    {
+        "id": "rabbana_029",
+        "surahNumber": 25,
+        "verseNumber": 74,
+        "category": "Rabbana",
+        "theme": "Spouse & Children",
+        "juz": 19,
+        "arabicSnippet": "رَبَّنَا هَبْ لَنَا مِنْ أَزْوَاجِنَا",
+        "context": "Asking for comfort in family and leadership.",
+        "tags": [
+            "family",
+            "offspring",
+            "leadership"
+        ]
+    },
+    {
+        "id": "rabbana_030",
+        "surahNumber": 40,
+        "verseNumber": 7,
+        "category": "Rabbana",
+        "theme": "Angels' Intercession",
+        "juz": 24,
+        "arabicSnippet": "رَبَّنَا وَسِعْتَ كُلَّ شَيْءٍ",
+        "context": "Dua of the angels carrying the Throne.",
+        "tags": [
+            "angels",
+            "forgiveness",
+            "mercy"
+        ]
+    },
+    {
+        "id": "rabbana_031",
+        "surahNumber": 59,
+        "verseNumber": 10,
+        "category": "Rabbana",
+        "theme": "Purity of Heart",
+        "juz": 28,
+        "arabicSnippet": "رَبَّنَا اغْفِرْ لَنَا وَلِإِخْوَانِنَا",
+        "context": "Asking for forgiveness for ourselves and others.",
+        "tags": [
+            "heart",
+            "grudges",
+            "brotherhood"
+        ]
+    },
+    {
+        "id": "rabbana_032",
+        "surahNumber": 60,
+        "verseNumber": 4,
+        "category": "Rabbana",
+        "theme": "Reliance on Allah",
+        "juz": 28,
+        "arabicSnippet": "رَبَّنَا عَلَيْكَ تَوَكَّلْنَا",
+        "prophet": "Ibrahim AS",
+        "context": "Total trust in the Almighty.",
+        "tags": [
+            "reliance",
+            "trust",
+            "repentance"
+        ]
+    },
+    {
+        "id": "rabbana_033",
+        "surahNumber": 60,
+        "verseNumber": 5,
+        "category": "Rabbana",
+        "theme": "Avoidance of Trial",
+        "juz": 28,
+        "arabicSnippet": "رَبَّنَا لَا تَجْعَلْنَا فِتْنَةً",
+        "prophet": "Ibrahim AS",
+        "context": "Asking not to be a trial for disbelievers.",
+        "tags": [
+            "trial",
+            "forgiveness",
+            "protection"
+        ]
+    },
+    {
+        "id": "rabbana_034",
+        "surahNumber": 66,
+        "verseNumber": 8,
+        "category": "Rabbana",
+        "theme": "Perfection of Light",
+        "juz": 28,
+        "arabicSnippet": "رَبَّنَا أَتْمِمْ لَنَا نُورَنَا",
+        "context": "Dua of believers on the Day of Judgment.",
+        "tags": [
+            "noor",
+            "light",
+            "perfection"
+        ]
+    },
+    {
+        "id": "rabbana_035",
+        "surahNumber": 7,
+        "verseNumber": 155,
+        "category": "Rabbana",
+        "theme": "Guidance and Mercy",
+        "juz": 9,
+        "arabicSnippet": "رَبَّنَا لَوْ شِئْتَ أَهْلَكْتَهُم",
+        "prophet": "Musa AS",
+        "context": "Seeking forgiveness for his people after the golden calf incident.",
+        "tags": [
+            "guidance",
+            "mercy",
+            "forgiveness"
+        ]
+    },
+    {
+        "id": "rabbana_036",
+        "surahNumber": 2,
+        "verseNumber": 285,
+        "category": "Rabbana",
+        "theme": "Final Return",
+        "juz": 3,
+        "arabicSnippet": "غُفْرَانَكَ رَبَّنَا وَإِلَيْكَ الْمَصِيرُ",
+        "context": "Admission of belief and seeking the final forgiveness.",
+        "tags": [
+            "return",
+            "forgiveness",
+            "belief"
+        ]
+    },
+    {
+        "id": "rabbana_037",
+        "surahNumber": 40,
+        "verseNumber": 8,
+        "category": "Rabbana",
+        "theme": "Family in Jannah",
+        "juz": 24,
+        "arabicSnippet": "رَبَّنَا وَأَدْخِلْهُمْ جَنَّاتِ عَدْنٍ",
+        "context": "Dua made by angels for the righteous and their families.",
+        "tags": [
+            "family",
+            "jannah",
+            "angels"
+        ]
+    },
+    {
+        "id": "prophetic_001",
+        "surahNumber": 20,
+        "verseNumber": 25,
+        "verseNumberEnd": 28,
+        "category": "Prophetic",
+        "subcategory": "Knowledge",
+        "theme": "Clarity & Confidence",
+        "juz": 16,
+        "arabicSnippet": "رَبِّ اشْرَحْ لِي صَدْرِي",
+        "prophet": "Musa AS",
+        "context": "Dua for eloquence and confidence.",
+        "tags": [
+            "knowledge",
+            "speech",
+            "musa"
+        ]
+    },
+    {
+        "id": "prophetic_002",
+        "surahNumber": 20,
+        "verseNumber": 114,
+        "category": "Prophetic",
+        "subcategory": "Knowledge",
+        "theme": "Increase in Knowledge",
+        "juz": 16,
+        "arabicSnippet": "رَّبِّ زِدْنِي عِلْمًا",
+        "prophet": "Muhammad SAW",
+        "context": "The command of Allah to the Prophet.",
+        "tags": [
+            "knowledge",
+            "education",
+            "muhammad"
+        ]
+    },
+    {
+        "id": "prophetic_003",
+        "surahNumber": 26,
+        "verseNumber": 83,
+        "verseNumberEnd": 89,
+        "category": "Prophetic",
+        "subcategory": "Knowledge",
+        "theme": "Wisdom & Pure Heart",
+        "juz": 19,
+        "arabicSnippet": "رَبِّ هَبْ لِي حُكْمًا",
+        "prophet": "Ibrahim AS",
+        "context": "Comprehensive prayer for wisdom, the righteous, and a sound heart.",
+        "tags": [
+            "wisdom",
+            "truth",
+            "ibrahim",
+            "heart"
+        ]
+    },
+    {
+        "id": "prophetic_004",
+        "surahNumber": 3,
+        "verseNumber": 38,
+        "category": "Prophetic",
+        "subcategory": "Family",
+        "theme": "Righteous Offspring",
+        "juz": 3,
+        "arabicSnippet": "رَبِّ هَبْ لِي مِن لَّدُنكَ ذُرِّيَّةً",
+        "prophet": "Zakariya AS",
+        "context": "Asking for a child in old age.",
+        "tags": [
+            "children",
+            "family",
+            "zakariya"
+        ]
+    },
+    {
+        "id": "prophetic_005",
+        "surahNumber": 14,
+        "verseNumber": 40,
+        "category": "Prophetic",
+        "subcategory": "Family",
+        "theme": "Establish Prayer",
+        "juz": 13,
+        "arabicSnippet": "رَبِّ اجْعَلْنِي مُقِيمَ الصَّلَاةِ",
+        "prophet": "Ibrahim AS",
+        "context": "Asking for oneself and offspring to pray.",
+        "tags": [
+            "prayer",
+            "family",
+            "faith"
+        ]
+    },
+    {
+        "id": "prophetic_006",
+        "surahNumber": 17,
+        "verseNumber": 24,
+        "category": "Prophetic",
+        "subcategory": "Family",
+        "theme": "Mercy upon Parents",
+        "juz": 15,
+        "arabicSnippet": "رَّبِّ ارْحَمْهُمَا كَمَا رَبَّيَانِي",
+        "context": "Commands of Allah for kindness to parents.",
+        "tags": [
+            "parents",
+            "mercy",
+            "kindness"
+        ]
+    },
+    {
+        "id": "prophetic_007",
+        "surahNumber": 21,
+        "verseNumber": 89,
+        "category": "Prophetic",
+        "subcategory": "Family",
+        "theme": "For an Heir",
+        "juz": 17,
+        "arabicSnippet": "رَبِّ لَا تَذَرْنِي فَرْدًا",
+        "prophet": "Zakariya AS",
+        "context": "Prophet Zakariya's plea for a son.",
+        "tags": [
+            "heir",
+            "zakariya",
+            "family"
+        ]
+    },
+    {
+        "id": "prophetic_008",
+        "surahNumber": 21,
+        "verseNumber": 83,
+        "category": "Prophetic",
+        "subcategory": "Hardship",
+        "theme": "Health & Relief",
+        "juz": 17,
+        "arabicSnippet": "رَّبِّ أَنِّي مَسَّنِيَ الضُّرُّ",
+        "prophet": "Ayyub AS",
+        "context": "Patiently asking for recovery.",
+        "tags": [
+            "health",
+            "hardship",
+            "ayyub"
+        ]
+    },
+    {
+        "id": "prophetic_009",
+        "surahNumber": 21,
+        "verseNumber": 87,
+        "category": "Prophetic",
+        "subcategory": "Hardship",
+        "theme": "Escape from Grief",
+        "juz": 17,
+        "arabicSnippet": "لَّا إِلَٰهَ إِلَّا أَنتَ سُبْحَانَكَ",
+        "prophet": "Yunus AS",
+        "context": "Dua in the belly of the whale.",
+        "tags": [
+            "grief",
+            "hardship",
+            "yunus"
+        ]
+    },
+    {
+        "id": "prophetic_010",
+        "surahNumber": 28,
+        "verseNumber": 24,
+        "category": "Prophetic",
+        "subcategory": "Hardship",
+        "theme": "Desperate Need",
+        "juz": 20,
+        "arabicSnippet": "رَبِّ إِنِّي لِمَا أَنزَلْتَ إِلَيَّ",
+        "prophet": "Musa AS",
+        "context": "Dua while in a strange land and tired.",
+        "tags": [
+            "need",
+            "musa",
+            "hardship"
+        ]
+    },
+    {
+        "id": "prophetic_011",
+        "surahNumber": 12,
+        "verseNumber": 101,
+        "category": "Prophetic",
+        "subcategory": "Hardship",
+        "theme": "Die as Muslim",
+        "juz": 13,
+        "arabicSnippet": "رَبِّ قَدْ آتَيْتَنِي مِنَ الْمُلْكِ",
+        "prophet": "Yusuf AS",
+        "context": "Gratitude and final wish.",
+        "tags": [
+            "yusuf",
+            "muslim",
+            "gratitude"
+        ]
+    },
+    {
+        "id": "prophetic_012",
+        "surahNumber": 23,
+        "verseNumber": 97,
+        "verseNumberEnd": 98,
+        "category": "Prophetic",
+        "subcategory": "Protection",
+        "theme": "Against Shaitan",
+        "juz": 18,
+        "arabicSnippet": "رَّبِّ أَعُوذُ بِكَ مِنْ هَمَزَاتِ",
+        "context": "Seeking refuge from evil whispers.",
+        "tags": [
+            "protection",
+            "shaitan",
+            "refuge"
+        ]
+    },
+    {
+        "id": "prophetic_013",
+        "surahNumber": 11,
+        "verseNumber": 47,
+        "category": "Prophetic",
+        "subcategory": "Protection",
+        "theme": "Refuge from Ignorance",
+        "juz": 12,
+        "arabicSnippet": "رَبِّ إِنِّي أَعُوذُ بِكَ أَنْ أَسْأَلَكَ",
+        "prophet": "Nuh AS",
+        "context": "Seeking forgiveness and refuge.",
+        "tags": [
+            "ignorance",
+            "mercy",
+            "nuh"
+        ]
+    },
+    {
+        "id": "prophetic_014",
+        "surahNumber": 19,
+        "verseNumber": 4,
+        "category": "Prophetic",
+        "subcategory": "Hardship",
+        "theme": "Hope in Old Age",
+        "juz": 16,
+        "arabicSnippet": "رَبِّ إِنِّي وَهَنَ الْعَظْمُ مِنِّي",
+        "prophet": "Zakariya AS",
+        "context": "Prophet Zakariya's plea for a son despite physical weakness.",
+        "tags": [
+            "zakariya",
+            "heir",
+            "hope"
+        ]
+    },
+    {
+        "id": "prophetic_015",
+        "surahNumber": 19,
+        "verseNumber": 5,
+        "verseNumberEnd": 6,
+        "category": "Prophetic",
+        "subcategory": "Family",
+        "theme": "Legacy of Yaqub",
+        "juz": 16,
+        "arabicSnippet": "فَهَبْ لِي مِن لَّدُنكَ وَلِيًّا",
+        "prophet": "Zakariya AS",
+        "context": "Asking for a successor to carry on the prophetic legacy.",
+        "tags": [
+            "zakariya",
+            "family",
+            "legacy"
+        ]
+    },
+    {
+        "id": "prophetic_016",
+        "surahNumber": 54,
+        "verseNumber": 10,
+        "category": "Prophetic",
+        "subcategory": "Hardship",
+        "theme": "Victory over Rejection",
+        "juz": 27,
+        "arabicSnippet": "أَنِّي مَغْلُوبٌ فَانتَصِرْ",
+        "prophet": "Nuh AS",
+        "context": "Nuh AS's heart-wrenching plea for help against his oppressors.",
+        "tags": [
+            "nuh",
+            "victory",
+            "oppression"
+        ]
+    },
+    {
+        "id": "prophetic_017",
+        "surahNumber": 37,
+        "verseNumber": 100,
+        "category": "Prophetic",
+        "subcategory": "Family",
+        "theme": "Righteous Progeny",
+        "juz": 23,
+        "arabicSnippet": "رَبِّ هَبْ لِي مِنَ الصَّالِحِينَ",
+        "prophet": "Ibrahim AS",
+        "context": "Dua of Ibrahim AS for a virtuous and righteous son.",
+        "tags": [
+            "ibrahim",
+            "children",
+            "righteousness"
+        ]
+    },
+    {
+        "id": "prophetic_018",
+        "surahNumber": 66,
+        "verseNumber": 11,
+        "category": "Prophetic",
+        "subcategory": "Protection",
+        "theme": "House in Jannah",
+        "juz": 28,
+        "arabicSnippet": "رَبِّ ابْنِ لِي عِندَكَ بَيْتًا",
+        "prophet": "Asiya (Pharaoh's Wife)",
+        "context": "Asiya AS choosing a house near Allah over the palace of Pharaoh.",
+        "tags": [
+            "jannah",
+            "protection",
+            "martyrdom"
+        ]
+    },
+    {
+        "id": "prophetic_019",
+        "surahNumber": 28,
+        "verseNumber": 21,
+        "category": "Prophetic",
+        "subcategory": "Hardship",
+        "theme": "Rescue from Oppressors",
+        "juz": 20,
+        "arabicSnippet": "رَبِّ نَجِّنِي مِنَ الْقَوْمِ",
+        "prophet": "Musa AS",
+        "context": "Prayer made while fleeing Egypt from Pharaoh's army.",
+        "tags": [
+            "musa",
+            "protection",
+            "hardship"
+        ]
+    },
+    {
+        "id": "prophetic_020",
+        "surahNumber": 28,
+        "verseNumber": 17,
+        "category": "Prophetic",
+        "subcategory": "Protection",
+        "theme": "Integrity of Deeds",
+        "juz": 20,
+        "arabicSnippet": "رَبِّ بِمَا أَنْعَمْتَ عَلَيَّ",
+        "prophet": "Musa AS",
+        "context": "Vowing never to support criminals after being forgiven.",
+        "tags": [
+            "musa",
+            "integrity",
+            "protection"
+        ]
+    },
+    {
+        "id": "prophetic_021",
+        "surahNumber": 46,
+        "verseNumber": 15,
+        "category": "Prophetic",
+        "subcategory": "Family",
+        "theme": "Gratitude & Parents",
+        "juz": 26,
+        "arabicSnippet": "رَبِّ أَوْزِعْنِي أَنْ أَشْكُرَ نِعْمَتَكَ",
+        "context": "Dua for gratitude and righteous progeny at the age of maturity.",
+        "tags": [
+            "gratitude",
+            "parents",
+            "righteousness"
+        ]
+    },
+    {
+        "id": "prophetic_022",
+        "surahNumber": 27,
+        "verseNumber": 19,
+        "category": "Prophetic",
+        "subcategory": "Knowledge",
+        "theme": "Gratitude & Mercy",
+        "juz": 19,
+        "arabicSnippet": "رَبِّ أَوْزِعْنِي أَنْ أَشْكُرَ نِعْمَتَكَ",
+        "prophet": "Sulaiman AS",
+        "context": "Sulaiman's prayer of thanks after hearing the talk of an ant.",
+        "tags": [
+            "gratitude",
+            "mercy",
+            "righteousness"
+        ]
+    },
+    {
+        "id": "prophetic_023",
+        "surahNumber": 23,
+        "verseNumber": 118,
+        "category": "Prophetic",
+        "subcategory": "Protection",
+        "theme": "Best of Merciful",
+        "juz": 18,
+        "arabicSnippet": "رَّبِّ اغْفِرْ وَارْحَمْ وَأَنتَ خَيْرُ",
+        "context": "Seeking total forgiveness and mercy from the Almighty.",
+        "tags": [
+            "mercy",
+            "forgiveness"
+        ]
+    },
+    {
+        "id": "prophetic_024",
+        "surahNumber": 28,
+        "verseNumber": 16,
+        "category": "Prophetic",
+        "subcategory": "Hardship",
+        "theme": "Admission of Wrong",
+        "juz": 20,
+        "arabicSnippet": "رَبِّ إِنِّي ظَلَمْتُ نَفْسِي",
+        "prophet": "Musa AS",
+        "context": "Acknowledging errors and seeking immediate forgiveness.",
+        "tags": [
+            "forgiveness",
+            "repentance",
+            "musa"
+        ]
+    },
+    {
+        "id": "prophetic_025",
+        "surahNumber": 7,
+        "verseNumber": 151,
+        "category": "Prophetic",
+        "subcategory": "Family",
+        "theme": "Mercy for Kinship",
+        "juz": 9,
+        "arabicSnippet": "رَبِّ اغْفِرْ لِي وَلِأَخِي",
+        "prophet": "Musa AS",
+        "context": "Dua for himself and his brother Harun AS.",
+        "tags": [
+            "mercy",
+            "brotherhood",
+            "musa"
+        ]
+    },
+    {
+        "id": "prophetic_026",
+        "surahNumber": 17,
+        "verseNumber": 80,
+        "category": "Prophetic",
+        "subcategory": "Knowledge",
+        "theme": "Entrance of Truth",
+        "juz": 15,
+        "arabicSnippet": "رَّبِّ أَدْخِلْنِي مُدْخَلَ صِدْقٍ",
+        "prophet": "Muhammad SAW",
+        "context": "Seeking sincerity and divine authority in all actions.",
+        "tags": [
+            "truth",
+            "sincerity",
+            "authority"
+        ]
+    }
+]

@@ -2,9 +2,9 @@ import { surahsData } from '@/data/surahs';
 import { usePlannerStore } from '@/store/plannerStore';
 import { useProgressStore } from '@/store/progressStore';
 import { LinearGradient } from 'expo-linear-gradient';
-import { FileText, X } from 'lucide-react-native';
+import { Copy, FileText, X } from 'lucide-react-native';
 import React, { useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import NotePopup from './NotePopup';
 import SurahRangePicker from './SurahRangePicker';
 
@@ -29,6 +29,7 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
   const removePlan = usePlannerStore(s => s.removePlan);
   const updatePlan = usePlannerStore(s => s.updatePlan);
 
+  const [copyModalVisible, setCopyModalVisible] = useState(false);
   const [noteVisible, setNoteVisible] = useState(false);
   const [currentNote, setCurrentNote] = useState('');
   const [currentNoteTitle, setCurrentNoteTitle] = useState('');
@@ -98,6 +99,56 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
   }, [dateISO, revised, todayStart, uniqueVerses]);
 
   const pretty = dateISO ? (() => { const d = parseDMY(dateISO); return d ? d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : dateISO; })() : '';
+  const currentWeekDays = useMemo(() => {
+    if (!dateISO) return [];
+    const d = parseDMY(dateISO);
+    if (!d) return [];
+
+    // Get start of week (Sunday)
+    const start = new Date(d);
+    start.setDate(d.getDate() - d.getDay());
+
+    // Build array of 7 days
+    const days: { date: Date, iso: string, label: string, hasPlans: boolean }[] = [];
+    for (let i = 0; i < 7; i++) {
+      const cur = new Date(start);
+      cur.setDate(start.getDate() + i);
+      const iso = formatDMY(cur);
+
+      // Skip current day (target)
+      if (iso === dateISO) continue;
+
+      const count = (plansByDate[iso] || []).length;
+      if (count > 0) {
+        days.push({
+          date: cur,
+          iso,
+          label: cur.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }),
+          hasPlans: true
+        });
+      }
+    }
+    return days;
+  }, [dateISO, plansByDate]);
+
+  const handleCopyFromDate = (sourceISO: string) => {
+    if (!dateISO) return;
+    const sourcePlans = plansByDate[sourceISO] || [];
+    if (sourcePlans.length === 0) return;
+
+    // Add all plans from source to target
+    sourcePlans.forEach(p => {
+      addPlan(dateISO, {
+        surahId: p.surahId,
+        startVerse: p.startVerse,
+        endVerse: p.endVerse,
+        note: p.note
+      });
+    });
+
+    setCopyModalVisible(false);
+    Alert.alert('Success', `Copied ${sourcePlans.length} plan(s) from ${sourceISO}.`);
+  };
 
   const handleMarkCompleted = async () => {
     if (!dateISO) return;
@@ -183,6 +234,24 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
             <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff' }}>
               Add Plan
             </Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => ({
+              flex: 1,
+              marginHorizontal: 4,
+              paddingVertical: 9,
+              borderRadius: 8,
+              alignItems: 'center',
+              backgroundColor: pressed ? '#333333' : '#000000',
+              borderColor: '#3b82f6',
+              borderWidth: 1,
+            })}
+            onPress={() => setCopyModalVisible(true)}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Copy size={14} color="#3b82f6" />
+              <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff' }}>Copy</Text>
+            </View>
           </Pressable>
           <Pressable
             style={({ pressed }) => ({
@@ -302,6 +371,60 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
             }
           }}
         />
+
+        {/* Copy Modal */}
+        <Modal
+          visible={copyModalVisible}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={() => setCopyModalVisible(false)}
+        >
+          <View style={styles.copyModalOverlay}>
+            <View style={styles.copyModalContent}>
+              <View style={styles.copyModalHeader}>
+                <Text style={styles.copyModalTitle}>Copy from this week</Text>
+                <TouchableOpacity onPress={() => setCopyModalVisible(false)}>
+                  <X size={20} color="#94a3b8" />
+                </TouchableOpacity>
+              </View>
+
+              {currentWeekDays.length === 0 ? (
+                <View style={styles.copyEmptyState}>
+                  <Text style={styles.copyEmptyText}>No other plans found in this week.</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={currentWeekDays}
+                  keyExtractor={item => item.iso}
+                  contentContainerStyle={{ padding: 12 }}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.copyItem}
+                      onPress={() => {
+                        Alert.alert(
+                          'Copy Plans',
+                          `Copy plans from ${item.label}?`,
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Copy', onPress: () => handleCopyFromDate(item.iso) }
+                          ]
+                        );
+                      }}
+                    >
+                      <View>
+                        <Text style={styles.copyItemLabel}>{item.label}</Text>
+                        <Text style={styles.copyItemSub}>
+                          {(plansByDate[item.iso] || []).length} plan(s)
+                        </Text>
+                      </View>
+                      <Copy size={16} color="#4ade80" />
+                    </TouchableOpacity>
+                  )}
+                />
+              )}
+            </View>
+          </View>
+        </Modal>
       </View>
     </Modal>
   );
@@ -332,4 +455,13 @@ const styles = StyleSheet.create({
   infoBox: { margin: 16, padding: 12, borderRadius: 10, backgroundColor: 'rgba(148,163,184,0.12)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.25)' },
   infoBoxTitle: { color: '#e2e8f0', fontWeight: '800', marginBottom: 6, fontSize: 12, letterSpacing: 0.5 },
   infoBoxText: { color: '#cbd5e1', fontSize: 12, lineHeight: 18 },
+  copyModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  copyModalContent: { width: '100%', maxWidth: 340, backgroundColor: '#1e293b', borderRadius: 16, overflow: 'hidden' },
+  copyModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderColor: '#334155' },
+  copyModalTitle: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  copyEmptyState: { padding: 32, alignItems: 'center' },
+  copyEmptyText: { color: '#64748b', fontSize: 14 },
+  copyItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderColor: '#334155', backgroundColor: '#0f172a', marginBottom: 8, borderRadius: 8 },
+  copyItemLabel: { color: '#e2e8f0', fontWeight: '600', fontSize: 14 },
+  copyItemSub: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
 });

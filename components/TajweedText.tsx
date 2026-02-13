@@ -12,7 +12,7 @@ import { parseTajweedHTML } from '@/utils/QuranTajweedParser';
 import { TajweedParser } from '@/utils/tajweedParser';
 import { Canvas, Paragraph, Skia, TextAlign, TextDirection, useFonts } from '@shopify/react-native-skia';
 import React, { useMemo, useState } from 'react';
-import { Text as RNText, StyleProp, TextStyle, View } from 'react-native';
+import { Platform, Text as RNText, StyleProp, TextStyle, View } from 'react-native';
 
 /**
  * Detects if text starts with combining mark (production-safe for Skia)
@@ -731,7 +731,8 @@ const TajweedText: React.FC<TajweedTextProps> = ({
   const height = isOverLimit ? rawHeight : Math.min(rawHeight, METAL_HARDWARE_LIMIT);
 
   // OPTIMIZATION: Do not render Skia if dimensions are invalid or width is too small
-  const canRenderSkia = !isOverLimit && containerWidth && containerWidth >= 100 && height > 0 && !isNaN(height) && paragraph;
+  // Force iOS only for Skia - Android uses fallback RNText which handles the glyph correctly
+  const canRenderSkia = Platform.OS === 'ios' && !isOverLimit && containerWidth && containerWidth >= 100 && height > 0 && !isNaN(height) && paragraph;
 
   return (
     <View

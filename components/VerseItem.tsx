@@ -348,7 +348,7 @@ const VerseItem = ({
   const handleMarkMemorized = useCallback(() => {
     try {
       const action = memorized ? 'unmark' : 'mark';
-      
+
       if (memorized) {
         useProgressStore.getState().unmarkVerseAsMemorized(verse.id);
       } else {
@@ -375,7 +375,7 @@ const VerseItem = ({
   const handleMarkRevised = useCallback(() => {
     try {
       const action = revised ? 'unmark' : 'mark';
-      
+
       if (revised) {
         useProgressStore.getState().unmarkVerseAsRevised(verse.id);
       } else {
@@ -681,8 +681,8 @@ const VerseItem = ({
   const isThreeDigits = verseNumberStr.length >= 3;
 
   // Determine if we should show the legacy verse number badge
-  // We hide it if we are in Tajweed mode and have a decorative Mushaf symbol as the primary marker
-  const showLegacyVerseNumber = !(arabicFont === 'tajweed' && displayedArabic.endsWith('\u06DD'));
+  // We force show it even for Tajweed mode as requested by user
+  const showLegacyVerseNumber = true;
 
   return (
     <Pressable ref={forwardedRef as any} style={[styles.container, containerStyle]}>

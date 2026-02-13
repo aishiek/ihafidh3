@@ -487,7 +487,7 @@ export default function SettingsScreen() {
 
       <Stack.Screen
         options={{
-          title: 'Settings',
+          title: 'Setup',
           headerStyle: { backgroundColor: theme.background },
           headerTintColor: theme.text,
           headerTitleStyle: { fontWeight: 'bold' },
@@ -1007,7 +1007,7 @@ export default function SettingsScreen() {
         </View>
 
         {/* App version label - Tap 7 times to access debug screen */}
-        <Pressable 
+        <Pressable
           style={styles.versionRow}
           onPress={() => {
             const newCount = debugTapCount + 1;

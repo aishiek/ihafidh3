@@ -5,9 +5,11 @@ import { Tabs } from "expo-router";
 import { BarChart, BookOpen, Brain, Home, RefreshCw, Settings as SettingsIcon } from "lucide-react-native";
 import React from "react";
 import { Platform, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
   const { primary } = useThemeColor();
+  const insets = useSafeAreaInsets();
 
   return (
     <>
@@ -25,8 +27,8 @@ export default function TabLayout() {
           tabBarStyle: {
             backgroundColor: "#1a1a1a",
             borderTopColor: "#333333",
-            height: Platform.OS === 'android' ? 70 : 60,
-            paddingBottom: Platform.OS === 'android' ? 12 : 8,
+            height: Platform.OS === 'android' ? 60 + insets.bottom : 60,
+            paddingBottom: Platform.OS === 'android' ? Math.max(insets.bottom, 12) : 8,
             paddingTop: Platform.OS === 'android' ? 8 : 0,
           },
           headerStyle: {
@@ -88,6 +90,13 @@ export default function TabLayout() {
           name="badges"
           options={{
             title: "Badges",
+            href: null, // This hides it from the tab bar
+          }}
+        />
+        <Tabs.Screen
+          name="duas"
+          options={{
+            title: "Quranic Duas",
             href: null, // This hides it from the tab bar
           }}
         />

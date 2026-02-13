@@ -33,7 +33,7 @@ export default function UpdateModal({ visible, forced = false, currentVersion, l
               <Download size={18} color="#22c55e" />
             </View>
             <Text style={{ flex: 1, color: '#fff', fontSize: 18, fontWeight: '700' }} numberOfLines={1}>
-              {forced && latestVersion === currentVersion ? 'Announcement' : 'Update available'}
+              {latestVersion === currentVersion ? 'Announcement' : (forced ? 'Important Update' : 'Update available')}
             </Text>
             {canDismiss && (
               <Pressable onPress={onClose} hitSlop={8} style={{ padding: 6 }}>
@@ -43,11 +43,11 @@ export default function UpdateModal({ visible, forced = false, currentVersion, l
           </View>
 
           <Text style={{ color: '#cbd5e1', fontSize: 14, lineHeight: 20, marginBottom: 10 }}>
-            {forced
-              ? (latestVersion && latestVersion === currentVersion
-                ? 'Important Message'
-                : 'A newer version is recommended. This update includes important improvements.')
-              : 'A newer version of iHafidh is available. Update now for the latest features and fixes.'}
+            {latestVersion === currentVersion
+              ? 'You are running the latest version of iHafidh. Check out what’s new in this release.'
+              : (forced
+                ? 'A newer version is recommended. This update includes important improvements.'
+                : 'A newer version of iHafidh is available. Update now for the latest features and fixes.')}
           </Text>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
@@ -89,7 +89,9 @@ export default function UpdateModal({ visible, forced = false, currentVersion, l
               style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 10, backgroundColor: '#22c55e' }}
             >
               <Check size={16} color="#0b1220" />
-              <Text style={{ color: '#0b1220', fontWeight: '800' }}>Update now</Text>
+              <Text style={{ color: '#0b1220', fontWeight: '800' }}>
+                {latestVersion === currentVersion ? 'View in Store' : 'Update now'}
+              </Text>
             </Pressable>
           </View>
 

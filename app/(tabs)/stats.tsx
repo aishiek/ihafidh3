@@ -1,12 +1,15 @@
+import QURANIC_DUAS_DATA from '@/data/quranic-duas.json';
 import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
 import { useSettingsStore } from '@/store/settingsStore';
+import type { QuranicDua } from '@/types/duas';
 import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
+import { calculateDuaStats } from '@/utils/duaHelpers';
 import { calculateJuzProgress, calculateOverallJuzStats } from '@/utils/juzCalculator';
 import { useCustomColors } from '@/utils/themeUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
 import { useRouter } from 'expo-router';
-import { X } from 'lucide-react-native';
+import { Sparkles, X } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 // Remove unused import - now using calculateJuzProgress from juzCalculator
@@ -292,7 +295,7 @@ export default function StatsScreen() {
           style={[
             styles.greeting,
             {
-              color: '#ffffff',
+              color: colors.text,
               fontSize: userName && userName.length > 15 ? 20 : 24
             }
           ]}
@@ -300,15 +303,15 @@ export default function StatsScreen() {
         >
           {renderGreeting()}
         </Text>
-        <Text style={[styles.subtitle, { color: '#ffffff' }]}>
+        <Text style={[styles.headerSubtitle, { color: colors.secondary }]}>
           Your memorization progress
         </Text>
       </View>
 
       {/* Progress Overview with Circular Indicators */}
-      <View style={[styles.progressCard, { backgroundColor: '#333333', borderColor: '#555555' }]}>
-        <Text style={[styles.progressTitle, { color: '#ffffff' }]}>
-          Memorization Progress
+      <View style={[styles.progressCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.title, { color: colors.text, fontSize: 18, marginBottom: 8 }]}>
+          Memorization Summary
         </Text>
 
         <View style={styles.circularProgressContainer}>
@@ -342,10 +345,83 @@ export default function StatsScreen() {
         </View>
       </View>
 
+      {/* Quranic Duas Progress Card */}
+      <View style={[styles.progressCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.duaHeader}>
+          <View style={styles.duaHeaderLeft}>
+            <View style={styles.duaIconBadge}>
+              <Sparkles size={20} color="#D4AF37" fill="rgba(212, 175, 55, 0.1)" />
+            </View>
+            <View>
+              <Text style={[styles.title, { color: colors.text, fontSize: 18, marginBottom: 2 }]}>Quranic Duas</Text>
+              <Text style={[styles.subtitle, { color: colors.secondary, fontSize: 13 }]}>Memorization status</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.duaStatsRow}>
+          <View style={styles.duaStat}>
+            <Text style={[styles.duaStatValue, { color: '#4CAF50' }]}>
+              {(() => {
+                const DUAS = QURANIC_DUAS_DATA as QuranicDua[];
+                const stats = calculateDuaStats(DUAS, memorizedVerses, revisedVerses);
+                return stats.memorized;
+              })()}
+            </Text>
+            <Text style={[styles.duaStatLabel, { color: colors.secondary }]}>Memorized</Text>
+          </View>
+
+          <View style={styles.duaStat}>
+            <Text style={[styles.duaStatValue, { color: '#2196F3' }]}>
+              {(() => {
+                const DUAS = QURANIC_DUAS_DATA as QuranicDua[];
+                const stats = calculateDuaStats(DUAS, memorizedVerses, revisedVerses);
+                return stats.revised;
+              })()}
+            </Text>
+            <Text style={[styles.duaStatLabel, { color: colors.secondary }]}>Revised</Text>
+          </View>
+
+          <View style={styles.duaStat}>
+            <Text style={[styles.duaStatValue, { color: '#FF9800' }]}>
+              {(() => {
+                const DUAS = QURANIC_DUAS_DATA as QuranicDua[];
+                const stats = calculateDuaStats(DUAS, memorizedVerses, revisedVerses);
+                return stats.pending;
+              })()}
+            </Text>
+            <Text style={[styles.duaStatLabel, { color: colors.secondary }]}>Pending</Text>
+          </View>
+        </View>
+
+        <View style={[styles.duaProgressBar, { backgroundColor: colors.border }]}>
+          <View
+            style={[{
+              height: '100%',
+              borderRadius: 4,
+              backgroundColor: '#4CAF50',
+              width: `${(() => {
+                const DUAS = QURANIC_DUAS_DATA as QuranicDua[];
+                const stats = calculateDuaStats(DUAS, memorizedVerses, revisedVerses);
+                return (stats.total > 0 ? (stats.memorized / stats.total) * 100 : 0);
+              })()}%`
+            }]}
+          />
+        </View>
+
+        <Text style={[styles.duaProgressText, { color: colors.secondary }]}>
+          {(() => {
+            const DUAS = QURANIC_DUAS_DATA as QuranicDua[];
+            const stats = calculateDuaStats(DUAS, memorizedVerses, revisedVerses);
+            return `${stats.memorized} of ${stats.total} duas memorized`;
+          })()}
+        </Text>
+      </View>
+
       {/* 114 Surahs and 30 Juz Grid */}
-      <View style={[styles.progressCard, { backgroundColor: '#333333', borderColor: '#555555' }]}>
-        <Text style={[styles.progressTitle, { color: '#ffffff' }]}>
-          Your Progress
+      <View style={[styles.progressCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.title, { color: colors.text }]}>
+          Overall Progress
         </Text>
 
         <View style={styles.toggleContainer}>
@@ -538,7 +614,7 @@ export default function StatsScreen() {
       <ActivityTimeSeriesGraph data={activityData} pageData={pageActivityData} />
 
       {/* Tab Selector for Heatmap */}
-      <View style={[styles.progressCard, { backgroundColor: '#333333', borderColor: '#555555', padding: 0, overflow: 'hidden' }]}>
+      <View style={[styles.progressCard, { backgroundColor: colors.card, borderColor: colors.border, padding: 0, overflow: 'hidden' }]}>
         <View style={styles.heatmapTabSelector}>
           <TouchableOpacity
             style={[
@@ -607,7 +683,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 8,
   },
-  subtitle: {
+  headerSubtitle: {
     fontSize: 18,
     fontWeight: '400',
   },
@@ -767,5 +843,64 @@ const styles = StyleSheet.create({
   heatmapTabText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  duaHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  duaHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  duaIconBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: 'rgba(212, 175, 55, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(212, 175, 55, 0.2)',
+  },
+  duaStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 16,
+  },
+  duaStat: {
+    alignItems: 'center',
+  },
+  duaStatValue: {
+    fontSize: 28,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  duaStatLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  duaProgressBar: {
+    height: 8,
+    borderRadius: 4,
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  duaProgressText: {
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  subtitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#94a3b8',
   },
 });

@@ -94,6 +94,7 @@ async function loadAppFontsOnce() {
     'ScheherazadeNew-Bold': require('../assets/fonts/ScheherazadeNew-Bold.ttf'),
     'NooreHuda-Regular': require('../assets/fonts/NooreHuda-Regular.ttf'),
     'NotoNaskhArabic-Regular': require('../assets/fonts/NotoNaskhArabic-Regular.ttf'),
+    'KFGQPC-Uthman-Taha': require('../assets/fonts/UthmanTaha-Ver10.otf'),
   };
   if (amiriAsset) {
     fontMap['AmiriQuran-Regular'] = amiriAsset;
@@ -315,7 +316,7 @@ function RootLayoutContent() {
     console.log('[_layout] Initializing push notifications...');
     console.log('[_layout] Daily Reminders (Fasting):', notificationsEnabled ? 'ENABLED' : 'DISABLED');
     console.log('[_layout] Daily Ayah:', ayahEnabled ? 'ENABLED' : 'DISABLED');
-    
+
     PushNotificationService.initialize()
       .then(() => {
         console.log('[_layout] Push service initialized, syncing subscriptions...');
@@ -526,29 +527,35 @@ function RootLayoutContent() {
       const isForce = !!remote.force;
 
       // Critical update: Current < Min Supported
-      // (Removed (isUpdate && isForce) as requested, so force-updates are dismissible)
       const isCritical = isVersionLower(version, remote.min_supported || MIN_SUPPORTED_VERSION);
 
-      // Announcement: Current == Latest AND Force=True (Billboard mode)
-      const isAnnouncement = !isUpdate && isForce;
+      // Show announcement only if explicitly intended for non-update cases (disabled for now to avoid redundant popups on latest version)
+      const isAnnouncement = false;
 
-      console.log('[version] Check:', { isUpdate, isCritical, isAnnouncement, lastDismissed: lastDismissedVersion, latest });
+      console.log('[version] Check:', { isUpdate, isCritical, isAnnouncement, lastSeen: lastSeenVersion, latest });
 
       if (isCritical) {
-        // Critical updates are blocking and always shown
         setForcedUpdate(true);
         setShowUpdatePrompt(true);
-      } else if (isUpdate || isAnnouncement) {
-        // Optional update or Announcement: Show if not dismissed for this version
+      } else if (isUpdate) {
+        // Only show soft prompt if not dismissed for this specific version
         if (lastDismissedVersion !== latest) {
-          // Only treat as a forced update when there is an actual update and remote requests force
-          setForcedUpdate(!!(isUpdate && isForce));
+          setForcedUpdate(isForce);
+          setShowUpdatePrompt(true);
+        } else {
+          setShowUpdatePrompt(false);
+        }
+      } else if (isAnnouncement) {
+        // Special case: Billboard/Announcement for latest version users
+        // Only show once per version
+        if (lastDismissedVersion !== latest) {
+          setForcedUpdate(false); // Announcements are not 'forced' updates
           setShowUpdatePrompt(true);
         } else {
           setShowUpdatePrompt(false);
         }
       } else {
-        // No update, no announcement
+        // No update available and no announcement intended for latest version users
         setShowUpdatePrompt(false);
       }
     } catch (e) {
@@ -607,7 +614,7 @@ function RootLayoutContent() {
   React.useEffect(() => {
     const unsubscribe = notifee.onForegroundEvent(({ type, detail }) => {
       console.log('[Notifee] Foreground event:', EventType[type], detail);
-      
+
       if (type === EventType.PRESS) {
         handleNotificationInteraction(detail.notification?.data);
       }
@@ -620,7 +627,7 @@ function RootLayoutContent() {
   React.useEffect(() => {
     const unsubscribe = notifee.onBackgroundEvent(async ({ type, detail }) => {
       console.log('[Notifee] Background event:', EventType[type], detail);
-      
+
       if (type === EventType.PRESS) {
         // Handle navigation - this will open the app
         handleNotificationInteraction(detail.notification?.data);
