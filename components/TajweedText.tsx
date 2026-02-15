@@ -11,8 +11,11 @@
 import { parseTajweedHTML } from '@/utils/QuranTajweedParser';
 import { TajweedParser } from '@/utils/tajweedParser';
 import { Canvas, Paragraph, Skia, TextAlign, TextDirection, useFonts } from '@shopify/react-native-skia';
+
+// ... (rest of imports)
+
 import React, { useMemo, useState } from 'react';
-import { Platform, Text as RNText, StyleProp, TextStyle, View } from 'react-native';
+import { Text as RNText, StyleProp, TextStyle, View } from 'react-native';
 
 /**
  * Detects if text starts with combining mark (production-safe for Skia)
@@ -85,13 +88,11 @@ function splitOffTrailingCluster(text: string): { head: string; cluster: string 
     i--;
   }
 
-  // No base character found (text is all combining marks)
-  if (i < 0) return null;
-
-  // Include the base character and anything after it up to the last non-whitespace.
-  // Keep trailing whitespace in the head so it stays in the original segment.
-  const head = codepoints.slice(0, i).join('') + codepoints.slice(end + 1).join('');
-  const cluster = codepoints.slice(i, end + 1).join('');
+  /* FIX: Defined 'head' variable (was missing) and updated 'cluster'
+     to use slice(i) instead of slice(i, end+1) to ensure we don't accidentally
+     delete trailing whitespace if the segment had it. */
+  const head = codepoints.slice(0, i).join('');
+  const cluster = codepoints.slice(i).join('');
   return { head, cluster };
 }
 
@@ -340,6 +341,17 @@ function extractLineHeight(style: StyleProp<TextStyle>): number | null {
   }
 
   return null;
+}
+
+function extractFontFamily(style: StyleProp<TextStyle>): string | undefined {
+  if (!style) return undefined;
+  const styleArray = Array.isArray(style) ? style : [style];
+  for (const s of styleArray) {
+    if (s && typeof s === 'object' && 'fontFamily' in s && typeof s.fontFamily === 'string') {
+      return s.fontFamily;
+    }
+  }
+  return undefined;
 }
 
 
@@ -599,12 +611,14 @@ const TajweedText: React.FC<TajweedTextProps> = ({
   const fontSize = useMemo(() => extractFontSize(style), [style]);
   const lineHeight = useMemo(() => extractLineHeight(style), [style]);
 
-  // Skia uses a height multiplier (e.g., 1.5), not pixel line-height
+  // Skia uses a height multiplier (e.g. 1.5), not pixel line-height
   const heightMultiplier = useMemo(() => {
     if (!lineHeight || !fontSize) return undefined;
     if (lineHeight === fontSize) return 1.0;
     return lineHeight / fontSize;
   }, [lineHeight, fontSize]);
+
+  const fontFamily = useMemo(() => extractFontFamily(style), [style]);
 
   // Best-practice: preserve raw source text upstream, normalize only for rendering.
   const mushafText = useMemo(() => {
@@ -649,7 +663,6 @@ const TajweedText: React.FC<TajweedTextProps> = ({
     return withQalqalah;
   }, [sanitized, enableStopRules]);
 
-  // CRITICAL: Memoize paragraph to prevent re-creation on every render (FlashList performance)
   const paragraphData = useMemo(() => {
     // EXTRA GUARD: Do not attempt to layout or render if width is too small (prevents extreme vertical wrapping)
     if (!fontMgr || !safeSegments.length || !containerWidth || containerWidth < 100) return null;
@@ -662,7 +675,7 @@ const TajweedText: React.FC<TajweedTextProps> = ({
     const builder = Skia.ParagraphBuilder.Make(paragraphStyle, fontMgr);
     let totalTextLength = 0;
 
-    safeSegments.forEach((segment: ColoredSegment) => {
+    safeSegments.forEach((segment: ColoredSegment, i: number) => {
       builder.pushStyle({
         color: Skia.Color(segment.color),
         fontSize: fontSize,
@@ -731,8 +744,7 @@ const TajweedText: React.FC<TajweedTextProps> = ({
   const height = isOverLimit ? rawHeight : Math.min(rawHeight, METAL_HARDWARE_LIMIT);
 
   // OPTIMIZATION: Do not render Skia if dimensions are invalid or width is too small
-  // Force iOS only for Skia - Android uses fallback RNText which handles the glyph correctly
-  const canRenderSkia = Platform.OS === 'ios' && !isOverLimit && containerWidth && containerWidth >= 100 && height > 0 && !isNaN(height) && paragraph;
+  const canRenderSkia = !isOverLimit && containerWidth && containerWidth >= 100 && height > 0 && !isNaN(height) && paragraph;
 
   return (
     <View
@@ -779,8 +791,10 @@ const TajweedText: React.FC<TajweedTextProps> = ({
                 const digitFontSize = digits.length > 2 ? fontSize * 0.35 : fontSize * 0.42;
 
                 return (
-                  <RNText key={i} style={{ color: seg.color }}>
-                    {baseText}
+                  <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+                    <RNText style={{ color: seg.color }}>
+                      {baseText}
+                    </RNText>
                     <View style={{
                       width: fontSize * 1.1,
                       height: fontSize,
@@ -788,15 +802,6 @@ const TajweedText: React.FC<TajweedTextProps> = ({
                       alignItems: 'center',
                       marginBottom: -fontSize * 0.15
                     }}>
-                      <RNText style={{
-                        position: 'absolute',
-                        fontFamily: 'KFGQPC-Uthmanic-Hafs',
-                        fontSize: fontSize,
-                        color: seg.color,
-                        textAlign: 'center'
-                      }}>
-                        ۝
-                      </RNText>
                       <RNText style={{
                         fontSize: digitFontSize,
                         fontWeight: 'bold',
@@ -807,7 +812,7 @@ const TajweedText: React.FC<TajweedTextProps> = ({
                         {digits}
                       </RNText>
                     </View>
-                  </RNText>
+                  </View>
                 );
               }
               return (

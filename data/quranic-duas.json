@@ -67,44 +67,15 @@
         "surahNumber": 2,
         "verseNumber": 286,
         "category": "Rabbana",
-        "theme": "Forgiveness for forgetfulness",
+        "theme": "Forgiveness & Protection from Burdens",
         "juz": 3,
-        "arabicSnippet": "رَبَّنَا لَا تُؤَاخِذْنَا إِن نَّسِينَا",
-        "context": "Seeking mercy for unintentional mistakes.",
+        "arabicSnippet": "رَبَّنَا لَا تُؤَاخِذْنَا ... وَلَا تَحْمِلْ عَلَيْنَا إِصْرًا ... وَلَا تُحَمِّلْنَا مَا لَا طَاقَةَ لَنَا بِهِ",
+        "context": "Seeking mercy for mistakes and asking for ease in trials.",
         "tags": [
             "forgiveness",
             "mercy",
-            "forgetfulness"
-        ]
-    },
-    {
-        "id": "rabbana_006",
-        "surahNumber": 2,
-        "verseNumber": 286,
-        "category": "Rabbana",
-        "theme": "Protection from heavy burdens",
-        "juz": 3,
-        "arabicSnippet": "رَبَّنَا وَلَا تَحْمِلْ عَلَيْنَا إِصْرًا",
-        "context": "Asking not to be tested beyond capacity.",
-        "tags": [
             "protection",
-            "ease",
-            "testing"
-        ]
-    },
-    {
-        "id": "rabbana_007",
-        "surahNumber": 2,
-        "verseNumber": 286,
-        "category": "Rabbana",
-        "theme": "Burden beyond strength",
-        "juz": 3,
-        "arabicSnippet": "رَبَّنَا وَلَا تُحَمِّلْنَا مَا لَا طَاقَةَ لَنَا بِهِ",
-        "context": "Seeking help against disbelievers.",
-        "tags": [
-            "strength",
-            "victory",
-            "mercy"
+            "ease"
         ]
     },
     {

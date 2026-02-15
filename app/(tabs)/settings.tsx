@@ -1020,7 +1020,7 @@ export default function SettingsScreen() {
             setTimeout(() => setDebugTapCount(0), 2000);
           }}
         >
-          <Text style={styles.versionText}>Ver-2.0.7</Text>
+          <Text style={styles.versionText}>Ver-2.0.8</Text>
         </Pressable>
       </ScrollView>
 

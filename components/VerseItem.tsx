@@ -37,6 +37,7 @@ interface VerseItemProps {
   juzSequenceNumber?: number;
   totalJuzVerses?: number;
   source?: 'surahList' | 'juzList' | 'mustahabbah';
+  highlighted?: boolean;
 }
 
 type VerseItemInternalProps = VerseItemProps & { forwardedRef?: any };
@@ -75,6 +76,7 @@ const VerseItem = ({
   pageRepeatInfo,
   juzSequenceNumber,
   totalJuzVerses,
+  highlighted = false,
   ...rest
 }: VerseItemInternalProps) => {
   const { primary } = useThemeColor();
@@ -209,26 +211,33 @@ const VerseItem = ({
   // NOTE: U+06DF (۟) marks are legitimate Quranic orthography that should be visible
   // React Native can't position them above letters (GPOS limitation) so they appear standalone
   const displayedArabic = useMemo(() => {
-    let text = (() => {
-      // CRITICAL: When Tajweed font is selected, use tajweedText with markup for colors
-      if (arabicFont === 'tajweed' && (verse as any).tajweedText) {
-        return (verse as any).tajweedText;
-      }
-      // Otherwise use plain text
-      if (localData.arabic && localData.arabic.trim().length > 0) {
-        return localData.arabic;
-      }
-      return arabicText || '';
-    })();
+    let text = '';
 
-    // Append decorative verse end glyph for Tajweed mode
-    // The number decoration (۝) is appended as a single glyph.
-    // The actual digits will be overlaid by the TajweedText component to ensure correct framing.
-    // Defensive check: only append if the marker isn't already present (e.g. from parser cleaning)
+    // DEBUG: Log what we're getting
+    // console.log('[VerseItem] arabicFont:', arabicFont);
+    // console.log('[VerseItem] verse.tajweedText length:', ((verse as any).tajweedText || '').length);
+    // console.log('[VerseItem] localData.arabic length:', (localData.arabic || '').length);
+    // console.log('[VerseItem] arabicText length:', (arabicText || '').length);
+
+    // Get the base text
+    if (arabicFont === 'tajweed' && (verse as any).tajweedText) {
+      text = (verse as any).tajweedText;
+      // console.log('[VerseItem] Using tajweedText:', text.substring(0, 100));
+    } else if (localData.arabic && localData.arabic.trim().length > 0) {
+      text = localData.arabic;
+      // console.log('[VerseItem] Using localData.arabic:', text.substring(0, 100));
+    } else {
+      text = arabicText || '';
+      // console.log('[VerseItem] Using arabicText:', text.substring(0, 100));
+    }
+
+    // Append verse end glyph for Tajweed mode (both iOS and Android)
+    // TajweedText handles Android fallback with colored segments
     if (arabicFont === 'tajweed' && text && !text.endsWith('\u06DD')) {
       text = `${text}\u06DD`;
     }
 
+    // console.log('[VerseItem] Final text length:', text.length);
     return text;
   }, [arabicFont, (verse as any).tajweedText, localData.arabic, arabicText]);
 
@@ -253,6 +262,15 @@ const VerseItem = ({
       return {
         backgroundColor: '#1E3A8A',
         borderColor: '#3B82F6',
+        borderWidth: 2,
+      };
+    }
+
+    // Explicit highlight state (gold border) for search/navigation results
+    if (highlighted) {
+      return {
+        backgroundColor: '#D4AF3715',
+        borderColor: '#D4AF37',
         borderWidth: 2,
       };
     }
@@ -809,7 +827,7 @@ const VerseItem = ({
                 includeFontPadding: false,
                 paddingHorizontal: 4,
                 ...arabicTypography,
-                minHeight: arabicTypography.lineHeight || fontSizeArabic * 1.5, // Fallback for short verses
+                minHeight: arabicTypography.lineHeight || fontSizeArabic * 1.5,
                 lineHeight: arabicTypography.lineHeight || Math.round(fontSizeArabic * 2.0),
               }]}
             />
@@ -873,7 +891,7 @@ const VerseItem = ({
             <Text style={[styles.memorizedDateText]}>Memorized: (Surah level)</Text>
           )}
           {!memorized && !surahMemorizedGlobally && (
-            <Text style={[styles.memorizedDateText, { opacity: 0.3 }]}>Not memorized</Text>
+            <Text style={[styles.memorizedDateText, { opacity: 0.6 }]}>Not memorized</Text>
           )}
         </View>
 
@@ -885,7 +903,7 @@ const VerseItem = ({
             <Text style={[styles.revisedDateText]}>Revised: (Surah level)</Text>
           )}
           {!revised && !surahRevisedGlobally && (
-            <Text style={[styles.revisedDateText, { opacity: 0.3 }]}>Not revised</Text>
+            <Text style={[styles.revisedDateText, { opacity: 0.6 }]}>Not revised</Text>
           )}
         </View>
       </View>

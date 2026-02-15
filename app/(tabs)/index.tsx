@@ -1014,8 +1014,7 @@ export default function HomeScreen() {
         return isThisWeek;
       });
 
-      if (__DEV__) console.log('Verses revised this week (count):', thisWeekRevised.length, 'list:', thisWeekRevised.map(r => `${r.verseId}@${r.date}`));
-
+      
       // Build a Set of verseIds revised this week for quick lookup
       const revisedVerseIdsThisWeek = new Set<number>(thisWeekRevised.map(r => r.verseId));
 

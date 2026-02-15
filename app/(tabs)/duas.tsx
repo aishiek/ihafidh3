@@ -98,14 +98,14 @@ export default function QuranicDuasScreen() {
     }, []);
 
     const navigateToDua = (dua: QuranicDua) => {
-        const vid = getVerseId(dua.surahNumber, dua.verseNumber);
         router.push({
-            pathname: '/(tabs)/read',
+            pathname: '/(tabs)/read', // Using the main reading tab
             params: {
                 surahId: dua.surahNumber.toString(),
-                verseId: vid.toString(),
-                verseEnd: dua.verseNumberEnd ? getVerseId(dua.surahNumber, dua.verseNumberEnd).toString() : undefined,
-                source: 'quranic_duas'
+                scrollToVerse: dua.verseNumber.toString(),
+                verseNumberEnd: dua.verseNumberEnd ? dua.verseNumberEnd.toString() : undefined,
+                source: 'surahList', // CRITICAL: Forces Surah mode display in VerseItem
+                fromDuas: 'true'     // Track origin for back navigation cycle
             }
         });
     };

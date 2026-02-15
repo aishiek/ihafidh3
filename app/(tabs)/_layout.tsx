@@ -1,7 +1,7 @@
 import { EnhancedHamburgerMenu } from '@/components/EnhancedHamburgerMenu';
 import OccasionHeaderIcon from '@/components/OccasionHeaderIcon';
 import { useThemeColor } from "@/utils/useThemeColor";
-import { Tabs } from "expo-router";
+import { Tabs, router } from "expo-router";
 import { BarChart, BookOpen, Brain, Home, RefreshCw, Settings as SettingsIcon } from "lucide-react-native";
 import React from "react";
 import { Platform, View } from 'react-native';
@@ -53,6 +53,32 @@ export default function TabLayout() {
         />
         <Tabs.Screen
           name="read"
+          listeners={({ navigation }) => ({
+            tabPress: (e) => {
+              e.preventDefault(); // Prevent default change
+
+              const state = navigation.getState();
+              const isFocused = state.routes[state.index].name === 'read';
+
+              if (isFocused) {
+                // If already on this tab, check if we need to reset or stay
+                const currentRoute = state.routes[state.index];
+                const params = currentRoute.params as any;
+                const fromDuas = params?.fromDuas === 'true';
+
+                if (fromDuas) {
+                  // Special Case: If viewing a Dua, tap should reset to Surah list
+                  router.replace('/(tabs)/read');
+                } else {
+                  // Default Preference: "Already reading -> Stay here"
+                  // Do nothing (stay on verse view)
+                }
+              } else {
+                // Not focused: Navigate to tab
+                router.push('/(tabs)/read');
+              }
+            },
+          })}
           options={{
             title: "Recite",
             tabBarIcon: ({ color, size }) => <BookOpen size={22} color={color} />,

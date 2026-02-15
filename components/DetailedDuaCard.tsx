@@ -139,20 +139,7 @@ export function DetailedDuaCard({
     const [sharing, setSharing] = useState(false);
     const [cardLayout, setCardLayout] = useState<{ width: number; height: number } | null>(null);
     const [imagesLoaded, setImagesLoaded] = useState(false);
-
-    // Adaptive height calculation to prevent "vast empty space" while ensuring long verses fit
-    const arabicContent = verseData?.ayah || dua.arabicSnippet || '';
-    // Heuristic: ~25 characters per line for this font size (Arabic with diacritics is wide).
-    const estimatedLines = Math.max(1, Math.ceil(arabicContent.length / 25));
-    // BUFFER: Increased base buffer to 140 and multiplier to provide more room
-    const adaptiveHeight = Math.max(160, estimatedLines * 75 + 140);
-
-    const [dynamicHeight, setDynamicHeight] = useState(adaptiveHeight);
-
-    // Update dynamic height when content changes
-    React.useEffect(() => {
-        setDynamicHeight(adaptiveHeight);
-    }, [arabicContent, adaptiveHeight]);
+    const [arabicTextHeight, setArabicTextHeight] = useState(160);
 
     // Preload images for sharing - ensure they're cached before capture
     React.useEffect(() => {
@@ -216,7 +203,6 @@ export function DetailedDuaCard({
             });
 
             // Capture with device pixel ratio
-            const dpr = PixelRatio.get() || 1;
             const uri = await viewShotRef.current.capture?.();
             if (!uri) throw new Error('Capture failed');
 
@@ -227,7 +213,7 @@ export function DetailedDuaCard({
             await Share.open({
                 url: uri.startsWith('file://') ? uri : `file://${uri}`,
                 title: 'Share Dua',
-                message: `${dua.theme}\\n\\nSurah ${dua.surahNumber}:${dua.verseNumber}\\n\\nDownload iHafidh: ${storeUrl}`,
+                message: `${dua.theme}\n\nSurah ${dua.surahNumber}:${dua.verseNumber}\n\nDownload iHafidh: ${storeUrl}`,
                 subject: 'Quranic Dua from iHafidh',
             });
         } catch (error: any) {
@@ -239,6 +225,8 @@ export function DetailedDuaCard({
             setSharing(false);
         }
     };
+
+    const arabicContent = verseData?.ayah || dua.arabicSnippet || '';
 
     return (
         <View style={{ position: 'relative' }}>
@@ -318,8 +306,8 @@ export function DetailedDuaCard({
                                     </View>
                                 </View>
 
-                                {/* Arabic Text Area with Glint Effect */}
-                                <View style={[styles.arabicContainer, { minHeight: dynamicHeight }]}>
+                                {/* Arabic Text Area with Glint Effect - FIXED: Dynamic height */}
+                                <View style={styles.arabicContainer}>
                                     <RadialTextGlow />
                                     {/* Decorative Corner Ornaments */}
                                     <Text style={[styles.cornerOrnament, { top: 10, left: 10 }]}>✦</Text>
@@ -328,21 +316,21 @@ export function DetailedDuaCard({
                                     <Text style={[styles.cornerOrnament, { bottom: 10, right: 10 }]}>✦</Text>
 
                                     <MaskedView
-                                        style={{ width: '100%', height: dynamicHeight }} // Dynamic height based on layout measurement
+                                        style={{ width: '100%', height: arabicTextHeight }} // FIXED: Applied explicit height
                                         maskElement={
                                             <View style={{ width: '100%', alignItems: 'center', justifyContent: 'center' }}>
                                                 <Text
                                                     style={styles.arabicText}
                                                     allowFontScaling={false}
                                                     onLayout={(e) => {
-                                                        const h = e.nativeEvent.layout.height;
-                                                        // Only update if height is significantly different to avoid loops
-                                                        if (h > 0 && Math.abs(h - dynamicHeight) > 10) {
-                                                            setDynamicHeight(h + 40); // Add safety buffer for diacritics
+                                                        // Track actual rendered height
+                                                        const measuredHeight = e.nativeEvent.layout.height;
+                                                        if (measuredHeight > 0) {
+                                                            setArabicTextHeight(measuredHeight + 10); // Added small buffer for diacritics
                                                         }
                                                     }}
                                                 >
-                                                    {verseData?.ayah || dua.arabicSnippet}
+                                                    {arabicContent}
                                                 </Text>
                                             </View>
                                         }
@@ -408,17 +396,16 @@ export function DetailedDuaCard({
 
 const styles = StyleSheet.create({
     cardContainer: {
-        borderRadius: 15, // Slightly smaller than border wrapper
+        borderRadius: 15,
         overflow: 'hidden',
         backgroundColor: '#05080F',
     },
     metallicBorder: {
         marginHorizontal: 16,
         marginBottom: 16,
-        padding: 1, // The 1px "Prestige Border"
+        padding: 1,
         borderRadius: 16,
         backgroundColor: '#05080F',
-        // Shadow/Glow
         shadowColor: '#D4AF37',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.2,
@@ -467,12 +454,11 @@ const styles = StyleSheet.create({
     },
     themeTitle: {
         fontSize: 20,
-        color: '#F9E79F', // Champagne Gold
+        color: '#F9E79F',
         fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
         marginBottom: 8,
         fontWeight: '700',
         letterSpacing: 1,
-        // Metallic Pop
         textShadowColor: 'rgba(212, 175, 55, 0.4)',
         textShadowOffset: { width: 0, height: 1 },
         textShadowRadius: 2,
@@ -497,11 +483,11 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: '600',
     },
+    // FIXED: arabicContainer - removed minHeight, let content dictate size
     arabicContainer: {
-        backgroundColor: 'rgba(5, 8, 15, 0.8)', // Darker for more contrast
-        paddingRight: 20,
-        paddingLeft: 20,
-        paddingVertical: 20,
+        backgroundColor: 'rgba(5, 8, 15, 0.8)',
+        paddingHorizontal: 20,
+        paddingVertical: 20, // Consistent padding
         borderRadius: 12,
         marginBottom: 24,
         borderWidth: 1,
@@ -509,6 +495,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         overflow: 'hidden',
+        // No minHeight - flexbox will size to content
     },
     cornerOrnament: {
         position: 'absolute',
@@ -517,27 +504,30 @@ const styles = StyleSheet.create({
         fontSize: 10,
         zIndex: 5,
     },
+    // FIXED: arabicText - reduced lineHeight from 69 to 50 (1.67x font size)
     arabicText: {
-        fontSize: 30, // Slightly smaller for breathing room
-        lineHeight: 69, // 2.3x ratio to prevent vowel cluster smearing and dot clipping
-        color: '#F9E79F', // Fallback color
+        fontSize: 30,
+        lineHeight: Platform.select({
+            ios: 52, // iOS handles Arabic better
+            android: 50, // Android needs tighter spacing
+        }),
+        color: '#F9E79F',
         textAlign: 'center',
         fontFamily: 'KFGQPC-Uthman-Taha',
         writingDirection: 'rtl',
         backgroundColor: 'transparent',
-        flexShrink: 1,
-        paddingVertical: 10, // Internal buffer for high dots/accents
+        paddingVertical: 8, // Reduced from 10
     },
     translationContainer: {
         marginTop: 10,
-        paddingLeft: 16, // Space for the accent line
-        borderLeftWidth: 3, // Premium anchor line
+        paddingLeft: 16,
+        borderLeftWidth: 3,
         borderLeftColor: 'rgba(212, 175, 55, 0.6)',
         opacity: 0.9,
     },
     translation: {
         fontSize: 16,
-        color: '#f4e4b7', // Warm cream-gold for harmony
+        color: '#f4e4b7',
         lineHeight: 26,
         fontFamily: Platform.OS === 'ios' ? 'EB Garamond' : 'serif',
         fontStyle: 'italic',
@@ -556,12 +546,11 @@ const styles = StyleSheet.create({
         fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
     },
     memorizedCardInner: {
-        borderWidth: 1, // The inner Bevel
+        borderWidth: 1,
         borderColor: '#F9E79F',
         borderRadius: 15,
     },
     memorizedCard: {
-        // Outer glow/bezel already handled by metallicBorder wrapper in this component's structure
         ...Platform.select({
             ios: {
                 shadowColor: '#D4AF37',
@@ -583,7 +572,7 @@ const styles = StyleSheet.create({
     sharingCard: {
         width: 1080 / PixelRatio.get(),
         minHeight: 1920 / PixelRatio.get(),
-        paddingTop: 80, // Safe area for story top
+        paddingTop: 80,
         paddingBottom: 40,
         justifyContent: 'space-between',
         borderRadius: 0,
@@ -624,7 +613,7 @@ const styles = StyleSheet.create({
         borderTopWidth: 1,
         borderTopColor: 'rgba(255, 255, 255, 0.08)',
         position: 'relative',
-        backgroundColor: '#05080FF5', // Obsidian matching Royal Theme
+        backgroundColor: '#05080FF5',
     },
     footerTopAccent: {
         position: 'absolute',
