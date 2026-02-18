@@ -1,5 +1,4 @@
 name: Send Custom Broadcast
-
 on:
     workflow_dispatch:
         inputs:
@@ -25,21 +24,19 @@ on:
                 description: 'Target Timezone (use "all" for everyone, or specific like "0800", "-0500")'
                 required: true
                 default: "all"
-
 jobs:
     send-broadcast:
         runs-on: ubuntu-latest
         steps:
+            - name: Wait 80 minutes
+              run: sleep 4800
             - uses: actions/checkout@v3
-
             - name: Setup Node.js
               uses: actions/setup-node@v3
               with:
                   node-version: "18"
-
             - name: Install Dependencies
               run: npm install firebase-admin
-
             - name: Send Broadcast
               run: node scripts/notifications/send-broadcast.js
               env:
