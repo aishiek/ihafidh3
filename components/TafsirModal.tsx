@@ -10,6 +10,7 @@ interface TafsirModalProps {
   onClose: () => void;
   surahId: number;
   verseNumber: number;
+  supportedOrientations?: ("portrait" | "portrait-upside-down" | "landscape" | "landscape-left" | "landscape-right")[]; // Allow customizing orientations
 }
 
 interface TafsirData {
@@ -17,7 +18,7 @@ interface TafsirData {
   text: string;
 }
 
-export default function TafsirModal({ visible, onClose, surahId, verseNumber }: TafsirModalProps) {
+export default function TafsirModal({ visible, onClose, surahId, verseNumber, supportedOrientations = ['portrait'] }: TafsirModalProps) {
   const [tafsirData, setTafsirData] = useState<TafsirData | null>(null);
     const [sourceInfo, setSourceInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -55,7 +56,13 @@ export default function TafsirModal({ visible, onClose, surahId, verseNumber }: 
   }, [visible, surahId, verseNumber, translationLanguage]);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal 
+      visible={visible} 
+      transparent 
+      animationType="fade" 
+      onRequestClose={onClose}
+      supportedOrientations={supportedOrientations}
+    >
       <View style={styles.overlay}>
         {/* Backdrop to close on outside tap */}
         <Pressable style={styles.backdropFill} onPress={onClose} />
