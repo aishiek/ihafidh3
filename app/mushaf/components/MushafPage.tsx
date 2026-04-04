@@ -218,10 +218,6 @@ export function MushafPage(props: MushafPageProps) {
           />
         )}
 
-        {/* Page number badge (overlay) */}
-        <View style={[styles.pageNumberBadge, { right: 8, bottom: 8 }]}>
-          <Text style={[styles.pageNumberText, { fontSize: Math.max(12 * scale, 10) }]}>{pageNumber}</Text>
-        </View>
 
         {/* Word Overlay - SVG with text strokes for visibility */}
         {state.wordBoxes.length > 0 && (

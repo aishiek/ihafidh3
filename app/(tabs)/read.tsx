@@ -16,7 +16,6 @@ import {
     ActivityIndicator,
     Alert,
     Animated,
-    BackHandler,
     Modal,
     PanResponder,
     Pressable,
@@ -30,10 +29,12 @@ import {
 import JuzMemorization from '@/components/JuzMemorization';
 import VerseItem from '@/components/VerseItem';
 import { surahsData } from '@/data/surahs';
+import { useOrientationReadMode } from '@/hooks/useOrientationReadMode';
 import { fetchVersesForJuz, fetchVersesForSurah, getDatabase, JuzVerse, logDatabaseTables } from '@/services/juzDbService';
 import { useNavigationStore } from '@/store/navigationStore';
 import { useProgressStore } from '@/store/progressStore';
 import { useQuranStore } from '@/store/quranStore';
+import { useReadModeStore } from '@/store/readModeStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import type { Surah, Verse } from '@/types';
 import {
@@ -52,8 +53,6 @@ import { AutoSizeText, ResizeTextMode } from 'react-native-auto-size-text';
 // Page audio indicator removed from header (compacting UI)
 import PageModeButton from '@/components/PageModeButton';
 import PageModeConfig from '@/components/PageModeConfig';
-import { useOrientationReadMode } from '@/hooks/useOrientationReadMode';
-import { useReadModeStore } from '@/store/readModeStore';
 import { calculatePages } from '@/utils/pageUtils';
 
 import { fetchUthmaniTajweedRnMarkupByChapter } from '@/services/quranComTajweedService';
@@ -65,22 +64,11 @@ export default function ReadScreen() {
   const arabicTypography = getArabicTypographySizing(fontSizeArabic, arabicFont);
   const arabicFontFamily = getArabicFontFamily(arabicFont);
 
-  const {
-    surahId: paramSurahId,
-    verseId: paramVerseId,
-    source: paramSource,
-    juzNumber: paramJuzNumber,
-    scrollToVerse: paramScrollVerse,
-    fromDuas: paramFromDuas,
-    verseNumberEnd: paramVerseEnd
-  } = useLocalSearchParams<{
+  const { surahId: paramSurahId, verseId: paramVerseId, source: paramSource, juzNumber: paramJuzNumber } = useLocalSearchParams<{
     surahId?: string;
     verseId?: string;
     source?: string;
     juzNumber?: string;
-    scrollToVerse?: string;
-    fromDuas?: string;
-    verseNumberEnd?: string;
   }>();
 
   const {
@@ -111,6 +99,13 @@ export default function ReadScreen() {
     setJuzListScrollY,
   } = useNavigationStore();
 
+  // Read mode position restoration
+  const {
+    lastVisibleVerse,
+    lastVisibleJuz,
+    clearHandoff,
+  } = useReadModeStore();
+
   // Track if this is initial mount (to restore position silently)
   const isInitialSurahMount = useRef(true);
   const isInitialJuzMount = useRef(true);
@@ -119,11 +114,10 @@ export default function ReadScreen() {
   const [tab, setTab] = useState<'surah' | 'juz'>('surah');
   const [selectedSurah, setSelectedSurah] = useState<Surah | null>(null);
   const [selectedJuz, setSelectedJuz] = useState<number | null>(null);
-  const [navigationSource, setNavigationSource] = useState<'surahList' | 'juzList' | 'mustahabbah' | 'continueReading' | 'stats' | 'quranic_duas' | null>(null);
+  const [navigationSource, setNavigationSource] = useState<'surahList' | 'juzList' | 'mustahabbah' | 'continueReading' | 'stats' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [verses, setVerses] = useState<Verse[]>([]);
   const [juzVerses, setJuzVerses] = useState<JuzVerse[]>([]);
-  const [highlightedVerseId, setHighlightedVerseId] = useState<number | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isPlayingSurah, setIsPlayingSurah] = useState(false);
   const [isSurahPaused, setIsSurahPaused] = useState(false);
@@ -174,7 +168,6 @@ export default function ReadScreen() {
 
   // Local transient toast (small non-blocking feedback)
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [hasSeenBulkHint, setHasSeenBulkHint] = useState(false);
   const toastAnim = useRef(new Animated.Value(0)).current;
   const showToast = useCallback((msg: string, duration = 1400) => {
     setToastMessage(msg);
@@ -183,18 +176,6 @@ export default function ReadScreen() {
       Animated.timing(toastAnim, { toValue: 0, duration: 220, useNativeDriver: true }).start(() => setToastMessage(null));
     }, duration);
   }, [toastAnim]);
-
-  // Load first-time hint status from AsyncStorage
-  useEffect(() => {
-    (async () => {
-      try {
-        const seen = await AsyncStorage.getItem('@bulk_hint_seen');
-        setHasSeenBulkHint(seen === 'true');
-      } catch (e) {
-        console.error('[read] Failed to load bulk hint status', e);
-      }
-    })();
-  }, []);
 
   // CRITICAL FIX: Force FlashList to rebuild when verse data changes (Fix for recycling issues)
   const [verseListKey, setVerseListKey] = useState(0);
@@ -228,95 +209,60 @@ export default function ReadScreen() {
   const suppressNextAutoOpen = useRef(false);
   const surahListRef = useRef<FlashListRef<any>>(null);
   const loadingLocks = useRef<Map<string, Promise<any>>>(new Map());
-  
-  // === Read Mode State & Handlers ===
-  const activeVerseRef = useRef<any>(null);
-  const savedVerseIndexRef = useRef<number>(0);
 
-  const onLandscape = useCallback(async () => {
-    showToast('Read Mode Triggered');
-    // If user hasn't scrolled yet, try to populate snapshot from the first visible verse
-    if (!activeVerseRef.current && (verses.length > 0)) {
-        const item = verses[0];
-        const surahInfo = surahsData.find((s) => s.id === item.surahId);
-        activeVerseRef.current = {
-            surahId: item.surahId,
-            surahName: surahInfo?.englishName || surahInfo?.name || `Surah ${item.surahId}`,
-            verseNumber: item.verseNumber,
-            juzNumber: item.juzNumber,
-            arabicText: item.arabicText,
-            transliteration: item.transliteration || null,
-            translation: item.translation || null,
-            source: (tab === 'juz' && selectedJuz) ? 'juzList' : 'surahList',
-        };
-    }
+  // === Orientation Handling for Read Mode ===
+  const [currentVisibleVerse, setCurrentVisibleVerse] = useState<{ surahId: number; verseNumber: number } | null>(null);
 
-    if (!activeVerseRef.current) return;
-    
-    savedVerseIndexRef.current = savedVerseIndexRef.current || 0;
-    
-    // Lock orientation BEFORE navigation to prevent flash
-    await ScreenOrientation.lockAsync(
-      ScreenOrientation.OrientationLock.LANDSCAPE
-    );
-    
+  // Handle landscape orientation - navigate to read-mode
+  const handleLandscape = useCallback(() => {
+    // Only trigger if verses are loaded and not in page mode
+    if (verses.length === 0 && juzVerses.length === 0) return;
+    if (isPageModeActive) return;
+    if (goToModalVisible || progressModalVisible) return;
+
+    // Determine current context
+    const currentVerse = currentVisibleVerse || (verses.length > 0 ? { surahId: verses[0].surahId, verseNumber: verses[0].verseNumber } : null);
+    if (!currentVerse) return;
+
+    // Get current surah/juz context
+    const contextSurahId = selectedSurah?.id || currentVerse.surahId;
+    const contextJuzNumber = selectedJuz;
+    const source = selectedJuz ? 'juzList' : 'surahList';
+    const surahName = selectedSurah?.englishName || selectedSurah?.name || `Surah ${contextSurahId}`;
+
+    // Find the current verse data for navigation
+    const currentVerseData = verses.find(v => v.surahId === currentVerse.surahId && v.verseNumber === currentVerse.verseNumber) ||
+                          juzVerses.find(jv => jv.chapter_id === currentVerse.surahId && jv.verse_number === currentVerse.verseNumber);
+
+    if (!currentVerseData) return;
+
+    // Navigate to read-mode with full context
     router.push({
       pathname: '/read-mode',
       params: {
-        surahId: activeVerseRef.current.surahId.toString(),
-        verseNumber: activeVerseRef.current.verseNumber.toString(),
-        juzNumber: activeVerseRef.current.juzNumber?.toString() || '',
-        arabicText: activeVerseRef.current.arabicText,
-        transliteration: activeVerseRef.current.transliteration || 'null',
-        translation: activeVerseRef.current.translation || 'null',
-        surahName: activeVerseRef.current.surahName,
-        source: activeVerseRef.current.source,
+        surahId: contextSurahId.toString(),
+        verseNumber: currentVerse.verseNumber.toString(),
+        juzNumber: contextJuzNumber?.toString(),
+        arabicText: (currentVerseData as any).ayah || (currentVerseData as any).arabicText || '',
+        translation: (currentVerseData as any).translation || '',
+        transliteration: (currentVerseData as any).transliteration || '',
+        surahName: surahName,
+        source: source,
       }
-    });
-  }, [router, tab, selectedJuz, verses]);
+    } as any);
+  }, [verses, juzVerses, isPageModeActive, goToModalVisible, progressModalVisible, currentVisibleVerse, selectedSurah, selectedJuz, router]);
 
-  const onPortraitReturn = useCallback(async () => {
-    // Simple: just go back to previous screen
-    router.back();
-  }, [router]);
-
-  useOrientationReadMode({ onLandscape, onPortraitReturn });
-
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
-  const onViewableItemsChanged = useCallback(({ viewableItems }: any) => {
-    if (viewableItems && viewableItems.length > 0) {
-        const item = viewableItems[0].item;
-        savedVerseIndexRef.current = viewableItems[0].index;
-
-        const isJuz = tab === 'juz' && selectedJuz != null;
-        const isVerses = tab === 'surah' || isJuz;
-
-        if (isVerses && item) {
-            // Normalize: JuzVerse uses different field names than Verse
-            const surahId = item.surahId ?? item.chapter_id;
-            const verseNumber = item.verseNumber ?? item.verse_number;
-            const arabicText = item.arabicText ?? item.ayah;
-            const surahInfo = surahsData.find(s => s.id === surahId);
-
-            activeVerseRef.current = {
-                surahId,
-                surahName: surahInfo?.englishName || surahInfo?.name || '',
-                verseNumber,
-                juzNumber: item.juzNumber ?? item.part_id,
-                arabicText,
-                transliteration: item.transliteration || null,
-                translation: item.translation || null,
-                source: isJuz ? 'juzList' : 'surahList',
-            };
-        }
-    }
-}, [tab, selectedJuz]);
-
-  const handleScrollToIndexFailed = useCallback((info: { index: number; highestMeasuredFrameIndex: number; averageItemLength: number }) => {
-    console.warn('[read] scrollToIndex failed, falling back to offset', info);
-    const offset = info.averageItemLength * info.index;
-    flatListRef.current?.scrollToOffset({ offset, animated: false });
+  // Handle portrait return from read-mode
+  const handlePortraitReturn = useCallback(() => {
+    // This will be handled by the read-mode screen's own logic
+    // The read-mode screen will navigate back with proper params
   }, []);
+
+  // Initialize orientation hook
+  useOrientationReadMode({
+    onLandscape: handleLandscape,
+    onPortraitReturn: handlePortraitReturn,
+  });
 
   // === Smart Progressive Header Collapse ===
   // Header state: 'full' (all controls), 'minimal' (hide bulk actions), 'collapsed' (essentials only)
@@ -324,15 +270,15 @@ export default function ReadScreen() {
   const lastScrollY = useRef(0);
   const lastHeaderStateChangeY = useRef(0); // For hysteresis - track last state change position
 
-  // Explicit header heights per state (FIXED HEIGHT TO ELIMINATE JITTER)
-  const HEADER_HEIGHT_FULL = 100;
-  const HEADER_HEIGHT_MINIMAL = 100;
-  const HEADER_HEIGHT_COLLAPSED = 100;
+  // Explicit header heights per state (for layout stability)
+  const HEADER_HEIGHT_FULL = 120; // Full header with all controls and bulk actions (no metadata row)
+  const HEADER_HEIGHT_MINIMAL = 56; // Single row with all controls, no bulk actions
+  const HEADER_HEIGHT_COLLAPSED = 56; // Same as minimal, just Arabic name hidden
 
   // Scroll thresholds with hysteresis buffer to prevent jittery state changes
   const SCROLL_THRESHOLD_MINIMAL = 100; // Collapse to minimal at 100px
   const SCROLL_THRESHOLD_COLLAPSED = 300; // Collapse to collapsed at 300px
-  const HYSTERESIS_BUFFER = 60; // Increased buffer for smoother transitions
+  const HYSTERESIS_BUFFER = 30; // Require 30px scroll in opposite direction to undo state change
 
   // Guard against FlashList scroll jumps (sudden large scroll position changes)
   const MAX_SCROLL_JUMP = 500; // Ignore scroll events with jumps larger than this
@@ -704,25 +650,23 @@ export default function ReadScreen() {
     const distanceSinceLastChange = Math.abs(currentScrollY - lastHeaderStateChangeY.current);
 
     if (direction === 'down') {
-      // Scrolling down - collapse to single row, show Arabic only
-      if (currentScrollY > SCROLL_THRESHOLD_MINIMAL && headerState === 'full') {
+      // Scrolling down - progressively collapse
+      if (currentScrollY > SCROLL_THRESHOLD_COLLAPSED && headerState !== 'collapsed') {
         setHeaderState('collapsed');
         lastHeaderStateChangeY.current = currentScrollY;
-
-        // One-time hint for bulk actions
-        if (!hasSeenBulkHint) {
-          showToast('Tap ⋮ for bulk actions', 2500);
-          setHasSeenBulkHint(true);
-          AsyncStorage.setItem('@bulk_hint_seen', 'true').catch(e =>
-            console.error('[read] Failed to save bulk hint status', e)
-          );
-        }
+      } else if (currentScrollY > SCROLL_THRESHOLD_MINIMAL && headerState === 'full') {
+        setHeaderState('minimal');
+        lastHeaderStateChangeY.current = currentScrollY;
       }
     } else {
-      // Scrolling up - expand back to full view
+      // Scrolling up - progressively expand (with hysteresis)
+      // Only expand if we've scrolled far enough in the opposite direction
       if (distanceSinceLastChange > HYSTERESIS_BUFFER) {
         if (currentScrollY < SCROLL_THRESHOLD_MINIMAL && headerState !== 'full') {
           setHeaderState('full');
+          lastHeaderStateChangeY.current = currentScrollY;
+        } else if (currentScrollY < SCROLL_THRESHOLD_COLLAPSED && headerState === 'collapsed') {
+          setHeaderState('minimal');
           lastHeaderStateChangeY.current = currentScrollY;
         }
       }
@@ -959,7 +903,6 @@ export default function ReadScreen() {
 
   // Event handlers
   const handleBackToSurahs = useCallback(() => {
-    console.log('[read] BACK BUTTON PRESSED - isNavigatingBack:', isNavigatingBack.current, 'selectedSurah:', selectedSurah?.id, 'selectedJuz:', selectedJuz, 'navigationSource:', navigationSource);
     if (isNavigatingBack.current) return;
     isNavigatingBack.current = true;
 
@@ -974,21 +917,9 @@ export default function ReadScreen() {
         // Ensure Page Mode is exited when going back to lists
         try { exitPageMode(); } catch { }
         console.log('[read] Back from verses to list view - clearing params');
-
-        // Custom back navigation based on where user came from
-        console.log('[read] Back button - navigationSource:', navigationSource, 'selectedSurah:', selectedSurah?.id);
-        if (navigationSource === 'quranic_duas') {
-          console.log('[read] Going back to duas');
-          router.push('/(tabs)/duas');
-          // CRITICAL: Reset flag here since we're returning early
-          setTimeout(() => { isNavigatingBack.current = false; }, 300);
-          return;
-        }
-
-        // Default back navigation (for Surah list, bookmarks, etc.)
-        router.replace('/(tabs)/read' as any);
+        // CRITICAL: Clear URL params to allow fresh navigation next time
+        router.replace('/(tabs)/read');
         setSelectedJuz(null);
-        // Clear selectedSurah to go back to list view (but preserve for duas navigation)
         setSelectedSurah(null);
         setVerses([]);
         setJuzVerses([]);
@@ -1007,21 +938,7 @@ export default function ReadScreen() {
       console.error('[read] handleBackToSurahs error', e);
       isNavigatingBack.current = false;
     }
-  }, [router, selectedSurah, selectedJuz, exitPageMode, navigationSource]);
-
-  // PHYSICAL BACK BUTTON (Android)
-  useEffect(() => {
-    const onBackPress = () => {
-      handleBackToSurahs();
-      return true; // Stop default back action
-    };
-
-    const backHandlerSub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-
-    return () => {
-      backHandlerSub.remove();
-    };
-  }, [handleBackToSurahs]);
+  }, [router, selectedSurah, selectedJuz, exitPageMode]);
 
   const handleVersePlayAudio = useCallback(
     async (surahNum: number, verseNum: number, _globalId?: number, repeats?: number, isInfinite?: boolean) => {
@@ -1467,7 +1384,7 @@ export default function ReadScreen() {
 
     // ANALYTICS: Surah selected
     logAnalyticsEvent('surah_selected', {
-      surah_id: surah.id,
+      surah_number: surah.id,
       surah_name: surah.englishName,
       revelation_type: surah.revelationType,
       verse_count: surah.versesCount,
@@ -1485,7 +1402,8 @@ export default function ReadScreen() {
     // ANALYTICS: Juz selected
     logAnalyticsEvent('juz_selected', {
       juz_number: juz,
-      source: 'juz_list',
+      juz_name: `Juz ${juz}`,
+      entry_point: 'juz_list',
       ...getCommonParams(),
     });
 
@@ -1603,19 +1521,22 @@ export default function ReadScreen() {
 
     // ANALYTICS: Bulk mark verses
     logAnalyticsEvent('bulk_mark_verses', {
-      action: isMarking ? 'mark_memorized' : 'unmark_memorized',
-      surah_id: selectedSurah.id,
+      mark_type: isMarking ? 'memorized' : 'reset_memorized',
       surah_name: selectedSurah.englishName,
-      verse_count: toUpdate.length,
+      verses_count: toUpdate.length,
+      source: 'read_tab',
       ...getCommonParams(),
     });
 
     // Track surah completion if marking all
     if (isMarking) {
       logAnalyticsEvent('surah_completed', {
-        surah_id: selectedSurah.id,
+        surah_number: selectedSurah.id,
         surah_name: selectedSurah.englishName,
-        verse_count: selectedSurah.versesCount,
+        verses_count: selectedSurah.versesCount,
+        pages_count: Math.ceil(selectedSurah.versesCount / 10), // Estimate if not in page mode
+        completion_type: 'memorization',
+        juz_number: verses[0]?.juzNumber || 0,
         ...getCommonParams(),
       });
     }
@@ -1690,7 +1611,6 @@ export default function ReadScreen() {
       const pageIsPlaying = isPageModeActive && playingVerseIndex === index;
       const pageIsCompleted = isPageModeActive && completedVerses.has(index);
       const pageRepeatInfo = pageIsPlaying && totalRepeats > 1 ? `${currentRepeat}/${totalRepeats}` : undefined;
-      const isHighlighted = highlightedVerseId === verse.id;
 
       return (
         <VerseItem
@@ -1706,7 +1626,6 @@ export default function ReadScreen() {
           pageIsPlaying={pageIsPlaying}
           pageIsCompleted={pageIsCompleted}
           pageRepeatInfo={pageRepeatInfo}
-          highlighted={isHighlighted}
         />
       );
     },
@@ -1868,37 +1787,34 @@ export default function ReadScreen() {
     }
   }, [arabicFont, selectedSurah, translationLanguage, loadInitialVerses]);
 
-  // Navigation: Handle route params for surahId/verseId (e.g., from Mustahabbah, Duas, or Continue Reading)
+  // Navigation: Handle route params for surahId/verseId (e.g., from Mustahabbah or Continue Reading)
   useEffect(() => {
     const sid = paramSurahId ? Number(paramSurahId) : undefined;
+    const vid = paramVerseId ? Number(paramVerseId) : undefined;
     if (sid && !Number.isNaN(sid)) {
       const surah = surahsData.find((s) => s.id === sid);
-      console.log('[read] Navigation check - sid:', sid, 'surah:', !!surah, 'suppressNextAutoOpen:', suppressNextAutoOpen.current);
       if (surah && !suppressNextAutoOpen.current) {
-        console.log('[read] Processing navigation params for surah', sid, 'source:', paramSource, 'fromDuas:', paramFromDuas);
-
-        // Force Surah tab if coming from Duas or explicit surahList source
-        if (paramFromDuas === 'true' || paramSource === 'surahList') {
-          setTab('surah');
-        }
+        console.log('[read] Processing navigation params for surah', sid, 'source:', paramSource);
 
         // Track where user came from for back button behavior
-        if (paramFromDuas === 'true' || paramSource === 'quranic_duas') {
-          setNavigationSource('quranic_duas');
-        } else if (paramSource === 'mustahabbah') {
+        if (paramSource === 'mustahabbah') {
           setNavigationSource('mustahabbah');
         } else if (paramSource === 'stats') {
           setNavigationSource('stats');
         } else if (paramSource === 'continueReading' || !paramSource) {
+          // Continue Reading doesn't pass source, or no source = from home
           setNavigationSource('continueReading');
         }
 
         setSelectedSurah(surah);
         setLastViewedSurahId(surah.id);
+        if (vid && !Number.isNaN(vid)) {
+          // targetVerseRef.current = vid;
+        }
         loadInitialVerses(surah);
       }
     }
-  }, [paramSurahId, paramSource, paramFromDuas, setLastViewedSurahId, loadInitialVerses, setSelectedSurah]);
+  }, [paramSurahId, paramVerseId, paramSource, setLastViewedSurahId, loadInitialVerses]);
 
   // Navigation: Handle Juz navigation from bookmarks
   useEffect(() => {
@@ -1913,6 +1829,63 @@ export default function ReadScreen() {
       handleSelectJuz(juzNum);
     }
   }, [paramJuzNumber]);
+
+  // === Read Mode Position Restoration ===
+
+  // Step 1: When returning from Juz Read Mode, switch the tab to juz and select the correct juz.
+  // This triggers the data load. The scroll effect below (Step 2) waits for juzVerses to populate.
+  useEffect(() => {
+    if (lastVisibleJuz && selectedJuz !== lastVisibleJuz) {
+      setTab('juz');
+      setSelectedSurah(null);
+      setSelectedJuz(lastVisibleJuz);
+    }
+  }, [lastVisibleJuz, selectedJuz]);
+
+  // Step 2: Scroll to the saved verse once the correct data is confirmed loaded.
+  // FIX 5: Previously this fired immediately when lastVisibleVerse was set, but for Juz mode
+  // the data load hadn't completed yet (juzVerses was still []). The scroll silently failed
+  // at targetIndex = -1. Now we check that the data matches the expected context before scrolling.
+  useEffect(() => {
+    if (!lastVisibleVerse) return;
+
+    const { surahId, verseNumber } = lastVisibleVerse;
+
+    // For Juz mode: wait until juzVerses is populated AND contains a verse from the restored surah.
+    // For Surah mode: wait until verses is populated AND from the correct surah.
+    const isSurahDataReady = verses.length > 0 && verses.some(v => v.surahId === surahId);
+    const isJuzDataReady = juzVerses.length > 0 && juzVerses.some(jv => jv.chapter_id === surahId);
+
+    if (!isSurahDataReady && !isJuzDataReady) return; // data not ready yet — wait for next run
+
+    // Data is ready — clear the handoff immediately so subsequent re-renders don't re-run this
+    clearHandoff();
+
+    // Find the target verse index in whichever dataset is ready
+    let targetIndex = -1;
+    if (isSurahDataReady) {
+      targetIndex = verses.findIndex(v => v.surahId === surahId && v.verseNumber === verseNumber);
+    } else if (isJuzDataReady) {
+      targetIndex = juzVerses.findIndex(jv => jv.chapter_id === surahId && jv.verse_number === verseNumber);
+    }
+
+    if (targetIndex >= 0) {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          try {
+            flatListRef.current?.scrollToIndex({
+              index: targetIndex,
+              animated: false,
+              viewPosition: 0.3,
+            });
+          } catch (e) {
+            console.error('[read] Failed to restore scroll position:', e);
+          }
+        }, 300);
+      });
+    }
+  }, [lastVisibleVerse, verses, juzVerses, clearHandoff]);
+
 
   // Scroll to specific verse in Juz mode after verses are loaded
   useEffect(() => {
@@ -1947,43 +1920,28 @@ export default function ReadScreen() {
     }
   }, [juzVerses, paramVerseId, tab]);
 
-  // Scroll to specific verse after loading (for bookmarks, AyahOfTheDay, Duas, etc.)
+  // Scroll to specific verse after loading (for bookmarks, AyahOfTheDay, etc.)
   useEffect(() => {
     const vid = paramVerseId ? Number(paramVerseId) : undefined;
-    const scrollVid = paramScrollVerse ? Number(paramScrollVerse) : undefined;
-    const targetVid = vid || scrollVid;
+    if (!vid || Number.isNaN(vid) || !verses.length) return;
 
-    if (!targetVid || Number.isNaN(targetVid) || !verses.length) return;
-
-    // Find index of the verse by verse number within the surah
-    const verseIndex = verses.findIndex((v) => v.verseNumber === targetVid);
+    const verseIndex = verses.findIndex((v) => v.id === vid);
 
     if (verseIndex >= 0) {
-      console.log('[read] Triggering scroll to index:', verseIndex, 'for verse:', targetVid);
-
-      // Brief highlight after jumping
-      setHighlightedVerseId(verses[verseIndex].id);
-      setTimeout(() => setHighlightedVerseId(null), 3500);
-
-      // Use requestAnimationFrame followed by a timeout for maximum reliability with FlashList
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          try {
-            flatListRef.current?.scrollToIndex({
-              index: verseIndex,
-              animated: false,
-              viewPosition: 0.1, // Show a bit of the previous verse context
-            });
-          } catch (e) {
-            console.error('[read] Auto-scroll to verse failed:', e);
-            // Fallback: simple offset calculation
-            const approxOffset = verseIndex * (averageVerseHeight || 200);
-            flatListRef.current?.scrollToOffset({ offset: approxOffset, animated: false });
-          }
-        }, 300); // 300ms is usually enough for initial layout
-      });
+      // Add delay to ensure FlashList is fully mounted and measured
+      setTimeout(() => {
+        try {
+          flatListRef.current?.scrollToIndex({
+            index: verseIndex,
+            animated: false, // Use instant scroll for accuracy
+            viewPosition: 0.1,
+          });
+        } catch (e) {
+          console.error('[read] Auto-scroll to verse failed:', e);
+        }
+      }, 500); // Increased delay for FlashList to measure items
     }
-  }, [verses, paramVerseId, paramScrollVerse, averageVerseHeight]);
+  }, [verses, paramVerseId]);
 
   // Cleanup audio when surah changes
   useEffect(() => {
@@ -2051,96 +2009,51 @@ export default function ReadScreen() {
   // Reset to Surah list whenever Recite tab gains focus (UNLESS direct navigation with params)
   useFocusEffect(
     React.useCallback(() => {
-      // CRITICAL: Check params FIRST to determine if this is direct navigation
-      // Check for BOTH paramSurahId (Surah bookmarks) AND paramJuzNumber (Juz bookmarks)
+      // Consume synchronously: async orientation + clearHandoff() can null lastVisibleVerse
+      // before getOrientationAsync runs, which incorrectly triggered surah-list reset.
+      if (useReadModeStore.getState().pendingPortraitHandoff) {
+        useReadModeStore.getState().setPendingPortraitHandoff(false);
+        return () => {
+          console.log('[read] Tab lost focus');
+        };
+      }
+
+      const isReturningFromReadMode = !!lastVisibleVerse;
       const hasNavigationParams = (paramSurahId || paramJuzNumber) && !suppressNextAutoOpen.current;
 
-      console.log('[read] Tab gained focus - hasParams:', hasNavigationParams, 'params:', { paramSurahId, paramJuzNumber, paramVerseId, paramSource }, 'current state:', { selectedSurah: selectedSurah?.id, selectedJuz, tab });
+      ScreenOrientation.getOrientationAsync().then((orientation) => {
+        const isLandscape =
+          orientation === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
+          orientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT;
 
-      // CRITICAL: Only reset if this is a TAB CLICK (no params), not direct navigation
-      if (!hasNavigationParams) {
-        console.log('[read] Tab click detected (no params) - resetting to Surah list');
+        // Only reset on explicit tab focus without deep-link params, read-mode handoff, or landscape session.
+        if (!hasNavigationParams && !isReturningFromReadMode && !isLandscape) {
+          (async () => {
+            try {
+              await pauseSurahAudio().catch(() => {});
+              await pauseAudio().catch(() => {});
+            } catch {}
+          })();
 
-        // Stop any playing audio
-        (async () => {
-          try {
-            await pauseSurahAudio();
-            await pauseAudio();
-          } catch (err) {
-            console.error('[read] Error stopping audio:', err);
-          }
-        })();
-
-        // Reset all state to show Surah list
-        // Exit page mode if active
-        try { exitPageMode(); } catch { }
-        setSelectedSurah(null);
-        setSelectedJuz(null);
-        setVerses([]);
-        setJuzVerses([]);
-        setNavigationSource(null);
-        setTab('surah');
-        setIsPlayingAudio(false);
-        setIsPlayingSurah(false);
-        setIsSurahPaused(false);
-      } else {
-        console.log('[read] Direct navigation detected (has params) - preserving state');
-      }
+          try { exitPageMode(); } catch {}
+          setSelectedSurah(null);
+          setSelectedJuz(null);
+          setVerses([]);
+          setJuzVerses([]);
+          setNavigationSource(null);
+          setTab('surah');
+          setIsPlayingAudio(false);
+          setIsPlayingSurah(false);
+          setIsSurahPaused(false);
+        }
+      }).catch(() => {});
 
       // Cleanup function
       return () => {
         console.log('[read] Tab lost focus');
       };
-    }, [paramSurahId, paramJuzNumber, paramVerseId, paramScrollVerse, paramSource, exitPageMode])
+    }, [paramSurahId, paramJuzNumber, exitPageMode, lastVisibleVerse])
   );
-
-  // Fix 1: Handle portrait ↔ landscape handoff when verses data is ready
-useEffect(() => {
-    if (!verses.length) return;
-
-    const { lastVisibleVerse, clearHandoff } = useReadModeStore.getState();
-    if (!lastVisibleVerse) return;
-
-    // Use verses[0].surahId directly — selectedSurah may be null at this point
-    // because the tab-reset useFocusEffect runs before this and clears it
-    const currentSurahId = verses[0]?.surahId;
-    if (lastVisibleVerse.surahId !== currentSurahId) return;
-
-    const targetIndex = verses.findIndex(
-        v => v.verseNumber === lastVisibleVerse.verseNumber
-    );
-
-    // Fix: >= 0 not > 0, verse 1 is at index 0 and is a valid target
-    if (targetIndex >= 0) {
-        setTimeout(() => {
-            flatListRef.current?.scrollToIndex({ index: targetIndex, animated: false });
-        }, 80);
-    }
-
-    // Only clear AFTER we've used the value, not before
-    clearHandoff();
-}, [verses]); // fires when verse data loads — exactly when we need it
-
-// NEW — juz restoration, mirrors the surah one but uses juzVerses
-useEffect(() => {
-    if (!juzVerses.length) return;
-    const { lastVisibleVerse, clearHandoff } = useReadModeStore.getState();
-    if (!lastVisibleVerse) return;
-
-    // Instead of checking the first verse's chapter_id, check if ANY verse matches
-    const targetIndex = juzVerses.findIndex(
-        v => v.chapter_id === lastVisibleVerse.surahId &&
-             v.verse_number === lastVisibleVerse.verseNumber
-    );
-
-    // Only proceed if found — if -1 the verse isn't in this juz
-    if (targetIndex >= 0) {
-        setTimeout(() => {
-            flatListRef.current?.scrollToIndex({ index: targetIndex, animated: false });
-        }, 80);
-        clearHandoff(); // only clear if we actually used it
-    }
-}, [juzVerses]);
 
   useEffect(() => {
     logDatabaseTables();
@@ -2157,9 +2070,12 @@ useEffect(() => {
 
       logAnalyticsEvent('recite_session_duration', {
         duration_seconds: sessionDuration,
-        surah_id: selectedSurah?.id || null,
+        surah_number: selectedSurah?.id || null,
+        surah_name: selectedSurah?.englishName || null,
         juz_number: selectedJuz || null,
-        page_mode_active: isPageModeActive,
+        mode: isPageModeActive ? 'page_reading' : 'list_reading',
+        audio_enabled: isPlayingAudio || isPlayingSurah,
+        verses_recited: currentlyPlayingVerse?.verseNumber || (verses.length > 0 ? verses[0].verseNumber : 0),
         ...getCommonParams(),
       });
     };
@@ -2448,16 +2364,15 @@ useEffect(() => {
               {selectedSurah ? (
                 <>
                   <Text style={styles.compactSurahNumber}>{selectedSurah.id}.</Text>
-                  {/* English name - HIDE in collapsed to save space */}
-                  {headerState === 'full' && (
-                    <Text style={styles.compactSurahName} numberOfLines={1}>
-                      {selectedSurah.englishName}
+                  <Text style={styles.compactSurahName} numberOfLines={1}>
+                    {selectedSurah.englishName}
+                  </Text>
+                  {/* Arabic name - hide ONLY in COLLAPSED */}
+                  {headerState !== 'collapsed' && (
+                    <Text style={styles.compactSurahArabic} numberOfLines={1}>
+                      {selectedSurah.arabicName}
                     </Text>
                   )}
-                  {/* Arabic name - ALWAYS visible in this new simplified design */}
-                  <Text style={styles.compactSurahArabic} numberOfLines={1}>
-                    {selectedSurah.arabicName}
-                  </Text>
                 </>
               ) : (
                 <Text style={styles.compactSurahName} numberOfLines={1}>Juz {selectedJuz}</Text>
@@ -2531,10 +2446,7 @@ useEffect(() => {
             {/* Expand menu (⋮) - ONLY if Surah selected OR in Page Mode OR Juz selected */}
             {headerState !== 'full' && (selectedSurah || selectedJuz != null || isPageModeActive) && (
               <TouchableOpacity
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setHeaderState('full');
-                }}
+                onPress={() => setHeaderState('full')}
                 style={styles.expandButton}
                 accessibilityLabel="Show all controls"
               >
@@ -2643,7 +2555,7 @@ useEffect(() => {
                 minFontSize={14}
                 style={[styles.headerTitle, { paddingHorizontal: 16, textAlign: 'center', lineHeight: 24 }]}
               >
-                Recite Qur'an in measured and rhythmic tone!
+                Recite Qur&apos;an in measured and rhythmic tone!
               </AutoSizeText>
             </View>
           </View>
@@ -2721,9 +2633,6 @@ useEffect(() => {
                     contentContainerStyle={styles.verseList}
                     onScroll={handleVerseScroll}
                     scrollEventThrottle={16}
-                    onScrollToIndexFailed={handleScrollToIndexFailed}
-                    viewabilityConfig={viewabilityConfig}
-                    onViewableItemsChanged={onViewableItemsChanged}
                   />
                 ) : (
                   <FlashList
@@ -2738,9 +2647,19 @@ useEffect(() => {
                     contentContainerStyle={styles.verseList}
                     onScroll={handleVerseScroll}
                     scrollEventThrottle={16}
-                    onScrollToIndexFailed={handleScrollToIndexFailed}
-                    viewabilityConfig={viewabilityConfig}
-                    onViewableItemsChanged={onViewableItemsChanged}
+                    viewabilityConfig={{
+                      itemVisiblePercentThreshold: 50,
+                      minimumViewTime: 300,
+                    }}
+                    onViewableItemsChanged={({ viewableItems }: any) => {
+                      const firstVisible = viewableItems[0]?.item as Verse;
+                      if (firstVisible) {
+                        setCurrentVisibleVerse({
+                          surahId: firstVisible.surahId,
+                          verseNumber: firstVisible.verseNumber,
+                        });
+                      }
+                    }}
                   />
                 )}
               </Animated.View>
@@ -2777,9 +2696,6 @@ useEffect(() => {
                     contentContainerStyle={[styles.versesContent, { backgroundColor: '#1a1a1a' }]}
                     onScroll={handleVerseScroll}
                     scrollEventThrottle={16}
-                    onScrollToIndexFailed={handleScrollToIndexFailed}
-                    viewabilityConfig={viewabilityConfig}
-                    onViewableItemsChanged={onViewableItemsChanged}
                   />
                 ) : (
                   <FlashList
@@ -2791,9 +2707,19 @@ useEffect(() => {
                     {...({ estimatedItemSize: ESTIMATED_ITEM_HEIGHT } as any)}
                     onScroll={handleVerseScroll}
                     scrollEventThrottle={16}
-                    onScrollToIndexFailed={handleScrollToIndexFailed}
-                    viewabilityConfig={viewabilityConfig}
-                    onViewableItemsChanged={onViewableItemsChanged}
+                    viewabilityConfig={{
+                      itemVisiblePercentThreshold: 50,
+                      minimumViewTime: 300,
+                    }}
+                    onViewableItemsChanged={({ viewableItems }: any) => {
+                      const firstVisible = viewableItems[0]?.item as any;
+                      if (firstVisible) {
+                        setCurrentVisibleVerse({
+                          surahId: firstVisible.chapter_id,
+                          verseNumber: firstVisible.verse_number,
+                        });
+                      }
+                    }}
                     renderItem={({ item, index }: { item: any; index: number }) => {
                       const isPlaying = currentlyPlayingVerse !== null &&
                         currentlyPlayingVerse.surahId === item.chapter_id &&
@@ -2829,7 +2755,7 @@ useEffect(() => {
               </Animated.View>
             )}
           </View>
-        ) : (tab === 'surah' && !selectedSurah && !(paramSurahId || paramJuzNumber)) ? (
+        ) : tab === 'surah' ? (
           <View style={{ flex: 1, position: 'relative' }}>
             <FlashList
               ref={surahListRef}

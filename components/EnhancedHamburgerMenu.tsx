@@ -6,12 +6,14 @@
 // diagnostics entry removed for production build
 import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
 import { useBookmarkStore } from '@/store/bookmarkStore';
+import { useFavouriteStore } from '@/store/favouriteStore';
 import { StateMigrationUtils, useContextAwareTheme } from '@/utils/stateManagementBridge';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import {
   Bookmark as BookmarkIcon,
   Calendar,
+  Heart,
   MapPin,
   Menu,
   Moon,
@@ -57,6 +59,10 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
   const { bookmarks: mushafBookmarks } = useMushafBookmarks();
   const mushafBookmarksCount = mushafBookmarks ? (mushafBookmarks.size || 0) : 0;
   const bookmarksCount = appBookmarksCount + mushafBookmarksCount;
+  
+  // Favourites count
+  const favourites = useFavouriteStore(state => state.favourites);
+  const favouritesCount = favourites ? favourites.length : 0;
 
   // Use unified theme with automatic detection
   const { theme, isDark, setTheme, setColorScheme, raw } = useUnifiedTheme('auto', fastingContext);
@@ -111,13 +117,27 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
       title: 'Bookmarks',
       subtitle: 'Your saved verses',
       icon: BookmarkIcon,
-      color: '#9C27B0',
+      color: theme.text,
       feature: 'quran',
       onPress: async () => {
         try { await Haptics.selectionAsync(); } catch { }
         setSelectedFeature('quran');
         setIsMenuVisible(false);
         router.push('/bookmarks');
+      }
+    },
+    {
+      id: 'favourites',
+      title: 'Favourites',
+      subtitle: 'Your favourite verses',
+      icon: Heart,
+      color: '#00BCD4',
+      feature: 'quran',
+      onPress: async () => {
+        try { await Haptics.selectionAsync(); } catch { }
+        setSelectedFeature('quran');
+        setIsMenuVisible(false);
+        router.push('/favourites');
       }
     },
     {
@@ -400,6 +420,13 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
                           {appBookmarksCount > 0 && (appBookmarksCount > 99 ? '99+' : String(appBookmarksCount))}
                           {appBookmarksCount > 0 && mushafBookmarksCount > 0 && ' + '}
                           {mushafBookmarksCount > 0 && (mushafBookmarksCount > 99 ? '99+' : String(mushafBookmarksCount))}
+                        </Text>
+                      </View>
+                    )}
+                    {item.id === 'favourites' && favouritesCount > 0 && (
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>
+                          {favouritesCount > 99 ? '99+' : String(favouritesCount)}
                         </Text>
                       </View>
                     )}

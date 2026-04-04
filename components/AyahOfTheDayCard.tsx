@@ -3,6 +3,7 @@ import { useDayKey } from '@/hooks/useDayKey';
 import { fetchSingleVerse } from '@/services/quranApi';
 import { useBookmarkStore } from '@/store/bookmarkStore';
 import { useSettingsStore } from '@/store/settingsStore';
+import { useProgressStore } from '@/store/progressStore';
 import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { getTodayCardVerse } from '@/utils/ayahOfTheDay';
 import { useIsFocused } from '@react-navigation/native';
@@ -389,7 +390,9 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style, highl
       surah_id: ayah.surahId,
       surah_name: ayah.surahName,
       verse_number: ayah.verseNumber,
-      verse_id: ayah.verseId,
+      language: translationLang,
+      is_memorized: useProgressStore.getState().memorizedVerses.includes(ayah.verseId),
+      source: 'home_card',
       ...getCommonParams(),
     });
     

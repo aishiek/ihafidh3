@@ -228,6 +228,39 @@ export default function RevisionScreen() {
     markVerseAsRevised(currentRevisionVerse.verseId);
     updateDailyRevisedVerses(currentRevisionVerse.verseId);
     updateWeeklyRevisedVerses(currentRevisionVerse.verseId);
+
+    // ANALYTICS: Check if this completion finishes a surah for the week
+    const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
+    const details = findVerseDetails(currentRevisionVerse.verseId);
+    const surah = surahsData.find(s => s.id === details.surahId);
+    if (surah) {
+      const currentWeekStart = new Date();
+      currentWeekStart.setDate(currentWeekStart.getDate() - currentWeekStart.getDay());
+      currentWeekStart.setHours(0, 0, 0, 0);
+
+      const thisWeekRevisedVerses = useProgressStore.getState().weeklyRevisedVerses.filter(rv => {
+        const parts = rv.date.split('-');
+        const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        return d >= currentWeekStart;
+      });
+
+      let startId = 0;
+      for (let i = 1; i < surah.id; i++) {
+        const prev = surahsData.find(s => s.id === i);
+        if (prev) startId += prev.versesCount;
+      }
+      
+      const surahRevisedVerses = thisWeekRevisedVerses.filter(rv => rv.verseId > startId && rv.verseId <= startId + surah.versesCount);
+      if (surahRevisedVerses.length === surah.versesCount) {
+        logAnalyticsEvent('weekly_surah_completed', {
+          surah_id: surah.id,
+          surah_name: surah.englishName,
+          verses_count: surah.versesCount,
+          ...getCommonParams(),
+        });
+      }
+    }
+
     setCurrentRevisionVerse(null);
 
     Alert.alert(

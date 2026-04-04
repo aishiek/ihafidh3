@@ -1,10 +1,10 @@
 import notifee, {
-  AndroidImportance,
-  AndroidVisibility,
-  EventType,
-  RepeatFrequency,
-  TimestampTrigger,
-  TriggerType
+    AndroidImportance,
+    AndroidVisibility,
+    EventType,
+    RepeatFrequency,
+    TimestampTrigger,
+    TriggerType
 } from '@notifee/react-native';
 import { Platform } from 'react-native';
 
@@ -138,7 +138,9 @@ export async function scheduleNotificationAtDate({
   body,
   date,
   channelId = 'default',
-  data = {},
+  data = {
+    highlightAyah: `${id}`
+  },
 }: {
   id: string;
   title: string;
@@ -193,7 +195,9 @@ export async function scheduleDailyNotification({
   hour,
   minute,
   channelId = 'default',
-  data = {},
+  data = {
+    highlightAyah: `${id}`
+  },
   silent = false,
 }: {
   id: string;
@@ -437,7 +441,7 @@ export class AyahNotificationService {
           data: {
             type: 'daily_ayah',
             target: 'index',
-            highlightAyah: true,
+            highlightAyah: `${todayVerse.surahId}-${todayVerse.verseNumber}`,
             surahId: todayVerse.surahId,
             verseNumber: todayVerse.verseNumber,
           },
@@ -461,7 +465,7 @@ export class AyahNotificationService {
           data: {
             type: 'daily_ayah',
             target: 'index',
-            highlightAyah: true,
+            highlightAyah: 'daily-ayah',
           },
         });
       }

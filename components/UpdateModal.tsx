@@ -16,8 +16,8 @@ export type UpdateModalProps = {
 };
 
 export default function UpdateModal({ visible, forced = false, currentVersion, latestVersion, onClose, releaseNotes, iosAppIdOverride, androidPackageIdOverride }: UpdateModalProps) {
-  // Billboard mode: Always allow dismissal so users can read news/updates but continue using the app
-  const canDismiss = true;
+  // Billboard mode: Only allow dismissal for soft updates or announcements
+  const canDismiss = !forced;
 
   return (
     <Modal transparent visible={visible} animationType="fade" statusBarTranslucent>

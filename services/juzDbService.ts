@@ -487,10 +487,104 @@ export async function fetchVersesByChapter(chapterId: number): Promise<JuzVerse[
 
 /**
  * Wrapper kept for backwards/semantic compatibility: fetch all verses for a Surah
- * Uses the same local DB query as fetchVersesByChapter.
+ * Enhanced to support multiple translation languages based on collection_id
  */
 export async function fetchVersesForSurah(surahId: number): Promise<JuzVerse[]> {
-  return fetchVersesByChapter(surahId);
+  // Import settings store dynamically to avoid circular dependencies
+  const settingsStore = require('../store/settingsStore');
+  const translationLanguage = settingsStore.useSettingsStore.getState().translationLanguage;
+  
+  // Map language to collection_id
+  let translationCollectionId = 2; // Default: English (collection_id = 2)
+  if (translationLanguage) {
+    let langCode = translationLanguage.split('.')[0].toLowerCase();
+    
+    // Special handling for ta.tamil -> tamil
+    if (langCode === 'ta' && translationLanguage.includes('tamil')) {
+      langCode = 'tamil';
+    }
+    
+    console.log('[juzDbService] Translation language:', translationLanguage, 'extracted langCode:', langCode);
+    switch (langCode) {
+      case 'tamil':
+        translationCollectionId = 4; // Tamil translations collection
+        break;
+      case 'malay':
+        translationCollectionId = 5; // Malay translations collection  
+        break;
+      case 'urdu':
+        translationCollectionId = 6; // Urdu translations collection
+        break;
+      case 'hindi':
+        translationCollectionId = 7; // Hindi translations collection
+        break;
+      case 'indonesian':
+        translationCollectionId = 8; // Indonesian translations collection
+        break;
+      // Add more languages as needed
+    }
+  }
+  
+  log('juzDbService', `fetchVersesForSurah called with surahId: ${surahId}, language: ${translationLanguage}, collectionId: ${translationCollectionId}`);
+  
+  try {
+    const database = await getDatabase();
+    
+    // DEBUG: Check if Tamil collection (collection_id = 4) actually exists
+    if (translationCollectionId === 4) {
+      const collectionsQuery = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%collection%'";
+      const collections = await database.getAllAsync<{name: string}>(collectionsQuery);
+      const tamilCollections = collections.filter(c => c.name.includes('collection'));
+      log('juzDbService', `Tamil collections found: ${JSON.stringify(tamilCollections)}`);
+      
+      if (tamilCollections.length === 0) {
+        log('juzDbService', '⚠️ No Tamil collections found in database! Falling back to English.');
+        translationCollectionId = 2; // Fallback to English
+      }
+    }
+    
+    const sql = `
+      SELECT 
+        v.id as verse_id, 
+        v.chapter_id, 
+        v.number as verse_number, 
+        v.content as ayah, 
+        v.page_id as page_id,
+        v.part_id as part_id,
+        MAX(CASE WHEN i.collection_id = ${translationCollectionId} THEN i.content ELSE NULL END) as translation, 
+        MAX(CASE WHEN i.collection_id = 3 THEN i.content ELSE NULL END) as transliteration 
+      FROM verses v 
+      LEFT JOIN items i ON v.id = i.verse_id 
+      WHERE v.chapter_id = ? 
+      GROUP BY v.id 
+      ORDER BY v.number
+    `;
+    const rows = await database.getAllAsync<JuzVerse>(sql, [surahId]);
+    log('juzDbService', `Query returned ${rows.length} verses for chapter ${surahId}`);
+
+    // Sanity-check: ensure returned rows have expected chapter_id. If mismatch
+    // observed frequently in runtime logs it points to a mapping/db problem.
+    try {
+      const mismatches = (rows || []).filter(r => r.chapter_id !== surahId);
+      if (mismatches.length > 0) {
+        log('juzDbService', `⚠️ fetchVersesByChapter found ${mismatches.length} rows with unexpected chapter_id (requested=${surahId}) - sample:`, mismatches.slice(0, 5));
+      }
+    } catch (e) {
+      // keep quiet on inspection failures
+      log('juzDbService', 'Warning: failed to validate chapter_id on returned rows', e);
+    }
+
+    if (!rows || rows.length === 0) {
+      throw new Error(`No verses found for chapter ${surahId} in database`);
+    }
+
+    return rows;
+  } catch (error) {
+    logError('juzDbService', `fetchVersesByChapter failed for chapter ${surahId}`, error);
+    const errorMsg = `Failed to load Surah ${surahId}. Please try again.\n\n${error instanceof Error ? error.message : 'Unknown error'}`;
+    Alert.alert('Error', errorMsg, [{ text: 'OK' }]);
+    throw new Error(errorMsg);
+  }
 }
 
 /**

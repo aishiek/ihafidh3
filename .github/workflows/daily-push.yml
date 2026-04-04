@@ -2,8 +2,8 @@ name: Daily Notifications
 
 on:
   schedule:
-    # Run Hourly (Checks which timezone is hitting 5 AM)
-    - cron: "0 * * * *"
+    # Run Every 30 Minutes (to support fractional offsets like India +5:30)
+    - cron: "0,30 * * * *"
   workflow_dispatch: # Allow manual run
 
 jobs:

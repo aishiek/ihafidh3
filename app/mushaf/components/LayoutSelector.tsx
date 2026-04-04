@@ -96,10 +96,11 @@ const LayoutSelector: React.FC<LayoutSelectorProps> = ({ visible, onClose, onLay
         const previousLayoutName = AVAILABLE_LAYOUTS.find(l => l.layout_id === activeLayoutId)?.layout_name;
         
         logAnalyticsEvent('mushaf_layout_changed', {
+          layout_name: layoutName,
+          previous_layout: previousLayoutName,
+          trigger: 'viewer',
           from_layout_id: activeLayoutId,
-          from_layout_name: previousLayoutName,
           to_layout_id: layoutId,
-          to_layout_name: layoutName,
           ...getCommonParams(),
         });
         

@@ -1,6 +1,6 @@
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type ColorScheme = 'blue' | 'green' | 'purple' | 'orange';
@@ -37,6 +37,13 @@ export interface ThemeColors {
   memorized: string;
   inProgress: string;
   notStarted: string;
+  
+  // Read Mode specific colors
+  readModeParchmentBG: string;
+  readModeParchmentTexture: string;
+  readModeCharcoalText: string;
+  readModeDeepBG: string;
+  readModeGoldAsset: string;
 }
 
 const colorSchemes = {
@@ -91,6 +98,13 @@ const lightTheme = (scheme: ColorScheme): ThemeColors => ({
   memorized: '#4CAF50',
   inProgress: '#FF9800',
   notStarted: '#9E9E9E',
+  
+  // Read Mode specific colors
+  readModeParchmentBG: '#F5F2E9',
+  readModeParchmentTexture: '#EBE4D0',
+  readModeCharcoalText: '#2B2519',
+  readModeDeepBG: '#080A10',
+  readModeGoldAsset: '#D4AF37',
 });
 
 const darkTheme = (scheme: ColorScheme): ThemeColors => ({
@@ -122,6 +136,13 @@ const darkTheme = (scheme: ColorScheme): ThemeColors => ({
   memorized: '#4CAF50',
   inProgress: '#FF9800',
   notStarted: '#666666',
+  
+  // Read Mode specific colors
+  readModeParchmentBG: '#F5F2E9',
+  readModeParchmentTexture: '#EBE4D0',
+  readModeCharcoalText: '#2B2519',
+  readModeDeepBG: '#080A10',
+  readModeGoldAsset: '#D4AF37',
 });
 
 interface ThemeState {

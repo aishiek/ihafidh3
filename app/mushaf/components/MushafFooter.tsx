@@ -45,11 +45,19 @@ export default function MushafFooter({
             verses={verses}
             reciterId={reciterId}
           />
+          <View style={styles.footerPageBadge}>
+            <Text style={styles.footerPageText}>Pg {pageNumber}</Text>
+          </View>
         </View>
       ) : (
         <View style={styles.missingAudioContainer}>
-          <Text style={styles.missingAudioText}>Page audio unavailable</Text>
-          <Text style={styles.missingAudioHint}>Try switching layouts or restarting the app</Text>
+          <View>
+            <Text style={styles.missingAudioText}>Page audio unavailable</Text>
+            <Text style={styles.missingAudioHint}>Try switching layouts or restarting the app</Text>
+          </View>
+          <View style={styles.footerPageBadge}>
+            <Text style={styles.footerPageText}>Pg {pageNumber}</Text>
+          </View>
         </View>
       )}
       <View style={styles.footer}>
@@ -88,8 +96,8 @@ const styles = StyleSheet.create({
   leftGroup: { flexDirection: 'row', alignItems: 'center' },
   rightGroup: { flexDirection: 'row', alignItems: 'center' },
   centerGroup: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  audioContainer: { borderBottomWidth: 1, borderBottomColor: '#333', paddingBottom: 8 },
-  missingAudioContainer: { padding: 12, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: '#333' },
+  audioContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#333', paddingBottom: 8, paddingRight: 12 },
+  missingAudioContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#333' },
   missingAudioText: { color: '#fff', fontSize: 14, fontWeight: '600', marginBottom: 4 },
   missingAudioHint: { color: '#999', fontSize: 12 },
   pageText: { color: '#fff', fontWeight: '700', marginBottom: 4 },
@@ -98,6 +106,8 @@ const styles = StyleSheet.create({
   surahLabel: { color: '#cbd5e1', fontSize: 12, marginBottom: 4 },
   surahText: { color: '#1a1a2e', fontWeight: '700' },
   goBtn: { marginTop: 4, backgroundColor: '#0ea5a4', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  goText: { color: '#042f2e', fontWeight: '700' }
-  , disabled: { opacity: 0.5 }
+  goText: { color: '#042f2e', fontWeight: '700' },
+  disabled: { opacity: 0.5 },
+  footerPageBadge: { backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  footerPageText: { color: '#FFD166', fontWeight: '700', fontSize: 13 }
 });

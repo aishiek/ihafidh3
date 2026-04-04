@@ -55,27 +55,16 @@ export default function TabLayout() {
           name="read"
           listeners={({ navigation }) => ({
             tabPress: (e) => {
-              e.preventDefault(); // Prevent default change
-
               const state = navigation.getState();
-              const isFocused = state.routes[state.index].name === 'read';
+              const currentRoute = state.routes[state.index];
+              const isFocused = currentRoute?.name === 'read';
 
               if (isFocused) {
-                // If already on this tab, check if we need to reset or stay
-                const currentRoute = state.routes[state.index];
                 const params = currentRoute.params as any;
-                const fromDuas = params?.fromDuas === 'true';
-
-                if (fromDuas) {
-                  // Special Case: If viewing a Dua, tap should reset to Surah list
+                if (params?.fromDuas === 'true') {
+                  e.preventDefault();
                   router.replace('/(tabs)/read');
-                } else {
-                  // Default Preference: "Already reading -> Stay here"
-                  // Do nothing (stay on verse view)
                 }
-              } else {
-                // Not focused: Navigate to tab
-                router.push('/(tabs)/read');
               }
             },
           })}

@@ -37,10 +37,6 @@ export default function AnnouncementModal({ visible, announcement, onClose, onAc
   const autoCloseTimer = useRef<any | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
 
-  if (!announcement) return null;
-
-  const canDismiss = announcement.dismissible;
-
   const handleAction = useCallback(() => {
     try {
       // ✅ Clear timer FIRST to prevent double-close
@@ -51,7 +47,7 @@ export default function AnnouncementModal({ visible, announcement, onClose, onAc
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      if (announcement.actionButton?.route) {
+      if (announcement?.actionButton?.route) {
         try {
           router.push(announcement.actionButton.route as any);
         } catch (pushError) {
@@ -70,7 +66,7 @@ export default function AnnouncementModal({ visible, announcement, onClose, onAc
     } catch (error) {
       console.error('[AnnouncementModal] Action failed:', error);
     }
-  }, [announcement.actionButton?.route, onAction, onClose]);
+  }, [announcement?.actionButton?.route, onAction, onClose]);
 
   // ✅ CRITICAL FIX: Auto-close timer that marks announcement as seen
   useEffect(() => {
@@ -142,7 +138,7 @@ export default function AnnouncementModal({ visible, announcement, onClose, onAc
   }, [remainingSeconds != null]); // ✅ Only re-run when starting/stopping countdown
 
   const getIconByType = () => {
-    switch (announcement.type) {
+    switch (announcement?.type) {
       case 'seasonal':
         return <Gift size={20} color="#22c55e" />;
       case 'feature':
@@ -153,7 +149,7 @@ export default function AnnouncementModal({ visible, announcement, onClose, onAc
   };
 
   const getGradientByType = (): readonly [string, string] => {
-    switch (announcement.type) {
+    switch (announcement?.type) {
       case 'seasonal':
         return ['#1f2937', '#0b1220'] as const;
       case 'feature':
@@ -164,6 +160,10 @@ export default function AnnouncementModal({ visible, announcement, onClose, onAc
         return ['#1f2937', '#0b1220'] as const;
     }
   };
+
+  if (!announcement) return null;
+
+  const canDismiss = announcement.dismissible;
 
   return (
     <Modal transparent visible={visible} animationType="fade" statusBarTranslucent>

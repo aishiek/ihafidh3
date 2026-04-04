@@ -388,7 +388,6 @@ export default function HomeScreen() {
   }, []); // Stable interval
 
   useEffect(() => { updateDailyStreak(); }, [updateDailyStreak]);
-
   // --- Progress computations ---
   const progressTracker = useMemo(() => new QuranProgressTracker({
     memorizedSurahs: [],
@@ -447,6 +446,19 @@ export default function HomeScreen() {
   }));
   const mustahabbahMemorized = mustahabbahItems.filter(i => i.isMemorized).length;
   const mustahabbahRemaining = mustahabbahItems.length - mustahabbahMemorized;
+  
+  // ANALYTICS: Mustahabbah completed detection
+  const previousMustahabbahCount = useRef(mustahabbahMemorized);
+  useEffect(() => {
+    if (mustahabbahMemorized > previousMustahabbahCount.current) {
+      logAnalyticsEvent('mustahabbah_completed', {
+        total_completed: mustahabbahMemorized,
+        ...getCommonParams(),
+      });
+      previousMustahabbahCount.current = mustahabbahMemorized;
+    }
+  }, [mustahabbahMemorized]);
+
   const getSurahStatus = (it: typeof mustahabbahItems[0]) => it.isMemorized ? 'memorized' : it.inProgress ? 'in-progress' : 'not-started';
 
   const getBackgroundColors = (status: string) => {
@@ -652,14 +664,17 @@ export default function HomeScreen() {
     );
   };
 
-  const ProgressCard = ({ title, data, cardWidth, minHeight, showJuzCompletedLabel }: { title: string; data: ProgressData; cardWidth: number; minHeight?: number; showJuzCompletedLabel?: boolean }) => {
+  const ProgressCard = ({ title, data, cardWidth, minHeight, showJuzCompletedLabel, onPress }: { title: string; data: ProgressData; cardWidth: number; minHeight?: number; showJuzCompletedLabel?: boolean, onPress?: () => void }) => {
     const circleSize = cardWidth < 120 ? 50 : cardWidth < 150 ? 60 : 70;
     const isSmall = cardWidth < 120;
     const total = data.completed + data.inProgress + data.notStarted;
     const completedPercentage = Math.round((data.completed / total) * 100);
 
     return (
-      <View style={[styles.progressCard, { width: cardWidth, minHeight: minHeight || 160 }]}>
+      <Pressable 
+        onPress={onPress}
+        style={[styles.progressCard, { width: cardWidth, minHeight: minHeight || 160 }]}
+      >
         <Text
           style={[styles.progressCardTitle, { fontSize: isSmall ? 12 : 14 }]}
           numberOfLines={1}
@@ -712,7 +727,7 @@ export default function HomeScreen() {
             </Text>
           </View>
         </View>
-      </View>
+      </Pressable>
     );
   };
 
@@ -1148,7 +1163,21 @@ export default function HomeScreen() {
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <ProgressCard title="Verses" data={stats.verses} cardWidth={cardWidth} minHeight={computedMinHeight} />
             <ProgressCard title="Surahs" data={stats.surahs} cardWidth={cardWidth} minHeight={computedMinHeight} />
-            <ProgressCard title="Juz" data={stats.juz as any} cardWidth={cardWidth} minHeight={computedMinHeight} showJuzCompletedLabel={true} />
+            <ProgressCard 
+              title="Juz" 
+              data={stats.juz as any} 
+              cardWidth={cardWidth} 
+              minHeight={computedMinHeight} 
+              showJuzCompletedLabel={true} 
+              onPress={() => {
+                logAnalyticsEvent('juz_selected', {
+                  juz_number: 'all', // Since it's the overview card
+                  completion_percent: Math.round((stats.juz.completed / 30) * 100),
+                  ...getCommonParams(),
+                });
+                router.push('/(tabs)/progress'); // Navigate to detailed progress
+              }}
+            />
           </View>
         </View>
 

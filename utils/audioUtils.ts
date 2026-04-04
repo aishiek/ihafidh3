@@ -23,7 +23,7 @@ export type AudioStatus = {
 let versePlayer: Audio.Sound | null = null;
 let surahPlayer: Audio.Sound | null = null;
 let isPlayingVerse = false;
-let isPlayingSurah = false;
+export let isPlayingSurah = false;
 
 // Legacy global player for backward compatibility (points to verse player)
 let player: Audio.Sound | null = null;

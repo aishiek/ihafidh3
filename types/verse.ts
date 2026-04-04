@@ -4,6 +4,8 @@ export interface Verse {
   verseNumber: number;
   arabicText: string;
   translation: string;
+  transliteration?: string;
+  juzNumber?: number;
   audioUrl?: string;
   isMemorized?: boolean;
   isRevised?: boolean;

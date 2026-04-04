@@ -157,7 +157,7 @@ function RootLayoutContent() {
   const [showAnnouncement, setShowAnnouncement] = React.useState(false);
   const [announcement, setAnnouncement] = React.useState<AnnouncementConfig | null>(null);
   const [showReviewSoftPrompt, setShowReviewSoftPrompt] = React.useState(false);
-  const [currentVersion, setCurrentVersion] = React.useState('2.0.7');
+  const [currentVersion, setCurrentVersion] = React.useState('2.0.9');
   const [latestVersion, setLatestVersion] = React.useState<string | null>(null);
   const [releaseNotes, setReleaseNotes] = React.useState<string[] | undefined>(undefined);
   const [iosAppIdOverride, setIosAppIdOverride] = React.useState<string | null>(null);
@@ -261,8 +261,14 @@ function RootLayoutContent() {
     const checkForAnnouncements = async () => {
       try {
         // Small startup delay to avoid interrupting initial animation/flow
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 3000));
         if (!mounted) return;
+
+        // Don't show generic announcements if a forced update is already pending
+        if (forcedUpdate) {
+          console.log('[App] Forced update pending, skipping announcement check');
+          return;
+        }
 
         const ann = await AnnouncementService.getAnnouncementToDisplay();
         if (ann && mounted) {
@@ -717,9 +723,18 @@ function RootLayoutContent() {
           <View style={{ flex: 1, backgroundColor: '#1a1a1a' }}>
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
+              <Stack.Screen 
+                name="read-mode" 
+                options={{ 
+                  presentation: 'fullScreenModal',
+                  animation: 'fade',
+                  headerShown: false 
+                }} 
+              />
             </Stack>
             <UpdateModal
-              visible={showUpdatePrompt && !showAnnouncement}
+              // Prioritize forced updates over announcements
+              visible={showUpdatePrompt && (forcedUpdate || !showAnnouncement)}
               forced={forcedUpdate}
               currentVersion={currentVersion}
               latestVersion={latestVersion}
@@ -734,7 +749,8 @@ function RootLayoutContent() {
               androidPackageIdOverride={androidPkgOverride}
             />
             <AnnouncementModal
-              visible={showAnnouncement}
+              // Only show announcements if there is no forced update currently showing
+              visible={showAnnouncement && !forcedUpdate}
               announcement={announcement}
               onClose={async () => {
                 if (announcement) await AnnouncementService.markAsSeen(announcement.id);

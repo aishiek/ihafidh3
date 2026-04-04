@@ -123,8 +123,11 @@ export default function HifdhPlannerCard() {
     (params: { surahId: number; startVerse: number; endVerse: number; note?: string }) => {
       const { surahId, startVerse, endVerse, note } = params;
       const surah = surahsData.find((s) => s.id === surahId);
+      const isFullSurah = startVerse === 1 && endVerse === (surah?.versesCount || 0);
+      const method = isFullSurah ? 'surah' : 'range';
+
       if (!surah) {
-        addPlan(selectedDate, { surahId, startVerse, endVerse, note });
+        addPlan(selectedDate, { surahId, startVerse, endVerse, note }, { trigger: 'manual', method });
         setPickerVisible(false);
         return;
       }
@@ -163,7 +166,7 @@ export default function HifdhPlannerCard() {
               style: 'cancel',
               onPress: () => {
                 // Cancel unmark but continue normal flow - add plan with * marking
-                addPlan(selectedDate, { surahId, startVerse, endVerse, note });
+                addPlan(selectedDate, { surahId, startVerse, endVerse, note }, { trigger: 'manual', method });
                 setPickerVisible(false);
               },
             },
@@ -177,7 +180,7 @@ export default function HifdhPlannerCard() {
                   unmarkVerseAsRevised(id);
                 });
                 // Add the plan (no * marking since unmarked)
-                addPlan(selectedDate, { surahId, startVerse, endVerse, note });
+                addPlan(selectedDate, { surahId, startVerse, endVerse, note }, { trigger: 'manual', method });
                 setPickerVisible(false);
               },
             },
@@ -186,7 +189,7 @@ export default function HifdhPlannerCard() {
         );
       } else {
         // Normal flow: just add the plan
-        addPlan(selectedDate, { surahId, startVerse, endVerse, note });
+        addPlan(selectedDate, { surahId, startVerse, endVerse, note }, { trigger: 'manual', method });
         setPickerVisible(false);
       }
     },

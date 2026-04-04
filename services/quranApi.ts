@@ -38,6 +38,13 @@ export async function isSurahFullyCached(_surahNumber: number): Promise<boolean>
   return false;
 }
 import { addFailedVerse, cacheVerses } from '@/assets/database/QuranDatabase';
+import {
+  BISMILLAH_ARABIC,
+  BISMILLAH_AUDIO_URL,
+  BISMILLAH_TRANSLATION_EN,
+  BISMILLAH_WBW,
+  shouldHaveBismillah,
+} from '@/constants/basmalah';
 import { useSettingsStore } from '@/store/settingsStore';
 import { Verse } from '@/types';
 import { getAudioUrl } from '@/utils/audioUtils';
@@ -123,12 +130,25 @@ async function fetchWithRetry<T>(
   throw lastError!;
 }
 
+/** Full-string Bismillah translation for WBW-backed languages; English otherwise. */
+function translationForVirtualBismillah(translationLanguage: string): string {
+  const base = (translationLanguage.split('.')[0] || 'en').toLowerCase();
+  if (base === 'ta') return BISMILLAH_WBW.map((w) => w.ta).filter(Boolean).join(' ');
+  if (base === 'id') return BISMILLAH_WBW.map((w) => w.id).filter(Boolean).join(' ');
+  if (base === 'ms') return BISMILLAH_WBW.map((w) => w.ms).filter(Boolean).join(' ');
+  return BISMILLAH_TRANSLATION_EN;
+}
+
 export async function fetchTransliterationText(
   surahNumber: number,
   verseNumber: number,
   langCode: string
 ): Promise<string | undefined> {
   try {
+    if (verseNumber === 0 && shouldHaveBismillah(surahNumber)) {
+      return 'Bismillāhi ar-raḥmāni ar-raḥīm';
+    }
+
     // Try to fetch the requested language first
     const resp = await fetchWithTimeout(
       `${ALQURAN_CLOUD_API}/ayah/${surahNumber}:${verseNumber}/${langCode}.transliteration`
@@ -224,6 +244,28 @@ export async function fetchSingleVerse(
   return lazyQueue.add(key, async () =>
     fetchWithRetry(async () => {
       try {
+        if (verseNumber === 0) {
+          if (!shouldHaveBismillah(surahNumber)) {
+            circuitBreaker.onSuccess();
+            return null;
+          }
+          const wantTransliteration = !!useSettingsStore.getState().showTransliteration;
+          const transliterationText = wantTransliteration
+            ? await fetchTransliterationText(surahNumber, verseNumber, 'en')
+            : undefined;
+          const verse: Verse = {
+            id: -surahNumber,
+            surahId: surahNumber,
+            verseNumber: 0,
+            arabicText: BISMILLAH_ARABIC,
+            translation: translationForVirtualBismillah(translationLanguage),
+            transliteration: transliterationText,
+            audioUrl: BISMILLAH_AUDIO_URL,
+          };
+          circuitBreaker.onSuccess();
+          return verse;
+        }
+
         const wantTransliteration = !!useSettingsStore.getState().showTransliteration;
         const preferredLang = (translationLanguage.split('.')[0] || 'en').toLowerCase();
         

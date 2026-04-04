@@ -84,6 +84,13 @@ export interface ThemeColors {
   inProgress: string;
   successBackground: string;
   errorBackground: string;
+  
+  // Read Mode specific colors
+  readModeParchmentBG: string;
+  readModeParchmentTexture: string;
+  readModeCharcoalText: string;
+  readModeDeepBG: string;
+  readModeGoldAsset: string;
 }
 
 export type ThemeType = 'light' | 'dark' | 'system';

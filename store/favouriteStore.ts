@@ -42,10 +42,23 @@ export const useFavouriteStore = create<FavouriteState>()(
         };
 
         set((state) => {
-          const newFavourites = state.favourites.some(f => f.id === verseId) 
-            ? state.favourites 
-            : [...state.favourites, favourite];
+          const isExisting = state.favourites.some(f => f.id === verseId);
+          if (isExisting) return state;
+
+          const newFavourites = [...state.favourites, favourite];
           
+          // ANALYTICS: Favourite added
+          const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
+          logAnalyticsEvent('favourite_added', {
+            verse_id: verseId,
+            surah_id: surahId,
+            surah_name: surahName,
+            verse_number: verseNumber,
+            source: source || 'unknown',
+            juz_number: juzNumber || null,
+            ...getCommonParams(),
+          });
+
           return {
             favourites: newFavourites,
             favouritesSet: new Set(newFavourites.map(f => f.id))
@@ -55,7 +68,19 @@ export const useFavouriteStore = create<FavouriteState>()(
 
       removeFavourite: (verseId) => {
         set((state) => {
+          const item = state.favourites.find(f => f.id === verseId);
           const newFavourites = state.favourites.filter(f => f.id !== verseId);
+
+          // ANALYTICS: Favourite removed
+          const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
+          logAnalyticsEvent('favourite_removed', {
+            verse_id: verseId,
+            surah_id: item?.surahId || null,
+            surah_name: item?.surahName || 'unknown',
+            verse_number: item?.verseNumber || null,
+            ...getCommonParams(),
+          });
+
           return {
             favourites: newFavourites,
             favouritesSet: new Set(newFavourites.map(f => f.id))

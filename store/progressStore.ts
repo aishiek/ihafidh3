@@ -254,8 +254,71 @@ export const useProgressStore = create<ProgressState>()(
         newlyUnlocked.forEach(badge => {
           const isHafidh = badge.id === 'hafidh-quran';
           if (__DEV__) console.log('[checkAndCelebrateBadges] Celebrating badge:', badge.name, 'isHafidh:', isHafidh);
+          
+          // ANALYTICS: Badge earned
+          logAnalyticsEvent('badge_earned', {
+            badge_name: badge.name,
+            total_badges_unlocked: useBadgeStore.getState().getUnlockedBadges().length,
+            category: isHafidh ? 'completion' : 'progress',
+            ...getCommonParams(),
+          });
+
+          // ANALYTICS: Milestone reached (if Juz-based)
+          if (badge.requirement > 0) {
+            logAnalyticsEvent('milestone_reached', {
+              milestone_type: 'juz_completion',
+              milestone_value: badge.requirement,
+              total_verses_memorized: memorizedVerses.length,
+              ...getCommonParams(),
+            });
+          }
+
           badgeCelebrationCallback(badge, isHafidh);
         });
+
+        // ANALYTICS: Juz completed (if newly completed)
+        // Note: Simple logic to detect if Juz count increased
+        const previousJuzCount = (get() as any)._lastJuzCount || 0;
+        if (actualCompletedJuz > previousJuzCount) {
+          const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
+          logAnalyticsEvent('juz_completed', {
+            juz_number: actualCompletedJuz,
+            juz_name: `Juz ${actualCompletedJuz}`,
+            verses_count: memorizedVerses.length, // approximation
+            total_juz_completed: actualCompletedJuz,
+            ...getCommonParams(),
+          });
+          set({ _lastJuzCount: actualCompletedJuz } as any);
+        }
+        // ANALYTICS: Surah completed (logic to detect new completion)
+        const previousCompletedSurahs = (get() as any)._lastCompletedSurahIds || [];
+        
+        // Find which surah contains the latest memorized verse
+        const verse = memorizedVerses[memorizedVerses.length - 1];
+        if (verse) {
+           let startId = 0;
+           const currentSurah = surahsData.find((s: any) => {
+              const inside = verse > startId && verse <= startId + s.versesCount;
+              if (!inside) startId += s.versesCount;
+              return inside;
+           });
+
+           if (currentSurah && !previousCompletedSurahs.includes(currentSurah.id)) {
+              // Check if all verses in this surah are memorized
+              const memorizedInSurah = memorizedVerses.filter(id => id > startId && id <= startId + currentSurah.versesCount).length;
+              if (memorizedInSurah === currentSurah.versesCount) {
+                 const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
+                 logAnalyticsEvent('surah_completed', {
+                    surah_id: currentSurah.id,
+                    surah_name: currentSurah.englishName || `Surah ${currentSurah.id}`,
+                    verses_count: currentSurah.versesCount,
+                    total_surahs_memorized: previousCompletedSurahs.length + 1,
+                    ...getCommonParams(),
+                 });
+                 set({ _lastCompletedSurahIds: [...previousCompletedSurahs, currentSurah.id] } as any);
+              }
+           }
+        }
       },
 
       // actions
@@ -578,9 +641,13 @@ export const useProgressStore = create<ProgressState>()(
 
         // ANALYTICS: Quiz completed
         const percentage = Math.round((result.score / result.totalQuestions) * 100);
+        const { surahsData } = require('@/data/surahs');
+        const surah = surahsData.find((s: any) => s.id === result.surahId);
+        
         logAnalyticsEvent('quiz_completed', {
           surah_id: result.surahId || 0,
-          score: result.score,
+          surah_name: surah ? surah.englishName : 'Unknown',
+          quiz_score: result.score,
           total_questions: result.totalQuestions,
           percentage: percentage,
           passed: percentage >= 70,

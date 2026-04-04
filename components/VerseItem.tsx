@@ -165,6 +165,7 @@ const VerseItem = ({
   const memorized = useMemo(() => memorizedVerses.includes(verse.id), [memorizedVerses, verse.id]);
   const revised = useMemo(() => revisedVerses.some((v: any) => v.verseId === verse.id), [revisedVerses, verse.id]);
   const bookmarked = useMemo(() => bookmarksSet.has(verse.id), [bookmarksSet, verse.id]);
+  const isBasmalah = verse.verseNumber === 0;
 
   // Memoize sajdah check to avoid recalculating on every render
   const isSajdahVerse = useMemo(() => {
@@ -281,6 +282,17 @@ const VerseItem = ({
         backgroundColor: '#1a1a1a',
         borderColor: '#10B981',
         borderWidth: 2,
+      };
+    }
+
+    if (isBasmalah) {
+      return {
+        backgroundColor: 'rgba(255, 215, 0, 0.03)',
+        borderColor: 'rgba(255, 215, 0, 0.15)',
+        borderWidth: 1,
+        marginVertical: 24,
+        paddingVertical: 32,
+        opacity: 0.9,
       };
     }
 
@@ -704,8 +716,8 @@ const VerseItem = ({
 
   return (
     <Pressable ref={forwardedRef as any} style={[styles.container, containerStyle]}>
-      <View style={styles.header}>
-        {showLegacyVerseNumber && (
+      <View style={[styles.header, isBasmalah && { justifyContent: 'center', marginBottom: 12 }]}>
+        {showLegacyVerseNumber && !isBasmalah && (
           <View style={[
             styles.verseNumber,
             { backgroundColor: primary, flexDirection: 'row', alignItems: 'center', paddingHorizontal: isThreeDigits ? 8 : 6, minWidth: isThreeDigits ? 36 : 28 },
@@ -813,8 +825,8 @@ const VerseItem = ({
       )}
 
       {/* Inline container so we can place an inline sajdah icon at the end of the verse */}
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'flex-end' }}>
-        <View style={{ flex: 1 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: isBasmalah ? 'center' : 'flex-end' }}>
+        <View style={{ flex: isBasmalah ? 0 : 1 }}>
           {arabicFont === 'tajweed' ? (
             <TajweedText
               text={displayedArabic}
@@ -829,6 +841,7 @@ const VerseItem = ({
                 ...arabicTypography,
                 minHeight: arabicTypography.lineHeight || fontSizeArabic * 1.5,
                 lineHeight: arabicTypography.lineHeight || Math.round(fontSizeArabic * 2.0),
+                textAlign: isBasmalah ? 'center' : 'right',
               }]}
             />
           ) : (
@@ -841,6 +854,7 @@ const VerseItem = ({
                 paddingHorizontal: 4,
                 ...arabicTypography,
                 lineHeight: arabicTypography.lineHeight || Math.round(fontSizeArabic * 2.0),
+                textAlign: isBasmalah ? 'center' : 'right',
               }]}
             >
               {displayedArabic}
@@ -867,6 +881,7 @@ const VerseItem = ({
           color: '#FFD700',
           fontSize: fontSizeTransliteration,
           marginTop: 8,
+          textAlign: isBasmalah ? 'center' : 'left',
         }}>
           {displayedTransliteration}
         </Text>
@@ -877,126 +892,132 @@ const VerseItem = ({
           color: '#ffffff',
           fontSize: fontSizeTranslation,
           marginTop: 4,
+          textAlign: isBasmalah ? 'center' : 'left',
         }}>
           {displayedTranslation}
         </Text>
       )}
 
-      <View style={styles.datesRow}>
-        <View style={[styles.dateCol, { opacity: (memorized || surahMemorizedGlobally) ? 1 : 0.5 }]}>
-          {memorized && !!memorizedDate && (
-            <Text style={[styles.memorizedDateText]}>Memorized: {memorizedDate}</Text>
-          )}
-          {surahMemorizedGlobally && !memorized && (
-            <Text style={[styles.memorizedDateText]}>Memorized: (Surah level)</Text>
-          )}
-          {!memorized && !surahMemorizedGlobally && (
-            <Text style={[styles.memorizedDateText, { opacity: 0.6 }]}>Not memorized</Text>
-          )}
-        </View>
+      {!isBasmalah && (
+        <View style={styles.datesRow}>
+          <View style={[styles.dateCol, { opacity: (memorized || surahMemorizedGlobally) ? 1 : 0.5 }]}>
+            {memorized && !!memorizedDate && (
+              <Text style={[styles.memorizedDateText]}>Memorized: {memorizedDate}</Text>
+            )}
+            {surahMemorizedGlobally && !memorized && (
+              <Text style={[styles.memorizedDateText]}>Memorized: (Surah level)</Text>
+            )}
+            {!memorized && !surahMemorizedGlobally && (
+              <Text style={[styles.memorizedDateText, { opacity: 0.6 }]}>Not memorized</Text>
+            )}
+          </View>
 
-        <View style={[styles.dateCol, { opacity: (revised || surahRevisedGlobally) ? 1 : 0.5 }]}>
-          {revised && !!revisedDate && (
-            <Text style={[styles.revisedDateText]}>Revised: {revisedDate}</Text>
-          )}
-          {surahRevisedGlobally && !revised && (
-            <Text style={[styles.revisedDateText]}>Revised: (Surah level)</Text>
-          )}
-          {!revised && !surahRevisedGlobally && (
-            <Text style={[styles.revisedDateText, { opacity: 0.6 }]}>Not revised</Text>
-          )}
+          <View style={[styles.dateCol, { opacity: (revised || surahRevisedGlobally) ? 1 : 0.5 }]}>
+            {revised && !!revisedDate && (
+              <Text style={[styles.revisedDateText]}>Revised: {revisedDate}</Text>
+            )}
+            {surahRevisedGlobally && !revised && (
+              <Text style={[styles.revisedDateText]}>Revised: (Surah level)</Text>
+            )}
+            {!revised && !surahRevisedGlobally && (
+              <Text style={[styles.revisedDateText, { opacity: 0.6 }]}>Not revised</Text>
+            )}
+          </View>
         </View>
-      </View>
+      )}
 
-      <View style={styles.actionsContainer}>
-        <Pressable
-          style={({ pressed }) => ({
-            flex: 1,
-            marginHorizontal: 4,
-            paddingVertical: 9,
-            borderRadius: 12,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: memorized ? '#4CAF50' : '#1a1a1a',
-            borderColor: memorized ? '#4CAF50' : '#444444',
-            borderWidth: memorized ? 2 : 1,
-            opacity: pressed ? 0.7 : 1,
-            shadowColor: memorized ? '#4CAF50' : 'transparent',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.3,
-            shadowRadius: 4,
-            elevation: memorized ? 3 : 0,
-          })}
-          onPress={handleMarkMemorized}
-          android_ripple={{ color: 'transparent' }}
-          accessibilityRole="button"
-          accessibilityLabel={memorized ? 'Unmark as memorized' : 'Mark as memorized'}
-        >
-          <Check size={16} color="#ffffff" />
-          <Text style={{ fontSize: 13, fontWeight: '600', color: '#ffffff', marginLeft: 6 }}>
-            {memorized ? 'Memorized' : 'Mark Memorized'}
-          </Text>
-          {memorized && (
-            <View style={{
-              marginLeft: 4,
-              padding: 4,
+      {!isBasmalah && (
+        <View style={styles.actionsContainer}>
+          <Pressable
+            style={({ pressed }) => ({
+              flex: 1,
+              marginHorizontal: 4,
+              paddingVertical: 9,
               borderRadius: 12,
-              backgroundColor: 'rgba(255, 255, 255, 0.2)',
-              width: 20,
-              height: 20,
+              flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'center',
-            }}>
-              <ArrowLeft size={12} color="#ffffff" />
-            </View>
-          )}
-        </Pressable>
+              backgroundColor: memorized ? '#4CAF50' : '#1a1a1a',
+              borderColor: memorized ? '#4CAF50' : '#444444',
+              borderWidth: memorized ? 2 : 1,
+              opacity: pressed ? 0.7 : 1,
+              shadowColor: memorized ? '#4CAF50' : 'transparent',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.3,
+              shadowRadius: 4,
+              elevation: memorized ? 3 : 0,
+            })}
+            onPress={handleMarkMemorized}
+            android_ripple={{ color: 'transparent' }}
+            accessibilityRole="button"
+            accessibilityLabel={memorized ? 'Unmark as memorized' : 'Mark as memorized'}
+          >
+            <Check size={16} color="#ffffff" />
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#ffffff', marginLeft: 6 }}>
+              {memorized ? 'Memorized' : 'Mark Memorized'}
+            </Text>
+            {memorized && (
+              <View style={{
+                marginLeft: 4,
+                padding: 4,
+                borderRadius: 12,
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                width: 20,
+                height: 20,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <ArrowLeft size={12} color="#ffffff" />
+              </View>
+            )}
+          </Pressable>
 
-        <Pressable
-          style={({ pressed }) => ({
-            flex: 1,
-            marginHorizontal: 4,
-            paddingVertical: 9,
-            borderRadius: 12,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: revised ? '#FF9800' : '#1a1a1a',
-            borderColor: revised ? '#FF9800' : '#444444',
-            borderWidth: revised ? 2 : 1,
-            opacity: pressed ? 0.7 : 1,
-            shadowColor: revised ? '#FF9800' : 'transparent',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.3,
-            shadowRadius: 4,
-            elevation: revised ? 3 : 0,
-          })}
-          onPress={handleMarkRevised}
-          android_ripple={{ color: 'transparent' }}
-          accessibilityRole="button"
-          accessibilityLabel={revised ? 'Unmark as revised' : 'Mark as revised'}
-        >
-          <RefreshCw size={16} color="#ffffff" />
-          <Text style={{ fontSize: 13, fontWeight: '600', color: '#ffffff', marginLeft: 6 }}>
-            {revised ? 'Revised' : 'Mark Revision'}
-          </Text>
-          {revised && (
-            <View style={{
-              marginLeft: 4,
-              padding: 4,
+          <Pressable
+            style={({ pressed }) => ({
+              flex: 1,
+              marginHorizontal: 4,
+              paddingVertical: 9,
               borderRadius: 12,
-              backgroundColor: 'rgba(255, 255, 255, 0.2)',
-              width: 20,
-              height: 20,
+              flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'center',
-            }}>
-              <ArrowLeft size={12} color="#ffffff" />
-            </View>
-          )}
-        </Pressable>
-      </View>
+              backgroundColor: revised ? '#FF9800' : '#1a1a1a',
+              borderColor: revised ? '#FF9800' : '#444444',
+              borderWidth: revised ? 2 : 1,
+              opacity: pressed ? 0.7 : 1,
+              shadowColor: revised ? '#FF9800' : 'transparent',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.3,
+              shadowRadius: 4,
+              elevation: revised ? 3 : 0,
+            })}
+            onPress={handleMarkRevised}
+            android_ripple={{ color: 'transparent' }}
+            accessibilityRole="button"
+            accessibilityLabel={revised ? 'Unmark as revised' : 'Mark as revised'}
+          >
+            <RefreshCw size={16} color="#ffffff" />
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#ffffff', marginLeft: 6 }}>
+              {revised ? 'Revised' : 'Mark Revision'}
+            </Text>
+            {revised && (
+              <View style={{
+                marginLeft: 4,
+                padding: 4,
+                borderRadius: 12,
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                width: 20,
+                height: 20,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <ArrowLeft size={12} color="#ffffff" />
+              </View>
+            )}
+          </Pressable>
+        </View>
+      )}
+
 
       <Modal
         visible={showPlaybackModal}

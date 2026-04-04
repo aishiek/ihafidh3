@@ -487,7 +487,7 @@ export default function SettingsScreen() {
 
       <Stack.Screen
         options={{
-          title: 'Setup',
+          title: 'Settings',
           headerStyle: { backgroundColor: theme.background },
           headerTintColor: theme.text,
           headerTitleStyle: { fontWeight: 'bold' },
@@ -1007,7 +1007,7 @@ export default function SettingsScreen() {
         </View>
 
         {/* App version label - Tap 7 times to access debug screen */}
-        <Pressable
+        <Pressable 
           style={styles.versionRow}
           onPress={() => {
             const newCount = debugTapCount + 1;
@@ -1020,7 +1020,7 @@ export default function SettingsScreen() {
             setTimeout(() => setDebugTapCount(0), 2000);
           }}
         >
-          <Text style={styles.versionText}>Ver-2.0.8</Text>
+          <Text style={styles.versionText}>Ver-2.0.9</Text>
         </Pressable>
       </ScrollView>
 

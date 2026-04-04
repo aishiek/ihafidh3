@@ -22,6 +22,12 @@ export default function MushafScreen() {
         if (last && last.page) {
           goToPage(last.page);
         }
+        // ANALYTICS: Mushaf opened
+        const { getCommonParams, logAnalyticsEvent } = require('@/utils/analyticsHelper');
+        logAnalyticsEvent('mushaf_opened', {
+          page_number: last && last.page ? last.page : 1,
+          ...getCommonParams(),
+        });
       } catch (e) {
         // ignore
       }

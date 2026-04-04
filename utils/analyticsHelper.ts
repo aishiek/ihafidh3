@@ -157,11 +157,79 @@ export async function setUserId(userId: string): Promise<void> {
  * Get common event parameters (timestamp, platform, version)
  */
 export function getCommonParams(): Record<string, any> {
-  return {
+  const params: Record<string, any> = {
     timestamp: new Date().toISOString(),
     platform: Platform.OS, // 'ios' or 'android'
     app_version: Constants.expoConfig?.version || 'unknown',
   };
+
+  try {
+    // Lazy require to avoid circular dependencies
+    const { useProgressStore } = require('@/store/progressStore');
+    const { useBookmarkStore } = require('@/store/bookmarkStore');
+    const { useFavouriteStore } = require('@/store/favouriteStore');
+    const { useBadgeStore } = require('@/store/badgeStore');
+    const { useSettingsStore } = require('@/store/settingsStore');
+    const { QuranProgressTracker } = require('@/data/quranProgress');
+    const { surahsData } = require('@/data/surahs');
+
+    const progressState = useProgressStore.getState();
+    const bookmarkState = useBookmarkStore.getState();
+    const favouriteState = useFavouriteStore.getState();
+    const badgeState = useBadgeStore.getState();
+    const settingsState = useSettingsStore.getState();
+
+    const memorizedVerseIds = progressState.memorizedVerses || [];
+    
+    // Calculate accurate counts using tracker
+    const memorizedVersesFormatted = memorizedVerseIds.map((vId: number) => {
+      let startId = 0;
+      for (let i = 1; i <= 114; i++) {
+        const s = surahsData.find((sd: any) => sd.id === i);
+        if (!s) continue;
+        if (vId <= startId + s.versesCount) return `${i}:${vId - startId}`;
+        startId += s.versesCount;
+      }
+      return '';
+    }).filter(Boolean);
+
+    const tracker = new QuranProgressTracker({
+      memorizedSurahs: [],
+      memorizedJuz: [],
+      memorizedVerses: memorizedVersesFormatted,
+      memorizedVerseIds: memorizedVerseIds
+    });
+    const stats = tracker.calculateProgress();
+
+    params.total_verses_memorized = memorizedVerseIds.length;
+    params.total_surahs_memorized = stats.surahs.completed;
+    params.total_juz_memorized = stats.juz.completed;
+    params.total_bookmarks = bookmarkState.bookmarks?.length || 0;
+    params.total_favourites = favouriteState.favourites?.length || 0;
+    params.total_badges = badgeState.unlockedBadges?.length || 0;
+    params.language = settingsState.translationLanguage || 'en.asad';
+
+    // Add Mustahabbah count
+    const mustahabbahRaw = [36, 32, 73, 18, 55, 67, 56, 62, 76];
+    let mustahabbahCompleted = 0;
+    mustahabbahRaw.forEach(id => {
+      let startId = 0;
+      for (let i = 1; i < id; i++) {
+        const s = surahsData.find((sd: any) => sd.id === i);
+        if (s) startId += s.versesCount;
+      }
+      const surah = surahsData.find((sd: any) => sd.id === id);
+      if (surah) {
+        const surahVerses = memorizedVerseIds.filter((vId: number) => vId > startId && vId <= startId + surah.versesCount);
+        if (surahVerses.length === surah.versesCount) mustahabbahCompleted++;
+      }
+    });
+    params.total_mustahabbah_completed = mustahabbahCompleted;
+  } catch (e) {
+    // Ignore errors in common params to prevent analytics from crashing the app
+  }
+
+  return params;
 }
 
 /**

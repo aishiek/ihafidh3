@@ -52,9 +52,9 @@ export const TajweedRenderer: React.FC<TajweedRendererProps> = ({
   return (
     <View
       style={{
-        flexDirection: 'row',
+        flexDirection: 'row-reverse',
         flexWrap: 'wrap',
-        justifyContent: isCentered ? 'center' : 'flex-end',
+        justifyContent: isCentered ? 'center' : 'flex-start',
         paddingVertical: 8,
       }}
     >
@@ -72,6 +72,7 @@ export const TajweedRenderer: React.FC<TajweedRendererProps> = ({
             style={{
               fontSize: 24,
               textAlign: 'right',
+              writingDirection: 'rtl',
               color: textColor,
               backgroundColor: item.backgroundColor,
               paddingHorizontal: 4,
@@ -79,7 +80,7 @@ export const TajweedRenderer: React.FC<TajweedRendererProps> = ({
               borderRadius: 4,
             }}
           >
-            {item.word.word_text}
+            {`\u200F${item.word.word_text}\u200F`}
             {config.showLabels && item.rules.length > 0 && (
               <Text
                 style={{

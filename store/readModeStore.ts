@@ -33,21 +33,40 @@ interface ReadModeState {
      */
     lastVisibleJuz: number | null;
 
+    isOrientationFree: boolean;
+
+    /**
+     * Set true in ReadModeScreen right before router.back() on portrait return.
+     * read.tsx useFocusEffect checks this synchronously so it does not reset the tab
+     * while lastVisibleVerse is still present — avoiding a race with clearHandoff().
+     */
+    pendingPortraitHandoff: boolean;
+
     // Actions
     setLastVisibleVerse: (surahId: number, verseNumber: number) => void;
     setLastVisibleJuz: (juzNumber: number) => void;
+    setIsOrientationFree: (isOrientationFree: boolean) => void;
+    setPendingPortraitHandoff: (pending: boolean) => void;
     clearHandoff: () => void;
 }
 
 export const useReadModeStore = create<ReadModeState>((set) => ({
     lastVisibleVerse: null,
     lastVisibleJuz: null,
+    isOrientationFree: false,
+    pendingPortraitHandoff: false,
 
     setLastVisibleVerse: (surahId, verseNumber) =>
         set({ lastVisibleVerse: { surahId, verseNumber } }),
 
     setLastVisibleJuz: (juzNumber) =>
         set({ lastVisibleJuz: juzNumber }),
+
+    setIsOrientationFree: (isOrientationFree: boolean) =>
+        set({ isOrientationFree }),
+
+    setPendingPortraitHandoff: (pending: boolean) =>
+        set({ pendingPortraitHandoff: pending }),
 
     /**
      * Call clearHandoff() after consuming both values in read.tsx.

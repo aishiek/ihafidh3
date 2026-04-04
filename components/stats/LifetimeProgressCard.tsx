@@ -5,7 +5,7 @@ import { getOrSetInstallDate } from '@/utils/installDate';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
-import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, Line, Path, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
@@ -58,121 +58,51 @@ export default function LifetimeProgressCard() {
 
   useEffect(() => {
     const load = async () => {
-      const installDateStr = await getOrSetInstallDate();
-      setInstallStr(installDateStr);
-      const start = installDateStr;
-      const end = formatDate(new Date());
-
-      // Build daily totals by date from memorizedVerseDates
-      const memMap: Record<string, number> = {};
-      const revMap: Record<string, number> = {};
-
-      // Count memorization activities by date
-      // BACKFILL: If a verse is memorized but has no date, use install date
-      const today = formatDate(new Date());
-      memorizedVerses.forEach(verseId => {
-        const date = memorizedVerseDates[verseId] || installDateStr; // Backfill with install date
-        memMap[date] = (memMap[date] || 0) + 1;
-      });
-
-      // Count revision activities by date
-      revisedVerses.forEach(rv => {
-        const dateKey = rv.revisionDate || installDateStr; // Also backfill revisions with install date
-        revMap[dateKey] = (revMap[dateKey] || 0) + 1;
-      });
-
-      // Create ECG-style daily timeline from install date to today
-      const startDate = new Date(start + 'T00:00:00'); // Ensure proper date parsing
-      const todayDate = new Date(formatDate(new Date()) + 'T00:00:00');
-
-      // Build complete daily timeline for ECG visualization
-      const dailyTimeline: SeriesPoint[] = [];
-      let runningMem = 0;
-      let runningRev = 0;
-
-      let currentDate = new Date(startDate);
-      while (currentDate <= todayDate) {
-        const dateStr = formatDate(currentDate);
-        const dayMemActivity = memMap[dateStr] || 0;
-        const dayRevActivity = revMap[dateStr] || 0;
-
-        runningMem += dayMemActivity;
-        runningRev += dayRevActivity;
-
-        dailyTimeline.push({
-          x: 0,
-          y: 0,
-          date: dateStr,
-          total: runningMem + runningRev, // Combined total for main ECG line
-          hasActivity: dayMemActivity > 0 || dayRevActivity > 0,
-          activityCount: dayMemActivity + dayRevActivity,
-          memTotal: runningMem,
-          revTotal: runningRev,
-          memActivity: dayMemActivity,
-          revActivity: dayRevActivity
-        });
-
-        currentDate = addDays(currentDate, 1);
+      // 1. Get or set the install date
+      let currentInstallStr = installStr;
+      if (!currentInstallStr) {
+        currentInstallStr = await getOrSetInstallDate();
+        setInstallStr(currentInstallStr);
       }
 
-      // Create separate memorization and revision timelines
-      const mPts: SeriesPoint[] = dailyTimeline.map(point => ({
-        ...point,
-        total: point.memTotal || 0,
-        hasActivity: (point.memActivity || 0) > 0,
-        activityCount: point.memActivity || 0
-      }));
+      const start = currentInstallStr;
+      const today = formatDate(new Date());
 
-      const rPts: SeriesPoint[] = dailyTimeline.map(point => ({
-        ...point,
-        total: point.revTotal || 0,
-        hasActivity: (point.revActivity || 0) > 0,
-        activityCount: point.revActivity || 0
-      }));
-
-      setMemPoints(mPts);
-      setRevPoints(rPts);
-      setTotalMem(runningMem);
-      setTotalRev(runningRev);
-    };
-
-    load().catch(err => {
-      console.error('[LifetimeProgress] Error in load():', err);
-    });
-  }, [memorizedVerses.length, revisedVerses.length]); // Use .length to avoid object reference issues
-
-  // Refresh data when progress changes
-  useEffect(() => {
-    const load = async () => {
-      if (!installStr) return; // Wait for install date to be set
-
-      const start = installStr;
-      const end = formatDate(new Date());
-
-      // Build daily totals by date from memorizedVerseDates
+      // 2. Build activity maps
       const memMap: Record<string, number> = {};
       const revMap: Record<string, number> = {};
 
-      // Count memorization activities by date
-      // BACKFILL: If a verse is memorized but has no date, use install date
-      const today = formatDate(new Date());
       memorizedVerses.forEach(verseId => {
-        const date = memorizedVerseDates[verseId] || installStr; // Backfill with install date
+        const date = memorizedVerseDates[verseId] || currentInstallStr;
         memMap[date] = (memMap[date] || 0) + 1;
       });
 
-      // Count revision activities by date
       revisedVerses.forEach(rv => {
-        const dateKey = rv.revisionDate || installStr; // Also backfill revisions with install date
+        const dateKey = rv.revisionDate || currentInstallStr;
         revMap[dateKey] = (revMap[dateKey] || 0) + 1;
       });
 
-      // Create ECG-style daily timeline from install date to today
+      // 3. Create ECG-style daily timeline from install date to today
       const startDate = new Date(start + 'T00:00:00');
-      const todayDate = new Date(formatDate(new Date()) + 'T00:00:00');
+      const todayDate = new Date(today + 'T00:00:00');
 
-      // Build complete daily timeline for ECG visualization
-      const dailyTimeline: SeriesPoint[] = [];
+      // Add a "Day 0" point at zero so the graph starts from the baseline
+      const dayZeroDate = addDays(startDate, -1);
+      const dayZeroStr = formatDate(dayZeroDate);
+      
+      const dailyTimeline: SeriesPoint[] = [{
+        x: 0,
+        y: 0,
+        date: dayZeroStr,
+        total: 0,
+        hasActivity: false,
+        activityCount: 0,
+        memTotal: 0,
+        revTotal: 0,
+        memActivity: 0,
+        revActivity: 0
+      }];
+
       let runningMem = 0;
       let runningRev = 0;
 
@@ -201,7 +131,7 @@ export default function LifetimeProgressCard() {
         currentDate = addDays(currentDate, 1);
       }
 
-      // Create separate memorization and revision timelines
+      // 4. Create separate memorization and revision timelines
       const mPts: SeriesPoint[] = dailyTimeline.map(point => ({
         ...point,
         total: point.memTotal || 0,
@@ -221,8 +151,11 @@ export default function LifetimeProgressCard() {
       setTotalMem(runningMem);
       setTotalRev(runningRev);
     };
-    load();
-  }, [memorizedVerses.length, revisedVerses.length, installStr, dayKey]);
+
+    load().catch(err => {
+      console.error('[LifetimeProgress] Error in load():', err);
+    });
+  }, [memorizedVerses.length, revisedVerses.length, memorizedVerseDates, dayKey]); 
 
   const totalCombined = totalMem + totalRev;
   const pointCount = Math.max(memPoints.length, revPoints.length);
@@ -260,19 +193,32 @@ export default function LifetimeProgressCard() {
   const effectivePointCount = Math.max(effectiveMemPoints.length, effectiveRevPoints.length);
 
   // Get screen dimensions and calculate responsive width
+  // Get screen dimensions and calculate responsive width
   const screenWidth = Dimensions.get('window').width;
   const cardPadding = 40;
   const availableWidth = screenWidth - cardPadding;
 
+  // Chart layout dimensions
+  const height = 220;
+  const pad = {
+    top: 20,
+    right: 20,
+    bottom: 40,
+    left: Math.max(45, availableWidth * 0.12)
+  };
+
   // Scrollable width calculation - each day gets a minimum width
   const minDayWidth = 6;
   const maxDayWidth = 16;
-
-  let dayWidth = Math.max(minDayWidth, Math.min(maxDayWidth, availableWidth / effectivePointCount));
+  
+  const chartContentWidth = availableWidth - pad.left - pad.right;
+  let dayWidth = effectivePointCount > 1 
+    ? Math.max(minDayWidth, chartContentWidth / (effectivePointCount - 1))
+    : maxDayWidth;
 
   // Chart dimensions
   const totalChartWidth = effectivePointCount * dayWidth;
-  const needsHorizontalScroll = totalChartWidth > availableWidth - 80; // Leave space for padding
+  const needsHorizontalScroll = dayWidth <= minDayWidth && totalChartWidth > availableWidth - pad.left - pad.right;
 
   const chartWidth = needsHorizontalScroll
     ? totalChartWidth + 80
@@ -280,13 +226,6 @@ export default function LifetimeProgressCard() {
 
   // Layout - responsive dimensions
   const width = Math.min(availableWidth, chartWidth);
-  const height = 220;
-  const pad = {
-    top: 20,
-    right: 20,
-    bottom: 40,
-    left: Math.max(40, width * 0.15)
-  };
 
   // Y-axis scaling calculation
   const currentMaxProgress = Math.max(
@@ -329,46 +268,28 @@ export default function LifetimeProgressCard() {
 
   const lineSpacing = 2;
 
-  // ECG-style pathD function
-  const createECGPath = (series: SeriesPoint[], xOffset: number = 0) => {
-    if (series.length === 0) {
-      return '';
-    }
-
+  // Smooth cumulative path function
+  const createCumulativePath = (series: SeriesPoint[], xOffset: number = 0) => {
+    if (series.length === 0) return '';
     const xAt = (idx: number) => pad.left + idx * dayWidth + xOffset;
-
-    if (series.length === 1) {
-      const x = xAt(0);
-      const y = yScale(series[0].total);
-      const baselineY = yScale(0);
-      return `M ${x} ${baselineY} L ${x} ${y}`;
+    
+    let d = `M ${xAt(0)} ${yScale(series[0].total)}`;
+    for (let i = 1; i < series.length; i++) {
+        d += ` L ${xAt(i)} ${yScale(series[i].total)}`;
     }
+    return d;
+  };
 
-    // ECG-style connected path with maintained height and spikes
-    let d = '';
-
+  const createAreaPath = (series: SeriesPoint[], xOffset: number = 0) => {
+    if (series.length < 2) return '';
+    const xAt = (idx: number) => pad.left + idx * dayWidth + xOffset;
+    const baselineY = yScale(0);
+    
+    let d = `M ${xAt(0)} ${baselineY}`;
     for (let i = 0; i < series.length; i++) {
-      const x = xAt(i);
-      const y = yScale(series[i].total);
-
-      if (i === 0) {
-        // Start from baseline, spike to first value
-        d = `M ${x} ${yScale(0)} L ${x} ${y}`;
-      } else {
-        const prevX = xAt(i - 1);
-        const prevY = yScale(series[i - 1].total);
-
-        // Connect from previous point, maintain height or spike up
-        if (series[i].hasActivity) {
-          // Activity spike: horizontal line then vertical spike
-          d += ` L ${x} ${prevY} L ${x} ${y}`;
-        } else {
-          // No activity: horizontal line at maintained height
-          d += ` L ${x} ${prevY}`;
-        }
-      }
+      d += ` L ${xAt(i)} ${yScale(series[i].total)}`;
     }
-
+    d += ` L ${xAt(series.length - 1)} ${baselineY} Z`;
     return d;
   };
 
@@ -376,7 +297,7 @@ export default function LifetimeProgressCard() {
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.title, { color: colors.text }]}>Lifetime Progress (ECG)</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Lifetime Progress</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             {installStr ? `Since ${installStr}` : 'Lifetime'}
           </Text>
@@ -417,6 +338,17 @@ export default function LifetimeProgressCard() {
         >
           <View style={{ width: chartWidth }}>
             <Svg width={chartWidth} height={height}>
+              <Defs>
+                <LinearGradient id="memGradient" x1="0" y1="0" x2="0" y2="1">
+                  <Stop offset="0%" stopColor={colors.primary} stopOpacity="0.3" />
+                  <Stop offset="100%" stopColor={colors.primary} stopOpacity="0" />
+                </LinearGradient>
+                <LinearGradient id="revGradient" x1="0" y1="0" x2="0" y2="1">
+                  <Stop offset="0%" stopColor={colors.accent} stopOpacity="0.2" />
+                  <Stop offset="100%" stopColor={colors.accent} stopOpacity="0" />
+                </LinearGradient>
+              </Defs>
+
               {/* Y-axis labels */}
               {yAxisLabels.map((value) => {
                 const y = yScale(value);
@@ -430,9 +362,8 @@ export default function LifetimeProgressCard() {
                       x2={chartWidth - pad.right}
                       y2={y}
                       stroke={colors.border}
-                      strokeWidth={isZero || isMax ? 2 : 1}
-                      opacity={isZero || isMax ? 0.6 : 0.25}
-                      strokeDasharray={isZero || isMax ? undefined : '4 4'}
+                      strokeWidth={isZero || isMax ? 1.5 : 1}
+                      opacity={isZero || isMax ? 0.3 : 0.15}
                     />
                     <SvgText
                       x={pad.left - 8}
@@ -447,48 +378,53 @@ export default function LifetimeProgressCard() {
                 );
               })}
 
-              {/* Plot boundaries */}
-              <Line x1={pad.left} y1={height - pad.bottom} x2={chartWidth - pad.right} y2={height - pad.bottom} stroke={colors.border} strokeWidth={2} opacity={0.7} />
-              <Line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} stroke={colors.border} strokeWidth={2} opacity={0.7} />
-
-              {/* ECG Lines */}
-              <AnimatedPath d={createECGPath(effectiveMemPoints, -lineSpacing)} stroke={colors.primary} strokeWidth={2.5} fill="none" entering={FadeIn.duration(500)} />
-
+              {/* Area Fills */}
+              <Path d={createAreaPath(effectiveMemPoints)} fill="url(#memGradient)" />
               {showRevisedLine && (
-                <AnimatedPath d={createECGPath(effectiveRevPoints, lineSpacing)} stroke={colors.accent} strokeWidth={2.5} fill="none" entering={FadeIn.duration(500)} />
+                <Path d={createAreaPath(effectiveRevPoints)} fill="url(#revGradient)" />
               )}
 
-              {/* ECG dots for each day */}
-              {effectiveMemPoints.map((point, index) => {
-                const x = pad.left + index * dayWidth - lineSpacing;
-                const y = yScale(point.total);
+              {/* Smooth Lines */}
+              <AnimatedPath 
+                d={createCumulativePath(effectiveMemPoints)} 
+                stroke={colors.primary} 
+                strokeWidth={3} 
+                fill="none" 
+                entering={FadeIn.duration(800)} 
+              />
 
-                return (
-                  <Circle
-                    key={`mem-dot-${index}`}
-                    cx={x}
-                    cy={y}
-                    r={point.hasActivity ? 2 : 1}
-                    fill={colors.primary}
-                    opacity={point.hasActivity ? 1 : 0.4}
-                  />
-                );
+              {showRevisedLine && (
+                <AnimatedPath 
+                  d={createCumulativePath(effectiveRevPoints)} 
+                  stroke={colors.accent} 
+                  strokeWidth={2} 
+                  strokeDasharray="4 2"
+                  fill="none" 
+                  entering={FadeIn.duration(800)} 
+                />
+              )}
+
+              {/* Activity markers (dots only on active days) */}
+              {effectiveMemPoints.map((point, index) => {
+                if (!point.hasActivity) return null;
+                const x = pad.left + index * dayWidth;
+                const y = yScale(point.total);
+                return <Circle key={`m-dot-${index}`} cx={x} cy={y} r={3.5} fill={colors.primary} />;
               })}
 
+              {/* Revised Activity markers */}
               {showRevisedLine && effectiveRevPoints.map((point, index) => {
-                const x = pad.left + index * dayWidth + lineSpacing;
+                if (!point.hasActivity) return null;
+                const x = pad.left + index * dayWidth;
                 const y = yScale(point.total);
+                return <Circle key={`r-dot-${index}`} cx={x} cy={y} r={3.5} fill={colors.accent} />;
+              })}
 
-                return (
-                  <Circle
-                    key={`rev-dot-${index}`}
-                    cx={x}
-                    cy={y}
-                    r={point.hasActivity ? 2 : 1}
-                    fill={colors.accent}
-                    opacity={point.hasActivity ? 1 : 0.4}
-                  />
-                );
+              {/* Revised Activity markers */}
+              {showRevisedLine && effectiveRevPoints.filter(p => p.hasActivity).map((point, index) => {
+                const x = pad.left + effectiveRevPoints.indexOf(point) * dayWidth;
+                const y = yScale(point.total);
+                return <Circle key={`r-dot-${index}`} cx={x} cy={y} r={3} fill={colors.accent} />;
               })}
             </Svg>
 
@@ -498,18 +434,16 @@ export default function LifetimeProgressCard() {
                 <Text style={[styles.axisLabel, { color: colors.textSecondary, fontSize: 10 }]}>
                   {effectiveMemPoints.length > 0
                     ? new Date(effectiveMemPoints[0].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                    : 'Start'
+                    : ''
                   }
                 </Text>
               </View>
-              <View style={{ flex: 1, alignItems: 'center' }}>
-                <Text style={[styles.axisLabel, { color: colors.textSecondary, fontSize: 9 }]}>
-                  ECG Timeline {needsHorizontalScroll ? '(Scroll →)' : ''}
-                </Text>
-              </View>
               <View style={{ flex: 1, alignItems: 'flex-end', paddingRight: 4 }}>
-                <Text style={[styles.axisLabel, { color: colors.textSecondary, fontSize: 10, fontWeight: '600' }]}>
-                  Now
+                <Text style={[styles.axisLabel, { color: colors.textSecondary, fontSize: 10 }]}>
+                  {effectiveMemPoints.length > 0
+                    ? new Date(effectiveMemPoints[effectiveMemPoints.length - 1].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                    : ''
+                  }
                 </Text>
               </View>
             </View>

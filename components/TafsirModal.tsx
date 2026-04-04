@@ -1,5 +1,6 @@
 import { getTafsirFromSource } from '@/services/tafsirService';
 import { useSettingsStore } from '@/store/settingsStore';
+import { useThemeStore } from '@/store/themeStore';
 import { LinearGradient } from 'expo-linear-gradient';
 import { X } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -11,6 +12,7 @@ interface TafsirModalProps {
   surahId: number;
   verseNumber: number;
   supportedOrientations?: ("portrait" | "portrait-upside-down" | "landscape" | "landscape-left" | "landscape-right")[]; // Allow customizing orientations
+  forceLightMode?: boolean;
 }
 
 interface TafsirData {
@@ -18,13 +20,16 @@ interface TafsirData {
   text: string;
 }
 
-export default function TafsirModal({ visible, onClose, surahId, verseNumber, supportedOrientations = ['portrait'] }: TafsirModalProps) {
+export default function TafsirModal({ visible, onClose, surahId, verseNumber, supportedOrientations = ['portrait'], forceLightMode }: TafsirModalProps) {
   const [tafsirData, setTafsirData] = useState<TafsirData | null>(null);
     const [sourceInfo, setSourceInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const translationLanguage = useSettingsStore(s => s.translationLanguage);
+  const themeMode = useThemeStore(s => s.themeMode);
+  const isDark = forceLightMode !== undefined ? !forceLightMode : themeMode === 'dark';
+
   const title = useMemo(() => `Tafsir ${surahId}:${verseNumber}`, [surahId, verseNumber]);
   const bodyMaxHeight = useMemo(() => Math.floor(Dimensions.get('window').height * 0.6), []);
 
@@ -69,35 +74,35 @@ export default function TafsirModal({ visible, onClose, surahId, verseNumber, su
         {/* Centered card */}
         <View style={styles.centerContainer}>
           <LinearGradient
-            colors={[ 'rgba(40,40,40,0.95)', 'rgba(25,25,25,0.95)' ]}
+            colors={isDark ? ['rgba(40,40,40,0.95)', 'rgba(25,25,25,0.95)'] : ['rgba(255,255,255,0.98)', 'rgba(245,245,245,0.98)']}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-            style={styles.card}
+            style={[styles.card, !isDark && { borderColor: 'rgba(0,0,0,0.1)' }]}
           >
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Close"
               onPress={onClose}
-              style={styles.topRightClose}
+              style={[styles.topRightClose, !isDark && { backgroundColor: '#e5e5e5', borderColor: 'rgba(0,0,0,0.1)' }]}
               hitSlop={10}
             >
-              <X size={18} color="#fff" strokeWidth={2.5} />
+              <X size={18} color={isDark ? "#fff" : "#333"} strokeWidth={2.5} />
             </Pressable>
-            <Text style={styles.title}>{title}</Text>
+            <Text style={[styles.title, !isDark && { color: '#1a1a1a' }]}>{title}</Text>
             {!!tafsirData?.scholar && (
-              <Text style={styles.subtitle}>{tafsirData.scholar}</Text>
+              <Text style={[styles.subtitle, !isDark && { color: '#B8860B' }]}>{tafsirData.scholar}</Text>
             )}
 
             <View style={styles.contentContainer}>
               {loading && (
                 <View style={styles.center}>
-                  <ActivityIndicator color="#FFD700" />
-                  <Text style={styles.hint}>Loading tafsir…</Text>
+                  <ActivityIndicator color={isDark ? "#FFD700" : "#B8860B"} />
+                  <Text style={[styles.hint, !isDark && { color: '#666' }]}>Loading tafsir…</Text>
                 </View>
               )}
               {!loading && error && (
                 <View style={styles.center}>
-                  <Text style={styles.error}>{error}</Text>
-                  <Text style={styles.hint}>Try again later or check your connection.</Text>
+                  <Text style={[styles.error, !isDark && { color: '#d32f2f' }]}>{error}</Text>
+                  <Text style={[styles.hint, !isDark && { color: '#666' }]}>Try again later or check your connection.</Text>
                 </View>
               )}
               {!loading && !error && tafsirData?.text && (
@@ -106,13 +111,13 @@ export default function TafsirModal({ visible, onClose, surahId, verseNumber, su
                   style={[styles.scrollContainer, { maxHeight: bodyMaxHeight }]}
                   contentContainerStyle={styles.scrollContent}
                 >
-                  <Text style={styles.text}>{tafsirData.text}</Text>
+                  <Text style={[styles.text, !isDark && { color: '#333' }]}>{tafsirData.text}</Text>
                 </ScrollView>
               )}
             </View>
 
-            <Pressable onPress={onClose} style={styles.closeBtn}>
-              <Text style={styles.closeText}>Close</Text>
+            <Pressable onPress={onClose} style={[styles.closeBtn, !isDark && { backgroundColor: '#f0f0f0' }]}>
+              <Text style={[styles.closeText, !isDark && { color: '#333' }]}>Close</Text>
             </Pressable>
           </LinearGradient>
         </View>

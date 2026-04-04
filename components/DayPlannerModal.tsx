@@ -138,12 +138,15 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
 
     // Add all plans from source to target
     sourcePlans.forEach(p => {
+      const s = surahsData.find(x => x.id === p.surahId);
+      const isFullSurah = p.startVerse === 1 && p.endVerse === (s?.versesCount || 0);
+      const method = isFullSurah ? 'surah' : 'range';
       addPlan(dateISO, {
         surahId: p.surahId,
         startVerse: p.startVerse,
         endVerse: p.endVerse,
         note: p.note
-      });
+      }, { trigger: 'auto', method });
     });
 
     setCopyModalVisible(false);
@@ -279,6 +282,10 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
           onConfirm={({ surahId, startVerse, endVerse, note }) => {
             if (!dateISO) return;
 
+            const surah = surahsData.find(s => s.id === surahId);
+            const isFullSurah = startVerse === 1 && endVerse === (surah?.versesCount || 0);
+            const method = isFullSurah ? 'surah' : 'range';
+
             // Calculate all verse IDs in the selected range
             const verseIds: number[] = [];
             const sId = toVerseId(surahId, startVerse);
@@ -311,7 +318,7 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
                     style: 'cancel',
                     onPress: () => {
                       // Cancel unmark but continue normal flow - add plan with * marking
-                      addPlan(dateISO, { surahId, startVerse, endVerse, note });
+                      addPlan(dateISO, { surahId, startVerse, endVerse, note }, { trigger: 'manual', method });
                     }
                   },
                   {
@@ -325,7 +332,7 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
                       });
 
                       // Add the plan (but DON'T mark as completed since we just unmarked)
-                      addPlan(dateISO, { surahId, startVerse, endVerse, note });
+                      addPlan(dateISO, { surahId, startVerse, endVerse, note }, { trigger: 'manual', method });
                     }
                   }
                 ],
@@ -333,7 +340,7 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
               );
             } else {
               // Normal flow: just add the plan
-              addPlan(dateISO, { surahId, startVerse, endVerse, note });
+              addPlan(dateISO, { surahId, startVerse, endVerse, note }, { trigger: 'manual', method });
             }
             // Keep picker open so user can add multiple if desired
           }}

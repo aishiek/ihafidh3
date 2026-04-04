@@ -102,6 +102,41 @@ class QuranProgressTracker {
   }
 }
 
+const DIVISIONS = [
+  {
+    id: 'tiwal',
+    name: 'At-Tiwal',
+    arabic: 'الطُّوَل',
+    description: '"The Long Ones" — The seven longest surahs of the Quran. These form the foundation of Quran memorization and are the most voluminous in content and rulings.',
+    range: 'Surah Al-Baqarah (2) – Surah At-Tawbah (9)',
+    surahs: [2, 3, 4, 5, 6, 7, 8, 9] // 8 Surahs (some count 8 & 9 as one)
+  },
+  {
+    id: 'miun',
+    name: "Al-Mi'un",
+    arabic: 'المِئُون',
+    description: '"The Hundreds" — Surahs each containing approximately one hundred verses or close to it. They follow At-Tiwal.',
+    range: 'Surah Yunus (10) – Surah As-Sajdah (32)',
+    surahs: Array.from({length: 23}, (_, i) => i + 10) // 10 to 32
+  },
+  {
+    id: 'mathani',
+    name: 'Al-Mathani',
+    arabic: 'المَثَاني',
+    description: '"The Oft-Repeated" — Surahs shorter than Al-Mi\'un but rich in frequently repeated themes, supplications, and narratives.',
+    range: 'Surah Al-Fatihah (1) & Surah Al-Ahzab (33) – Surah Al-Hujurat (49)',
+    surahs: [1, ...Array.from({length: 17}, (_, i) => i + 33)] // 1, 33 to 49
+  },
+  {
+    id: 'mufassal',
+    name: 'Al-Mufassal',
+    arabic: 'المُفَصَّل',
+    description: '"The Detailed/Separated" — The final and most numerous group. Called "Mufassal" because of the frequent Bismillah separating short surahs.',
+    range: 'Surah Qaf (50) – Surah An-Nas (114)',
+    surahs: Array.from({length: 65}, (_, i) => i + 50) // 50 to 114
+  }
+];
+
 export default function StatsScreen() {
   const router = useRouter();
   const colors = useCustomColors();
@@ -110,6 +145,7 @@ export default function StatsScreen() {
 
   const [viewMode, setViewMode] = useState('surah');
   const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [infoDivision, setInfoDivision] = useState<any>(null);
   const [juzProgressData, setJuzProgressData] = useState<JuzProgressData>({});
   const [heatmapType, setHeatmapType] = useState<'memorized' | 'revised'>('memorized');
   const [activityData, setActivityData] = useState<{
@@ -203,11 +239,6 @@ export default function StatsScreen() {
   };
 
   // Update progress with actual juz data
-  const actualProgress = {
-    ...progress,
-    juz: calculateOverallJuzProgress()
-  };
-
   // Calculate memorization for each surah
   const calculateSurahProgress = (surahId: number) => {
     let startVerseId = 0;
@@ -284,6 +315,34 @@ export default function StatsScreen() {
     return { memorized: maxMem, revised: maxRev };
   }, [activityData]);
 
+  // Calculate Division Progress
+  const divisionStats = useMemo(() => {
+    // Collect all memorized surahs (surahs that have at least one memorized verse)
+    const memorizedSurahs = new Set<number>();
+    memorizedVerses.forEach(verseId => {
+      let startVerseId = 0;
+      for (let i = 1; i <= 114; i++) {
+        const surah = surahsData.find(s => s.id === i);
+        if (!surah) continue;
+        if (verseId <= startVerseId + surah.versesCount) {
+          memorizedSurahs.add(i);
+          break;
+        }
+        startVerseId += surah.versesCount;
+      }
+    });
+
+    return DIVISIONS.map(div => {
+      const memCount = div.surahs.filter(s => memorizedSurahs.has(s)).length;
+      const total = div.surahs.length;
+      return {
+        ...div,
+        memorized: memCount,
+        percentage: total > 0 ? (memCount / total) * 100 : 0
+      };
+    });
+  }, [memorizedVerses]);
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: '#1a1a1a' }]}
@@ -308,42 +367,64 @@ export default function StatsScreen() {
         </Text>
       </View>
 
-      {/* Progress Overview with Circular Indicators */}
+      {/* Progress Overview with Division Indicators */}
       <View style={[styles.progressCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.title, { color: colors.text, fontSize: 18, marginBottom: 8 }]}>
           Memorization Summary
         </Text>
 
         <View style={styles.circularProgressContainer}>
-          <CircularProgress
-            size={100}
-            strokeWidth={8}
-            progress={actualProgress.verses.percentage}
-            label="Verses"
-            value={`${actualProgress.verses.completed}/${actualProgress.verses.total}`}
-            progressColor="#2196F3"
-            textColor="#ffffff"
-          />
-          <CircularProgress
-            size={100}
-            strokeWidth={8}
-            progress={actualProgress.surahs.percentage}
-            label="Surahs"
-            value={`${actualProgress.surahs.completed}/${actualProgress.surahs.total}`}
-            progressColor="#FFD700"
-            textColor="#ffffff"
-          />
-          <CircularProgress
-            size={100}
-            strokeWidth={8}
-            progress={actualProgress.juz.percentage}
-            label="Juz"
-            value={`${actualProgress.juz.completed}/${actualProgress.juz.total}`}
-            progressColor="#4CAF50"
-            textColor="#ffffff"
-          />
+          {divisionStats.map((div, index) => {
+            const circleColors = ['#2196F3', '#FFD700', '#4CAF50', '#9C27B0'];
+            return (
+              <CircularProgress
+                key={div.id}
+                size={75}
+                strokeWidth={5}
+                progress={div.percentage}
+                label={div.name}
+                value={`${div.memorized}/${div.surahs.length}`}
+                progressColor={circleColors[index % circleColors.length]}
+                textColor="#ffffff"
+                onInfoPress={() => setInfoDivision(div)}
+              />
+            );
+          })}
         </View>
       </View>
+
+      {/* Division Info Modal */}
+      <Modal
+        visible={infoDivision !== null}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setInfoDivision(null)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setInfoDivision(null)}
+        >
+          <View style={[styles.modalContent, { backgroundColor: '#2a2a2a', borderColor: '#444' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#FFD700', fontSize: 22, fontWeight: 'bold', paddingRight: 10 }} adjustsFontSizeToFit numberOfLines={1}>
+                  {infoDivision?.name} ({infoDivision?.arabic})
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setInfoDivision(null)}>
+                <X size={24} color="#ffffff" />
+              </TouchableOpacity>
+            </View>
+            <View style={{ backgroundColor: 'rgba(33, 150, 243, 0.15)', padding: 12, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(33, 150, 243, 0.3)' }}>
+              <Text style={{ color: '#64B5F6', fontSize: 14, fontWeight: 'bold', marginBottom: 4 }}>Surahs Included:</Text>
+              <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>{infoDivision?.range}</Text>
+            </View>
+            <Text style={{ color: '#E0E0E0', fontSize: 16, lineHeight: 24 }}>
+              {infoDivision?.description}
+            </Text>
+          </View>
+        </Pressable>
+      </Modal>
 
       {/* Quranic Duas Progress Card */}
       <View style={[styles.progressCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -700,10 +781,10 @@ const styles = StyleSheet.create({
   },
   circularProgressContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-evenly',
     alignItems: 'flex-start',
-    paddingHorizontal: 10,
-    gap: 40,
+    paddingHorizontal: 0,
+    gap: 4,
   },
   toggleContainer: {
     borderRadius: 8,

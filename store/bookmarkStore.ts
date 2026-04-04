@@ -307,6 +307,18 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
         scheduleFlushAdds();
       });
       console.log('[bookmarkStore] addBookmark queued');
+
+      // ANALYTICS: Bookmark added
+      const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
+      logAnalyticsEvent('bookmark_added', {
+        verse_id: verseId,
+        surah_id: surahId,
+        surah_name: surahName,
+        verse_number: verseNumber,
+        source: source || 'unknown',
+        juz_number: juzNumber || null,
+        ...getCommonParams(),
+      });
     } catch (e) {
       console.warn('[bookmarkStore] add failed', e);
     }
@@ -320,7 +332,19 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
       await db.runAsync('DELETE FROM bookmarks WHERE verseId = ?', [verseId]);
       set((state) => {
         const updatedSet = new Set(state.bookmarksSet);
+        const item = state.bookmarks.find(b => b.verseId === verseId);
         updatedSet.delete(verseId);
+
+        // ANALYTICS: Bookmark removed
+        const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
+        logAnalyticsEvent('bookmark_removed', {
+          verse_id: verseId,
+          surah_id: item?.surahId || null,
+          surah_name: item?.surahName || 'unknown',
+          verse_number: item?.verseNumber || null,
+          ...getCommonParams(),
+        });
+
         return { bookmarks: state.bookmarks.filter(b => b.verseId !== verseId), bookmarksSet: updatedSet };
       });
     } catch (e) {

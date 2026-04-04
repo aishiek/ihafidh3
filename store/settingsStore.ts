@@ -48,6 +48,10 @@ export interface SettingsState extends AppSettings {
   notificationSettings: NotificationSettings;
   revisionReminderSettings: RevisionReminderSettings;
   pageReminderSettings: PageReminderSettings;
+  readModeLightTheme: boolean;
+  setReadModeLightTheme: (value: boolean) => void;
+  wbwEnabled: boolean;
+  setWbwEnabled: (value: boolean) => void;
   // Default number of verses per page used by Page Mode (global setting)
   defaultVersesPerPage: number;
   lastDailyAyahDate: string | null;
@@ -91,7 +95,7 @@ export interface SettingsState extends AppSettings {
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set) => {
+    (set, get) => {
       return {
         theme: 'dark',
         repeatMode: 1,
@@ -129,16 +133,63 @@ export const useSettingsStore = create<SettingsState>()(
         pageReminderSettings: {
           enabled: false, // Disabled by default
         },
+        readModeLightTheme: false, // Default to dark theme in read mode
+        wbwEnabled: false, // Default to disabled
         lastDailyAyahDate: null,
         lastDailyAyahVerse: null,
         // default Verses per page for Page Mode
         defaultVersesPerPage: 15,
 
-        setTheme: (theme) => set({ theme }),
-        setRepeatMode: (repeatMode) => set({ repeatMode }),
-        setFontSizeArabic: (fontSizeArabic) => set({ fontSizeArabic }),
-        setFontSizeTransliteration: (fontSizeTransliteration) => set({ fontSizeTransliteration }),
-        setFontSizeTranslation: (fontSizeTranslation) => set({ fontSizeTranslation }),
+        setTheme: (theme) => {
+          const previous = get().theme;
+          set({ theme });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'theme',
+            new_value: theme,
+            previous_value: previous,
+            ...getCommonParams(),
+          });
+        },
+        setRepeatMode: (repeatMode) => {
+          const previous = get().repeatMode;
+          set({ repeatMode });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'repeat_mode',
+            new_value: repeatMode.toString(),
+            previous_value: previous.toString(),
+            ...getCommonParams(),
+          });
+        },
+        setFontSizeArabic: (fontSizeArabic) => {
+          const previous = get().fontSizeArabic;
+          set({ fontSizeArabic });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'font_size_arabic',
+            new_value: fontSizeArabic.toString(),
+            previous_value: previous.toString(),
+            ...getCommonParams(),
+          });
+        },
+        setFontSizeTransliteration: (fontSizeTransliteration) => {
+          const previous = get().fontSizeTransliteration;
+          set({ fontSizeTransliteration });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'font_size_transliteration',
+            new_value: fontSizeTransliteration.toString(),
+            previous_value: (previous || 0).toString(),
+            ...getCommonParams(),
+          });
+        },
+        setFontSizeTranslation: (fontSizeTranslation) => {
+          const previous = get().fontSizeTranslation;
+          set({ fontSizeTranslation });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'font_size_translation',
+            new_value: fontSizeTranslation.toString(),
+            previous_value: previous.toString(),
+            ...getCommonParams(),
+          });
+        },
         setArabicFont: (arabicFont) => {
           const font = (
             ['default', 'uthman-taha', 'scheherazade', 'scheherazade-bold', 'tajweed', 'indo-pak', 'amiri-quran', 'noto-naskh'].includes(arabicFont)
@@ -147,17 +198,77 @@ export const useSettingsStore = create<SettingsState>()(
           );
           set({ arabicFont: font });
 
+          const previous = get().arabicFont;
+          set({ arabicFont: font });
+          
           // ANALYTICS: Arabic font changed
           logAnalyticsEvent('setting_changed', {
-            setting: 'arabic_font',
+            setting_key: 'arabic_font',
             new_value: font,
+            previous_value: previous,
             ...getCommonParams(),
           });
         },
-        setShowTranslation: (showTranslation) => set({ showTranslation }),
-        setShowTransliteration: (showTransliteration) => set({ showTransliteration }),
-        setAutoPlayAudio: (autoPlayAudio) => set({ autoPlayAudio }),
-        setNotificationsEnabled: (notificationsEnabled) => set({ notificationsEnabled }),
+        setShowTranslation: (showTranslation) => {
+          const previous = get().showTranslation;
+          set({ showTranslation });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'show_translation',
+            new_value: showTranslation.toString(),
+            previous_value: previous.toString(),
+            ...getCommonParams(),
+          });
+        },
+        setShowTransliteration: (showTransliteration) => {
+          const previous = get().showTransliteration;
+          set({ showTransliteration });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'show_transliteration',
+            new_value: showTransliteration.toString(),
+            previous_value: previous.toString(),
+            ...getCommonParams(),
+          });
+        },
+        setReadModeLightTheme: (readModeLightTheme) => {
+          const previous = get().readModeLightTheme;
+          set({ readModeLightTheme });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'read_mode_light_theme',
+            new_value: readModeLightTheme.toString(),
+            previous_value: previous.toString(),
+            ...getCommonParams(),
+          });
+        },
+        setWbwEnabled: (wbwEnabled: boolean) => {
+          const previous = get().wbwEnabled;
+          set({ wbwEnabled });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'wbw_enabled',
+            new_value: wbwEnabled.toString(),
+            previous_value: previous.toString(),
+            ...getCommonParams(),
+          });
+        },
+        setAutoPlayAudio: (autoPlayAudio) => {
+          const previous = get().autoPlayAudio;
+          set({ autoPlayAudio });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'auto_play_audio',
+            new_value: autoPlayAudio.toString(),
+            previous_value: previous.toString(),
+            ...getCommonParams(),
+          });
+        },
+        setNotificationsEnabled: (notificationsEnabled) => {
+          const previous = get().notificationsEnabled;
+          set({ notificationsEnabled });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'notifications_enabled',
+            new_value: notificationsEnabled.toString(),
+            previous_value: previous.toString(),
+            ...getCommonParams(),
+          });
+        },
         setReminderTime: (reminderTime) => set({ reminderTime }),
         setAyahDailyNotificationsEnabled: (enabled: boolean) => set({ ayahDailyNotificationsEnabled: enabled }),
         setUserName: (userName) => {
@@ -177,10 +288,14 @@ export const useSettingsStore = create<SettingsState>()(
         setTranslationLanguage: (translationLanguage) => {
           set({ translationLanguage });
 
+          const previous = get().translationLanguage;
+          set({ translationLanguage });
+          
           // ANALYTICS: Translation language changed
           logAnalyticsEvent('setting_changed', {
-            setting: 'translation_language',
+            setting_key: 'translation_language',
             new_value: translationLanguage,
+            previous_value: previous,
             ...getCommonParams(),
           });
         },
@@ -189,10 +304,14 @@ export const useSettingsStore = create<SettingsState>()(
           clearAudioCache();
           set({ reciterIdentifier });
 
+          const previous = get().reciterIdentifier;
+          set({ reciterIdentifier });
+          
           // ANALYTICS: Reciter changed
           logAnalyticsEvent('setting_changed', {
-            setting: 'reciter',
+            setting_key: 'reciter',
             new_value: reciterIdentifier,
+            previous_value: previous,
             ...getCommonParams(),
           });
         },
@@ -202,10 +321,14 @@ export const useSettingsStore = create<SettingsState>()(
         setPlaybackSpeed: (playbackSpeed) => {
           set({ playbackSpeed });
 
+          const previous = get().playbackSpeed;
+          set({ playbackSpeed });
+          
           // ANALYTICS: Playback speed changed
           logAnalyticsEvent('setting_changed', {
-            setting: 'playback_speed',
-            new_value: playbackSpeed,
+            setting_key: 'playback_speed',
+            new_value: playbackSpeed.toString(),
+            previous_value: previous.toString(),
             ...getCommonParams(),
           });
         },

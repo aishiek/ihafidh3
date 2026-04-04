@@ -19,7 +19,6 @@ export interface PlannerState {
   mode?: 'surah' | 'verse';
   // verse-level stats persisted by month: yyyy-MM -> { globalVerseId: { planned?: boolean; completed?: boolean } }
   verseStatsByMonth: Record<string, Record<number, { planned?: boolean; completed?: boolean }>>;
-  addPlan: (date: string, entry: Omit<PlannerEntry, 'id' | 'createdAt'> & { id?: string }) => void;
   updatePlan: (date: string, id: string, updates: Partial<Omit<PlannerEntry, 'id' | 'createdAt'>>) => void;
   removePlan: (date: string, id: string) => void;
   clearDateIfEmpty: (date: string) => void;
@@ -28,6 +27,7 @@ export interface PlannerState {
   // record or update a verse stat for a given month
   recordVerseStat: (monthKey: string, verseGlobalId: number, data: { planned?: boolean; completed?: boolean }) => void;
   clearVerseStatsForMonth: (monthKey: string) => void;
+  addPlan: (date: string, entry: Omit<PlannerEntry, 'id' | 'createdAt'> & { id?: string }, options?: { trigger?: 'manual' | 'auto', method?: 'surah' | 'range' }) => void;
 }
 
 export const usePlannerStore = create<PlannerState>()(
@@ -37,7 +37,7 @@ export const usePlannerStore = create<PlannerState>()(
       selectedSurahId: null,
       mode: 'surah',
       verseStatsByMonth: {},
-      addPlan: (date, entry) => {
+      addPlan: (date, entry, options) => {
         set((state) => {
           const list = state.plansByDate[date] || [];
           const id = entry.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -49,6 +49,24 @@ export const usePlannerStore = create<PlannerState>()(
             note: entry.note,
             createdAt: new Date().toISOString(),
           };
+
+          // ANALYTICS: Hifdh verse planned
+          const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
+          const { surahsData } = require('@/data/surahs');
+          const surah = surahsData.find((s: any) => s.id === entry.surahId);
+          const count = entry.endVerse - entry.startVerse + 1;
+
+          logAnalyticsEvent('hifdh_verse_planned', {
+            surah_id: entry.surahId,
+            surah_name: surah?.englishName || `Surah ${entry.surahId}`,
+            start_verse: entry.startVerse,
+            end_verse: entry.endVerse,
+            count,
+            trigger: options?.trigger || 'manual',
+            method: options?.method || (entry.startVerse === 1 && surah && entry.endVerse === surah.versesCount ? 'surah' : 'range'),
+            ...getCommonParams(),
+          });
+
           return {
             plansByDate: {
               ...state.plansByDate,
@@ -72,7 +90,33 @@ export const usePlannerStore = create<PlannerState>()(
       updatePlan: (date, id, updates) => {
         set((state) => {
           const list = state.plansByDate[date] || [];
+          const oldEntry = list.find((p) => p.id === id);
           const newList = list.map((p) => (p.id === id ? { ...p, ...updates } : p));
+
+          // ANALYTICS: Note added/deleted
+          const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
+          const { surahsData } = require('@/data/surahs');
+          const surah = surahsData.find((s: any) => s.id === (updates.surahId || oldEntry?.surahId));
+
+          if (updates.note !== undefined) {
+             if (updates.note && updates.note.trim().length > 0) {
+                // Note added or updated
+                logAnalyticsEvent('note_added', {
+                   surah_id: surah?.id || null,
+                   surah_name: surah?.englishName || 'unknown',
+                   content_length: updates.note.length,
+                   ...getCommonParams(),
+                });
+             } else if (oldEntry?.note) {
+                // Note deleted (passed as empty string or previously existed)
+                logAnalyticsEvent('note_deleted', {
+                   surah_id: surah?.id || null,
+                   surah_name: surah?.englishName || 'unknown',
+                   ...getCommonParams(),
+                });
+             }
+          }
+
           return { plansByDate: { ...state.plansByDate, [date]: newList } };
         });
       },

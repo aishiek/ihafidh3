@@ -1,3 +1,5 @@
+import { AVAILABLE_LAYOUTS } from '@/types/layout';
+import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
 import RNFS from 'react-native-fs';
 import { unzip } from 'react-native-zip-archive';
 import { MUSHAF_CACHE_DIR } from '../utils/mushafConstants';
@@ -587,6 +589,16 @@ class MushafDownloadService {
         onProgress?.({ total: 1, current: 0, percentage: 99, stage: 'complete', statusMessage: `Images incomplete (${counts.count}/${counts.expected}).` });
       } else {
         this.log('DOWNLOAD', `✅ Installation verified with complete images (${counts.count}/${counts.expected}).`);
+        
+        // ANALYTICS: Mushaf download complete
+        const layout = AVAILABLE_LAYOUTS.find(l => l.layout_id === layoutId);
+        logAnalyticsEvent('mushaf_download_completed', {
+          layout_id: layoutId,
+          layout_name: layout?.layout_name || layoutId,
+          total_pages: counts.count,
+          ...getCommonParams(),
+        });
+        
         onProgress?.({ total: 1, current: 1, percentage: 100, stage: 'complete', statusMessage: 'Download complete! ✅' });
       }
       this.log('DOWNLOAD', '═══════════════════════════════════════');

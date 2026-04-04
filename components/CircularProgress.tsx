@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
+import { Info } from 'lucide-react-native';
 import { useCustomColors } from '@/utils/themeUtils';
 
 interface CircularProgressProps {
@@ -12,6 +13,7 @@ interface CircularProgressProps {
   showPercentage?: boolean;
   progressColor?: string;
   textColor?: string;
+  onInfoPress?: () => void;
 }
 
 export default function CircularProgress({
@@ -23,6 +25,7 @@ export default function CircularProgress({
   showPercentage = true,
   progressColor,
   textColor = '#ffffff',
+  onInfoPress,
 }: CircularProgressProps) {
   const colors = useCustomColors();
   
@@ -34,6 +37,15 @@ export default function CircularProgress({
   return (
     <View style={styles.container}>
       <View style={[styles.progressContainer, { width: size, height: size }]}>
+        {onInfoPress && (
+          <TouchableOpacity 
+            style={[styles.infoButton, { bottom: -8, zIndex: 10 }]} 
+            onPress={onInfoPress}
+            hitSlop={{top: 15, bottom: 15, left: 15, right: 15}}
+          >
+            <Info size={18} color={progressColor || colors.primary} />
+          </TouchableOpacity>
+        )}
         <Svg width={size} height={size} style={StyleSheet.absoluteFillObject}>
           {/* Background circle */}
           <Circle
@@ -59,8 +71,8 @@ export default function CircularProgress({
           />
         </Svg>
         
-        <View style={styles.centerContent}>
-          <Text style={[styles.label, { color: textColor }]}>{label}</Text>
+        <View style={[styles.centerContent, { width: size * 0.7 }]}>
+          <Text style={[styles.label, { color: textColor }]} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
           {showPercentage && (
             <Text style={[styles.percentage, { color: textColor }]}>
               {progress.toFixed(0)}%
@@ -84,13 +96,13 @@ export default function CircularProgress({
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
-    marginHorizontal: 8,
+    marginHorizontal: 4,
     flex: 1,
   },
   progressContainer: {
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
   },
   centerContent: {
     position: 'absolute',
@@ -119,4 +131,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
   },
+  infoButton: {
+    position: 'absolute',
+    backgroundColor: '#1C1C1E', // Match deep card background roughly so it overlays ring smoothly
+    borderRadius: 12,
+    padding: 2,
+  }
 }); 

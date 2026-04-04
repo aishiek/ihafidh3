@@ -1,18 +1,16 @@
 import { cacheVerses, getCachedVerses, isSurahCached } from '@/assets/database/QuranDatabase';
+import {
+  BISMILLAH_ARABIC,
+  BISMILLAH_AUDIO_URL,
+  BISMILLAH_TRANSLATION_EN as BISMILLAH_TRANSLATION,
+  shouldHaveBismillah
+} from '@/constants/basmalah';
 import { fetchVersesForJuz } from '@/services/juzDbService';
 import { fetchSingleVerse, fetchVersesBySurah } from '@/services/quranApi';
 import { useSettingsStore } from '@/store/settingsStore';
 import { Verse } from '@/types';
 
-// Constants for Bismillah
-const BISMILLAH_ARABIC = 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';
-const BISMILLAH_TRANSLATION = 'In the name of Allah, the Entirely Merciful, the Especially Merciful.';
-const BISMILLAH_AUDIO_URL = 'https://verses.quran.com/Bismillah.mp3';
-
-// Utility: Determines if a surah should have Bismillah
-function shouldHaveBismillah(surahId: number): boolean {
-  return surahId !== 1 && surahId !== 9;
-}
+// Utility: Get Bismillah audio URL based on reciter
 
 // Utility: Get Bismillah audio URL based on reciter
 function getBismillahAudioUrl(): string {
@@ -34,21 +32,21 @@ function createBismillahVerse(surahId: number): Verse {
 
 // Utility: Robust matching for Bismillah at beginning of verse
 function startsWithBismillah(text: string): boolean {
-  return text.replace(/\s+/g, '').startsWith(BISMILLAH_ARABIC.replace(/\s+/g, ''));
+  return /^\s*بِسْمِ\s+[ٱا]للَّهِ\s+[ٱا]لرَّحْمَٰنِ\s+[ٱا]لرَّحِيمِ/u.test(text);
 }
 
 // Utility: Strip Bismillah from beginning of a verse, if applicable
 function stripBismillahFromVerse(verse: Verse, surahId: number): Verse {
-  if (
-    shouldHaveBismillah(surahId) &&
-    verse.verseNumber === 1 &&
-    startsWithBismillah(verse.arabicText)
-  ) {
-    const trimmed = verse.arabicText.slice(BISMILLAH_ARABIC.length).trimStart();
-    return {
-      ...verse,
-      arabicText: trimmed,
-    };
+  if (shouldHaveBismillah(surahId) && verse.verseNumber === 1) {
+    // Find the end of "Ar-Rahim" and strip everything up to and including it
+    // This is much more robust than matching the entire phrase exactly
+    const bismillahMatch = verse.arabicText.match(/^.*?[ٱا]لرَّحِيمِ[\s\u00A0]*/u);
+    if (bismillahMatch) {
+      return {
+        ...verse,
+        arabicText: verse.arabicText.substring(bismillahMatch[0].length).trim(),
+      };
+    }
   }
   return verse;
 }
@@ -67,33 +65,32 @@ function appendBismillahAudio(verse: Verse, surahId: number): Verse {
 }
 
 // Main API: Get verses for a Surah, with optional Bismillah prepended
+import { fetchVersesForSurah } from '@/services/juzDbService';
+
 export async function getVersesBySurah(
   surahId: number,
   page: number = 1,
   pageSize: number = 10
 ): Promise<Verse[]> {
   try {
-    const cachedVerses = await getCachedVerses(surahId, page, pageSize);
-    let verses: Verse[];
+    // 1. Fetch from the robust local SQLite database
+    const rawVerses = await fetchVersesForSurah(surahId);
 
-    if (cachedVerses.length > 0) {
-      verses = cachedVerses;
-    } else {
-      const apiResult = await fetchVersesBySurah(surahId, page, pageSize);
-      const apiVerses: Verse[] = Array.isArray(apiResult) ? apiResult : apiResult.verses;
-      await cacheVerses(apiVerses);
-      verses = apiVerses;
-    }
+    // 2. Map to the common Verse type
+    const verses: Verse[] = rawVerses.map(rv => ({
+      id: rv.verse_id,
+      surahId: rv.chapter_id,
+      verseNumber: rv.verse_number,
+      arabicText: rv.ayah,
+      translation: rv.translation || '',
+      transliteration: rv.transliteration,
+      juzNumber: rv.part_id,
+    }));
 
-    // Process verses
-    const processed = verses.map((v) => {
-      // First strip Bismillah text if needed
-      const strippedVerse = stripBismillahFromVerse(v, surahId);
-      // Then append Bismillah audio flag if it's the first verse
-      return appendBismillahAudio(strippedVerse, surahId);
-    });
+    // 3. Apply stripping and audio logic
+    const processed = verses.map((v) => stripBismillahFromVerse(v, surahId));
 
-    // Inject Bismillah at the top only for the first page
+    // 4. Inject Bismillah as Verse 0 on the first page
     if (shouldHaveBismillah(surahId) && page === 1) {
       const bismillahVerse = createBismillahVerse(surahId);
       return [bismillahVerse, ...processed];
@@ -119,15 +116,13 @@ export async function getVerseByKey(
     const cachedVerses = await getCachedVerses(surahId, 1, 1000);
     const found = cachedVerses.find((v) => v.verseNumber === verseNumber);
     if (found) {
-      const strippedVerse = stripBismillahFromVerse(found, surahId);
-      return appendBismillahAudio(strippedVerse, surahId);
+      return stripBismillahFromVerse(found, surahId);
     }
 
     const apiVerse = await fetchSingleVerse(surahId, verseNumber, 'en.asad', useSettingsStore.getState().reciterIdentifier);
     if (apiVerse) {
       await cacheVerses([apiVerse]);
-      const strippedVerse = stripBismillahFromVerse(apiVerse, surahId);
-      return appendBismillahAudio(strippedVerse, surahId);
+      return stripBismillahFromVerse(apiVerse, surahId);
     }
 
     return null;
