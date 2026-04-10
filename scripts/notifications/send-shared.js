@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const ayahList = require('./ayahs.json');
 
 // Service Account from Environment Variable (GitHub Secret)
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
@@ -19,6 +20,46 @@ const messaging = admin.messaging();
 const TOPIC_FASTING = 'fasting';
 const TOPIC_DAILY_AYAH = 'daily_ayah';
 
+// ------------------------------------------------------------
+// Get deterministic daily ayah based on local date
+// Same ayah for all users in the same timezone on the same day
+// ------------------------------------------------------------
+function getDailyAyah(localDate) {
+    const start = new Date(Date.UTC(localDate.getUTCFullYear(), 0, 0));
+    const dayOfYear = Math.floor((localDate - start) / 86400000);
+    return ayahList[dayOfYear % ayahList.length];
+}
+
+// ------------------------------------------------------------
+// Fetch verse from api.alquran.cloud (same source as the app)
+// ------------------------------------------------------------
+async function fetchVerse(surahId, verseNumber) {
+    const url = `https://api.alquran.cloud/v1/ayah/${surahId}:${verseNumber}/en.sahih`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.code !== 200) {
+        throw new Error(`AlQuran Cloud API error for ${surahId}:${verseNumber} — ${data.status}`);
+    }
+
+    const translation = data.data.text;
+    const surahName = data.data.surah.englishName;
+
+    return { translation, surahName, key: `${surahId}:${verseNumber}` };
+}
+
+// ------------------------------------------------------------
+// Truncate safely for FCM body character limit (~200 chars)
+// ------------------------------------------------------------
+function truncate(str, max = 200) {
+    if (!str || str.length <= max) return str;
+    return str.slice(0, max - 1) + '…';
+}
+
+// ------------------------------------------------------------
+// Main
+// ------------------------------------------------------------
 async function main() {
     try {
         console.log('--- Starting System Check (Hourly Timezone Aware) ---');
@@ -30,23 +71,14 @@ async function main() {
         console.log(`Current UTC Hour: ${utcHour}`);
         console.log(`Target Local Hour: ${TARGET_HOUR}`);
 
-        // 1. Identify valid offsets for this hour
-        // Formula: (utc + offset) % 24 == target
+        // 1. Identify valid offsets for this UTC hour
         const validOffsets = [];
 
-        // Scan standard offsets (-11 to +14)
-        // We include half-hour offsets if needed, but for simplicity starting with integers
-        // To cover half-hours (e.g. India +5:30), we would need to run script every 30 mins
-        // For now, we support integer offsets (covering most major users)
         for (let offset = -11; offset <= 14; offset++) {
-            let localHour = (utcHour + offset);
-            // Handle wrap around
-            if (localHour < 0) localHour += 24;
-            if (localHour >= 24) localHour -= 24;
+            const localHour = (utcHour + offset + 24) % 24;
 
             if (localHour === TARGET_HOUR) {
-                // Format offset string matches App (e.g. "+0800", "-0500")
-                const sign = offset >= 0 ? '' : '-'; // Removed '+' for valid topic name
+                const sign = offset < 0 ? '-' : '';
                 const abs = Math.abs(offset);
                 const offsetStr = `${sign}${String(abs).padStart(2, '0')}00`;
                 validOffsets.push({ val: offset, str: offsetStr });
@@ -62,60 +94,100 @@ async function main() {
 
         // 2. Process each valid offset
         for (const zone of validOffsets) {
-            console.log(`Processing Zone: ${zone.str} (UTC${zone.val})`);
+            console.log(`\nProcessing Zone: UTC${zone.val >= 0 ? '+' : ''}${zone.val}`);
 
-            // Calculate Local Date for this zone
-            // We create a date object shifted by the offset
-            const localDate = new Date(now.getTime() + (zone.val * 60 * 60 * 1000));
+            // Calculate local date for this timezone
+            const localDate = new Date(now.getTime() + zone.val * 3600000);
             const day = localDate.getUTCDate();
             const month = localDate.getUTCMonth() + 1;
             const year = localDate.getUTCFullYear();
 
             console.log(`  Local Date: ${year}-${month}-${day}`);
 
-            // Fetch Hijri info
-            const response = await fetch(`https://api.aladhan.com/v1/gToH/${day}-${month}-${year}`);
-            const data = await response.json();
+            // --- Daily Ayah ---
+            const { surahId, verseNumber } = getDailyAyah(localDate);
+            console.log(`  Daily Ayah: Surah ${surahId}, Verse ${verseNumber}`);
 
-            if (data.code !== 200) {
-                console.error(`  API Error for ${zone.str}`, data);
+            let ayahTitle = 'Daily Ayah';
+            let ayahBody = 'Tap to read your Ayah of the Day';
+
+            try {
+                const { translation, surahName, key } = await fetchVerse(surahId, verseNumber);
+                ayahTitle = `${surahName} (${key})`;
+                ayahBody = truncate(translation);
+                console.log(`  Fetched: ${key} — "${ayahBody.slice(0, 60)}..."`);
+            } catch (err) {
+                // Fallback to plain text if API fails — don't block other zones
+                console.warn(`  Failed to fetch verse, using fallback. Error: ${err.message}`);
+            }
+
+            const ayahTopic = `${TOPIC_DAILY_AYAH}_${zone.str}`;
+            console.log(`  Sending Ayah -> ${ayahTopic}`);
+
+            await messaging.send({
+                topic: ayahTopic,
+                notification: {
+                    title: ayahTitle,
+                    body: ayahBody,
+                },
+                data: {
+                    type: 'daily_ayah',
+                    target: 'index',
+                    surahId: String(surahId),
+                    verseNumber: String(verseNumber),
+                },
+                android: {
+                    notification: {
+                        priority: 'high',
+                    }
+                }
+            });
+
+            // --- Hijri Calendar (for fasting check) ---
+            const hijriResponse = await fetch(
+                `https://api.aladhan.com/v1/gToH/${day}-${month}-${year}`
+            );
+            const hijriData = await hijriResponse.json();
+
+            if (hijriData.code !== 200) {
+                console.error(`  Hijri API error for ${zone.str}`, hijriData);
                 continue;
             }
 
-            const hijri = data.data.hijri;
+            const hijri = hijriData.data.hijri;
             const hijriDay = parseInt(hijri.day);
             const hijriMonth = hijri.month.number;
-            const weekday = data.data.gregorian.weekday.en;
+            const weekday = hijriData.data.gregorian.weekday.en;
 
-            console.log(`  Hijri: ${hijri.day} ${hijri.month.en} - ${weekday}`);
+            console.log(`  Hijri: ${hijri.day} ${hijri.month.en} — ${weekday}`);
 
-            // --- Fasting Check (Is TODAY a fasting day?) ---
+            // --- Fasting Check ---
             let sendFasting = false;
             let title = '';
             let body = '';
 
-            // Mon/Thu
+            // Monday / Thursday Sunnah
             if (weekday === 'Monday' || weekday === 'Thursday') {
                 sendFasting = true;
                 title = `Sunnah Fasting Today`;
                 body = `Today is ${weekday}. Just a reminder for Sunnah fasting!`;
             }
 
-            // White Days (13, 14, 15)
+            // White Days (13th, 14th, 15th of Hijri month)
             if (hijriDay >= 13 && hijriDay <= 15) {
                 sendFasting = true;
                 title = `White Days Fasting`;
                 body = `Today is the ${hijriDay}th of ${hijri.month.en}. Remind yourself to fast!`;
             }
 
-            // Ashura
+            // Ashura (10th Muharram)
             if (hijriMonth === 1 && hijriDay === 10) {
                 sendFasting = true;
                 title = `Ashura Fasting`;
                 body = `Today is Ashura (10th Muharram).`;
             }
 
-            // Arafah
+            // Day of Arafah (9th Dhul Hijjah)
             if (hijriMonth === 12 && hijriDay === 9) {
                 sendFasting = true;
                 title = `Day of Arafah`;
@@ -123,34 +195,23 @@ async function main() {
             }
 
             if (sendFasting) {
-                const topic = `${TOPIC_FASTING}_${zone.str}`;
-                console.log(`  Sending Fasting -> ${topic}`);
+                const fastingTopic = `${TOPIC_FASTING}_${zone.str}`;
+                console.log(`  Sending Fasting -> ${fastingTopic}`);
                 await messaging.send({
-                    topic: topic,
+                    topic: fastingTopic,
                     notification: { title, body },
                     data: { type: 'fasting_reminder' }
                 });
             } else {
                 console.log(`  No fasting today.`);
             }
-
-            // --- Daily Ayah (Always Send) ---
-            const ayahTopic = `${TOPIC_DAILY_AYAH}_${zone.str}`;
-            console.log(`  Sending Ayah -> ${ayahTopic}`);
-            await messaging.send({
-                topic: ayahTopic,
-                notification: {
-                    title: "Daily Ayah",
-                    body: "Read your Ayah of the Day"
-                },
-                data: { type: 'daily_ayah', target: 'index' }
-            });
         }
 
-        console.log('--- Done ---');
+        console.log('\n--- Done ---');
         process.exit(0);
+
     } catch (error) {
-        console.error('Error:', error);
+        console.error('Fatal Error:', error);
         process.exit(1);
     }
 }
