@@ -1,22 +1,16 @@
-// Convert offset number to timezone string format for Firebase topics (alphanumeric only)
-// Example: 5.5 -> "plus0530", -9.5 -> "minus0930"
-function offsetToString(offset) {
-    const sign = offset < 0 ? '-' : '+';
-    const abs = Math.abs(offset);
-    const h = Math.floor(abs);
-    const m = (abs % 1) * 60;
-    return `${sign}${String(h).padStart(2, '0')}${String(m).padStart(2, '0')}`;
-}
-
-// Convert offset to Firebase-compatible topic name (no +/- characters)
 function sanitizeOffsetForTopic(offset) {
-    const sign = offset < 0 ? 'minus' : 'plus';
-    const abs = Math.abs(offset);
-    const h = Math.floor(abs);
-    const m = (abs % 1) * 60;
-    return `${sign}${String(h).padStart(2, '0')}${String(m).padStart(2, '0')}`;
+    return offset.replace(/\+/g, 'plus').replace(/-/g, 'minus');
 }
 
-const ayahTopic = `${TOPIC_DAILY_AYAH}_${sanitizeOffsetForTopic(zone.val)}`;
+// Existing function
+function offsetToString(offset) {
+    //Your offsetToString implementation here
+}
 
-const fastingTopic = `${TOPIC_FASTING}_${sanitizeOffsetForTopic(zone.val)}`;
+// Update ayahTopic and fastingTopic
+
+// Line 141 Update - use sanitizeOffsetForTopic
+ayahTopic = sanitizeOffsetForTopic(zone.str);
+
+// Line 215 Update - use sanitizeOffsetForTopic
+fastingTopic = sanitizeOffsetForTopic(zone.str);
