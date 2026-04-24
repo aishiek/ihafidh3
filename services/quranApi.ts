@@ -12,17 +12,35 @@ export async function getSurahById(surahNumber: number) {
     const json = await response.json();
     const surahData = json?.data;
 
+    let versesArray = surahData.ayahs.map((ayah: any) => ({
+      id: ayah.number,
+      surahId: surahData.number,
+      verseNumber: ayah.numberInSurah,
+      arabicText: ayah.text,
+    }));
+
+    // Add Bismillah as verse 0 and strip it from verse 1 if applicable
+    if (surahData.number !== 1 && surahData.number !== 9) { // Quick check, or use shouldHaveBismillah if imported, but we don't have it imported at the top of the file yet. Wait, it is imported later in the file? Let's check.
+      // We will move the import to the top or just use the logic inline.
+      const bismillahMatch = versesArray[0].arabicText.match(/^.*?[ٱا]لرَّحِيمِ[\s\u00A0]*/u);
+      if (bismillahMatch) {
+        versesArray[0].arabicText = versesArray[0].arabicText.substring(bismillahMatch[0].length).trim();
+      }
+      
+      versesArray.unshift({
+        id: -surahData.number,
+        surahId: surahData.number,
+        verseNumber: 0,
+        arabicText: 'بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ',
+      });
+    }
+
     return {
       id: surahData.number,
       name: surahData.name,
       englishName: surahData.englishName,
       versesCount: surahData.numberOfAyahs,
-      verses: surahData.ayahs.map((ayah: any) => ({
-        id: ayah.number,
-        surahId: surahData.number,
-        verseNumber: ayah.numberInSurah,
-        arabicText: ayah.text,
-      })),
+      verses: versesArray,
     };
   } catch (err) {
     console.error("[getSurahById] Error:", err);
@@ -43,6 +61,7 @@ import {
   BISMILLAH_AUDIO_URL,
   BISMILLAH_TRANSLATION_EN,
   BISMILLAH_WBW,
+  getBismillahTranslation,
   shouldHaveBismillah,
 } from '@/constants/basmalah';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -130,14 +149,7 @@ async function fetchWithRetry<T>(
   throw lastError!;
 }
 
-/** Full-string Bismillah translation for WBW-backed languages; English otherwise. */
-function translationForVirtualBismillah(translationLanguage: string): string {
-  const base = (translationLanguage.split('.')[0] || 'en').toLowerCase();
-  if (base === 'ta') return BISMILLAH_WBW.map((w) => w.ta).filter(Boolean).join(' ');
-  if (base === 'id') return BISMILLAH_WBW.map((w) => w.id).filter(Boolean).join(' ');
-  if (base === 'ms') return BISMILLAH_WBW.map((w) => w.ms).filter(Boolean).join(' ');
-  return BISMILLAH_TRANSLATION_EN;
-}
+
 
 export async function fetchTransliterationText(
   surahNumber: number,
@@ -238,7 +250,7 @@ export async function fetchSingleVerse(
   translationLanguage: string = 'en.asad',
   reciterIdentifier: string = 'ar.alafasy'
 ): Promise<Verse | null> {
-  const key = `${surahNumber}:${verseNumber}`;
+  const key = `${surahNumber}:${verseNumber}:${translationLanguage}:${reciterIdentifier}`;
   if (!circuitBreaker.canExecute()) return null;
 
   return lazyQueue.add(key, async () =>
@@ -258,7 +270,7 @@ export async function fetchSingleVerse(
             surahId: surahNumber,
             verseNumber: 0,
             arabicText: BISMILLAH_ARABIC,
-            translation: translationForVirtualBismillah(translationLanguage),
+            translation: getBismillahTranslation(translationLanguage),
             transliteration: transliterationText,
             audioUrl: BISMILLAH_AUDIO_URL,
           };

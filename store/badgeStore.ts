@@ -139,11 +139,11 @@ export const useBadgeStore = create<BadgeState>()(
         const newlyUnlocked: Badge[] = [];
         const today = new Date().toISOString();
         
-        if (__DEV__) console.log('[badgeStore] Checking badges - completedJuz:', completedJuz);
+        if (__DEV__) if (__DEV__) if (__DEV__) console.log('[badgeStore] Checking badges - completedJuz:', completedJuz);
         
         const updatedBadges = badges.map(badge => {
           if (!badge.unlocked && completedJuz >= badge.requirement) {
-            if (__DEV__) console.log('[badgeStore] Unlocking badge:', badge.name, 'requirement:', badge.requirement);
+            if (__DEV__) if (__DEV__) if (__DEV__) console.log('[badgeStore] Unlocking badge:', badge.name, 'requirement:', badge.requirement);
             const unlockedBadge = {
               ...badge,
               unlocked: true,
@@ -156,17 +156,17 @@ export const useBadgeStore = create<BadgeState>()(
             
             return unlockedBadge;
           } else if (badge.unlocked && completedJuz >= badge.requirement) {
-            if (__DEV__) console.log('[badgeStore] Badge already unlocked:', badge.name);
+            if (__DEV__) if (__DEV__) if (__DEV__) console.log('[badgeStore] Badge already unlocked:', badge.name);
           }
           return badge;
         });
         
         if (newlyUnlocked.length > 0) {
-          if (__DEV__) console.log('[badgeStore] Newly unlocked badges:', newlyUnlocked.map(b => b.name));
+          if (__DEV__) if (__DEV__) if (__DEV__) console.log('[badgeStore] Newly unlocked badges:', newlyUnlocked.map(b => b.name));
           const newUnlockedIds = [...unlockedBadges, ...newlyUnlocked.map(b => b.id)];
           set({ badges: updatedBadges, unlockedBadges: newUnlockedIds });
         } else {
-          if (__DEV__) console.log('[badgeStore] No new badges to unlock');
+          if (__DEV__) if (__DEV__) if (__DEV__) console.log('[badgeStore] No new badges to unlock');
         }
         
         return newlyUnlocked;
@@ -200,14 +200,14 @@ export const useBadgeStore = create<BadgeState>()(
         const today = new Date().toISOString();
         const newUnlockedIds: string[] = [];
         
-        console.log('[badgeStore] Re-syncing badges with actual progress:', actualCompletedJuz, 'Juz');
+        if (__DEV__) if (__DEV__) console.log('[badgeStore] Re-syncing badges with actual progress:', actualCompletedJuz, 'Juz');
         
         const resyncedBadges = badges.map(badge => {
           const shouldBeUnlocked = actualCompletedJuz >= badge.requirement;
           
           if (shouldBeUnlocked && !badge.unlocked) {
             // Badge should be unlocked but isn't - unlock it
-            console.log('[badgeStore] Re-syncing: Unlocking badge', badge.name);
+            if (__DEV__) if (__DEV__) console.log('[badgeStore] Re-syncing: Unlocking badge', badge.name);
             newUnlockedIds.push(badge.id);
             return {
               ...badge,
@@ -216,7 +216,7 @@ export const useBadgeStore = create<BadgeState>()(
             };
           } else if (!shouldBeUnlocked && badge.unlocked) {
             // Badge is unlocked but shouldn't be - lock it
-            console.log('[badgeStore] Re-syncing: Locking badge', badge.name);
+            if (__DEV__) if (__DEV__) console.log('[badgeStore] Re-syncing: Locking badge', badge.name);
             return {
               ...badge,
               unlocked: false,
@@ -225,14 +225,14 @@ export const useBadgeStore = create<BadgeState>()(
           } else if (shouldBeUnlocked && badge.unlocked) {
             // Badge is correctly unlocked
             newUnlockedIds.push(badge.id);
-            console.log('[badgeStore] Re-syncing: Badge correctly unlocked', badge.name);
+            if (__DEV__) if (__DEV__) console.log('[badgeStore] Re-syncing: Badge correctly unlocked', badge.name);
           }
           
           return badge;
         });
         
         set({ badges: resyncedBadges, unlockedBadges: newUnlockedIds });
-        console.log('[badgeStore] Re-sync complete. Unlocked badges:', newUnlockedIds.length);
+        if (__DEV__) if (__DEV__) console.log('[badgeStore] Re-sync complete. Unlocked badges:', newUnlockedIds.length);
         
         return resyncedBadges.filter(b => b.unlocked);
       },

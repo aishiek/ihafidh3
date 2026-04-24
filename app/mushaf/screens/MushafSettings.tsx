@@ -1,5 +1,5 @@
 import { AVAILABLE_LAYOUTS, LayoutMetadata } from '@/types/layout';
-import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
+import {logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { router } from 'expo-router';
 import { ArrowLeft, Check, Download, Trash2 } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
@@ -194,9 +194,7 @@ export default function MushafSettings() {
       // ANALYTICS: Track mushaf layout download started
       logAnalyticsEvent('mushaf_layout_download_started', {
         layout_id: layoutId,
-        layout_name: layoutName,
-        ...getCommonParams(),
-      });
+        layout_name: layoutName,});
 
       await downloadMushaf(layoutId, (progress) => {
         const capped = Math.max(0, Math.min(99, Math.round(progress || 0)));
@@ -235,9 +233,7 @@ export default function MushafSettings() {
         logAnalyticsEvent('mushaf_layout_download_completed', {
           layout_id: layoutId,
           layout_name: layoutName,
-          download_size_mb: size,
-          ...getCommonParams(),
-        });
+          download_size_mb: size,});
       }
 
       Alert.alert('Success', `${layoutId} layout downloaded successfully!`);
@@ -247,9 +243,7 @@ export default function MushafSettings() {
       // ANALYTICS: Track mushaf layout download failed
       logAnalyticsEvent('mushaf_layout_download_failed', {
         layout_id: layoutId,
-        error_message: error instanceof Error ? error.message : 'Unknown error',
-        ...getCommonParams(),
-      });
+        error_message: error instanceof Error ? error.message : 'Unknown error',});
       
       setLayoutStates((prev) => ({
         ...prev,
@@ -282,9 +276,7 @@ export default function MushafSettings() {
               logAnalyticsEvent('mushaf_layout_deleted', {
                 layout_id: layoutId,
                 layout_name: layoutName,
-                freed_space_mb: layoutStates[layoutId]?.installedSize || 0,
-                ...getCommonParams(),
-              });
+                freed_space_mb: layoutStates[layoutId]?.installedSize || 0,});
 
               await deleteLayout(layoutId);
 

@@ -8,7 +8,7 @@ import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { ArrowLeft, Pause, Play, Sun } from 'lucide-react-native';
+import { Pause, Play, Sun } from 'lucide-react-native';
 import { WBWIcon } from '../components/icons/WBWIcon';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,6 +23,7 @@ import {
     View
 } from 'react-native';
 import { ReadModeVerseCard } from '../components/ReadModeVerseCard';
+import { ReadingProgressBar } from '../components/ReadModeScrollProgress';
 import TafsirModal from '../components/TafsirModal';
 import { fetchVersesForJuz } from '../services/juzDbService';
 import { getVersesBySurah } from '../data/verses';
@@ -73,6 +74,7 @@ export default function ReadModeScreen() {
     const [tafsirVerse, setTafsirVerse] = useState<{ surahId: number; verseNumber: number } | null>(null);
     const [isPlayingSurah, setIsPlayingSurah] = useState(false);
     const [isSurahPaused, setIsSurahPaused] = useState(false);
+    const [scrollProgress, setScrollProgress] = useState(0);
 
     const flashListRef = useRef<FlashListRef<Verse>>(null);
     const hasScrolled = useRef(false);
@@ -179,9 +181,12 @@ export default function ReadModeScreen() {
             // FIX 2: Pause any playing audio when leaving Read Mode
             pauseSurahAudio().catch(() => {});
             // Restore portrait lock then release
-            ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP)
-                .then(() => setTimeout(() => ScreenOrientation.unlockAsync().catch(() => {}), 500))
-                .catch(() => {});
+            // Delay portrait lock until after navigation animation completes
+            setTimeout(() => {
+                ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP)
+                    .then(() => setTimeout(() => ScreenOrientation.unlockAsync().catch(() => {}), 500))
+                    .catch(() => {});
+            }, 350); // matches fade animation duration
             StatusBar.setHidden(false);
         };
     }, [handlePortraitReturn]);
@@ -210,6 +215,7 @@ export default function ReadModeScreen() {
                         translation: jv.translation || '',
                         juzNumber: jv.part_id,
                         transliteration: jv.transliteration,
+                        pageNumber: jv.page_id ? Number(jv.page_id) : undefined,
                     }));
                 } else {
                     processedVerses = await getVersesBySurah(snapshot.surahId, 1, 1000);
@@ -362,20 +368,26 @@ export default function ReadModeScreen() {
     }, []); // Stable: refs and setters never change
 
     const headerTitle = isJuzMode
-        ? `Juz ${snapshot.juzNumber} · ${snapshot.surahName} ${snapshot.surahId}:${visibleVerseNumber}`
+        ? `Juz ${snapshot.juzNumber} · ${snapshot.surahName}:${visibleVerseNumber}`
         : `${snapshot.surahName} · ${snapshot.surahId}:${visibleVerseNumber}`;
 
     const themeBG = isParchmentLight ? '#F5F2E9' : '#05080F';
     const themeIconColor = isParchmentLight ? '#8B7355' : "#D4AF37";
+
+    const handleScroll = useCallback((e: any) => {
+        const offsetY      = e.nativeEvent.contentOffset.y;
+        const contentH     = e.nativeEvent.contentSize.height;
+        const layoutH      = e.nativeEvent.layoutMeasurement.height;
+        const scrollable   = contentH - layoutH;
+        const progress     = scrollable > 0 ? Math.min(Math.max(offsetY / scrollable, 0), 1) : 0;
+        setScrollProgress(progress);
+    }, []);
 
     return (
         <View style={{ flex: 1, width, height, backgroundColor: themeBG, paddingLeft: insets.left, paddingRight: insets.right }}>
             <StatusBar hidden />
 
             <View style={styles.header}>
-                <TouchableOpacity onPress={handlePortraitReturn} style={styles.backButton}>
-                    <ArrowLeft size={24} color={themeIconColor} />
-                </TouchableOpacity>
 
                 <Text style={[styles.headerTitle, isParchmentLight && { color: '#2B2519' }]}>
                     {headerTitle}
@@ -411,6 +423,8 @@ export default function ReadModeScreen() {
                 </View>
             </View>
 
+            <ReadingProgressBar progress={scrollProgress} isParchmentLight={isParchmentLight} />
+
             <FlashList
                 ref={flashListRef}
                 data={verses}
@@ -421,6 +435,7 @@ export default function ReadModeScreen() {
                         surahId={item.surahId}
                         surahName={snapshot.surahName}
                         verseNumber={item.verseNumber}
+                        pageNumber={item.pageNumber}
                         arabicText={item.arabicText}
                         translation={item.translation || null}
                         transliteration={item.transliteration || null}
@@ -440,6 +455,8 @@ export default function ReadModeScreen() {
                     />
                 )}
                 showsVerticalScrollIndicator={false}
+                onScroll={handleScroll}
+                scrollEventThrottle={16}
                 onLoad={handleFlashListLoad}
                 onViewableItemsChanged={onViewableItemsChanged}
                 viewabilityConfig={viewabilityConfig}
@@ -491,12 +508,6 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         paddingHorizontal: 16,
         zIndex: 10,
-    },
-    backButton: {
-        width: 40,
-        height: 40,
-        justifyContent: 'center',
-        alignItems: 'center',
     },
     headerTitle: {
         flex: 1,

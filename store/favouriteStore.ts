@@ -47,17 +47,17 @@ export const useFavouriteStore = create<FavouriteState>()(
 
           const newFavourites = [...state.favourites, favourite];
           
-          // ANALYTICS: Favourite added
-          const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
-          logAnalyticsEvent('favourite_added', {
-            verse_id: verseId,
-            surah_id: surahId,
-            surah_name: surahName,
-            verse_number: verseNumber,
-            source: source || 'unknown',
-            juz_number: juzNumber || null,
-            ...getCommonParams(),
-          });
+          // ANALYTICS: favourite_added — aggregate stats only, no surah name
+          const { logAnalyticsEvent} = require('@/utils/analyticsHelper');
+          try {
+            logAnalyticsEvent('favourite_added', {
+              surah_number: surahId ?? 0,
+              verse_number: verseNumber ?? 0,
+              source: source || 'unknown',
+              juz_number: juzNumber || 0,
+              total_count: newFavourites.length,
+            });
+          } catch { /* analytics must never crash */ }
 
           return {
             favourites: newFavourites,
@@ -71,15 +71,16 @@ export const useFavouriteStore = create<FavouriteState>()(
           const item = state.favourites.find(f => f.id === verseId);
           const newFavourites = state.favourites.filter(f => f.id !== verseId);
 
-          // ANALYTICS: Favourite removed
-          const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
-          logAnalyticsEvent('favourite_removed', {
-            verse_id: verseId,
-            surah_id: item?.surahId || null,
-            surah_name: item?.surahName || 'unknown',
-            verse_number: item?.verseNumber || null,
-            ...getCommonParams(),
-          });
+          // ANALYTICS: favourite_removed — aggregate stats only, no surah name
+          const { logAnalyticsEvent} = require('@/utils/analyticsHelper');
+          try {
+            logAnalyticsEvent('favourite_removed', {
+              surah_number: item?.surahId || 0,
+              verse_number: item?.verseNumber || 0,
+              source: item?.source || 'unknown',
+              total_count: newFavourites.length,
+            });
+          } catch { /* analytics must never crash */ }
 
           return {
             favourites: newFavourites,

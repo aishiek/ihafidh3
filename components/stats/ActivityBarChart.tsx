@@ -193,9 +193,12 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
   };
 
   const barWidth = getBarWidth();
+  const gapWidth = 12; // defined gap
+  const horizontalPadding = 30; // padding left + right
+  
   const chartContentWidth = Math.max(
-    screenWidth - (40 + 20 + 20 + 4), // screenWidth - (yAxisWidth + paddingHorizontal*2 + margin)
-    chartData.labels.length * (barWidth + 8)
+    screenWidth - 50, // screenWidth - padding/margins
+    chartData.labels.length * (barWidth + gapWidth) + horizontalPadding + 40 // Add buffer for final label
   );
 
   React.useEffect(() => {
@@ -506,8 +509,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     height: 180,
-    gap: 8,
-    paddingRight: 20,
+    gap: 12,
+    paddingHorizontal: 20,
   },
   barColumn: {
     alignItems: 'center',

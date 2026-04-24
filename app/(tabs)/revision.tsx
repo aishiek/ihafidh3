@@ -2,7 +2,7 @@ import MonthlyHifdhCalendar from '@/components/MonthlyHifdhCalendar';
 import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
 import { RevisionGoals } from '@/types/revision';
-import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
+import {logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { formatDate } from '@/utils/dateUtils';
 import { loadRevisionGoals, saveRevisionGoals } from '@/utils/revisionTracking';
 import { useThemeColor } from '@/utils/useThemeColor';
@@ -230,7 +230,7 @@ export default function RevisionScreen() {
     updateWeeklyRevisedVerses(currentRevisionVerse.verseId);
 
     // ANALYTICS: Check if this completion finishes a surah for the week
-    const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
+    const { logAnalyticsEvent} = require('@/utils/analyticsHelper');
     const details = findVerseDetails(currentRevisionVerse.verseId);
     const surah = surahsData.find(s => s.id === details.surahId);
     if (surah) {
@@ -255,9 +255,7 @@ export default function RevisionScreen() {
         logAnalyticsEvent('weekly_surah_completed', {
           surah_id: surah.id,
           surah_name: surah.englishName,
-          verses_count: surah.versesCount,
-          ...getCommonParams(),
-        });
+          verses_count: surah.versesCount,});
       }
     }
 
@@ -352,9 +350,7 @@ export default function RevisionScreen() {
       daily_goal_type: dailyGoalType,
       daily_goal_value: dailyGoalType === 'verses' ? selectedGoal : dailyPagesGoal,
       weekly_goal_type: weeklyGoalType,
-      selected_surahs_count: selectedSurahs.length,
-      ...getCommonParams(),
-    });
+      selected_surahs_count: selectedSurahs.length,});
   }, []);
 
 

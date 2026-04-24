@@ -1,4 +1,4 @@
-import { getCommonParams, logAnalyticsEvent, logAudioPlayback } from '@/utils/analyticsHelper';
+import {logAnalyticsEvent, logAudioPlayback } from '@/utils/analyticsHelper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import type { FlashListRef } from '@shopify/flash-list';
@@ -11,7 +11,6 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { ArrowLeft, ArrowRight, Check, Pause, Play, RefreshCw, Search, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PageAudioManager, { AudioState, getPageAudioManager } from '../audio/PageAudioManager';
-
 import {
     ActivityIndicator,
     Alert,
@@ -25,6 +24,29 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import { useAppWalkthrough } from '@/hooks/useAppWalkthrough';
+
+const WALKTHROUGH_STEPS = [
+  {
+    order: 1,
+    name: 'surah_tab',
+    title: 'Browse Surahs',
+    text: 'Tap here to browse all 114 surahs. Your memorization progress shows on each card.',
+  },
+  {
+    order: 2,
+    name: 'juz_tab',
+    title: 'Browse by Juz',
+    text: 'Switch to Juz view to navigate the Quran by its 30 traditional divisions.',
+  },
+  {
+    order: 3,
+    name: 'read_mode_hint',
+    title: 'Golden Read Mode',
+    text: 'While reading any Surah or Juz, rotate your phone to landscape for the full gold Read Mode experience.',
+  },
+];
+
 
 import JuzMemorization from '@/components/JuzMemorization';
 import VerseItem from '@/components/VerseItem';
@@ -56,6 +78,7 @@ import PageModeConfig from '@/components/PageModeConfig';
 import { calculatePages } from '@/utils/pageUtils';
 
 import { fetchUthmaniTajweedRnMarkupByChapter } from '@/services/quranComTajweedService';
+import { shouldHaveBismillah, BISMILLAH_ARABIC, getBismillahTranslation, BISMILLAH_AUDIO_URL } from '@/constants/basmalah';
 
 export default function ReadScreen() {
   const router = useRouter();
@@ -213,6 +236,40 @@ export default function ReadScreen() {
   // === Orientation Handling for Read Mode ===
   const [currentVisibleVerse, setCurrentVisibleVerse] = useState<{ surahId: number; verseNumber: number } | null>(null);
 
+  // Stable Viewability Config for FlashList
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50, minimumViewTime: 300 }).current;
+
+  const handleSurahViewableItemsChanged = useCallback(({ viewableItems }: any) => {
+    const firstVisible = viewableItems[0]?.item as Verse;
+    if (firstVisible) {
+      setCurrentVisibleVerse({
+        surahId: firstVisible.surahId,
+        verseNumber: firstVisible.verseNumber,
+      });
+      setLastReadVerse({ ...firstVisible, readContext: 'surah' } as any);
+    }
+  }, [setLastReadVerse]);
+
+  const handleJuzViewableItemsChanged = useCallback(({ viewableItems }: any) => {
+    const firstVisible = viewableItems[0]?.item as any;
+    if (firstVisible) {
+      setCurrentVisibleVerse({
+        surahId: firstVisible.chapter_id,
+        verseNumber: firstVisible.verse_number,
+      });
+      setLastReadVerse({
+        id: firstVisible.verse_id,
+        surahId: firstVisible.chapter_id,
+        verseNumber: firstVisible.verse_number,
+        arabicText: firstVisible.ayah,
+        translation: firstVisible.translation || '',
+        transliteration: firstVisible.transliteration,
+        readContext: 'juz',
+        juzNumber: firstVisible.part_id ? Number(firstVisible.part_id) : selectedJuz,
+      } as any);
+    }
+  }, [setLastReadVerse, selectedJuz]);
+
   // Handle landscape orientation - navigate to read-mode
   const handleLandscape = useCallback(() => {
     // Only trigger if verses are loaded and not in page mode
@@ -287,11 +344,14 @@ export default function ReadScreen() {
   // Memoized
   const filteredSurahs = useMemo(() => {
     if (!searchQuery) return surahsData;
-    const query = searchQuery.toLowerCase();
+    const query = searchQuery.toLowerCase().trim();
+    const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normQuery = normalize(searchQuery);
+
     return surahsData.filter((surah) =>
-      surah.englishName.toLowerCase().includes(query) ||
-      (surah.englishNameTranslation?.toLowerCase() || '').includes(query) ||
-      surah.name.toLowerCase().includes(query) ||
+      normalize(surah.englishName).includes(normQuery) ||
+      normalize(surah.englishNameTranslation || '').includes(normQuery) ||
+      normalize(surah.name).includes(normQuery) ||
       surah.id.toString() === query
     );
   }, [searchQuery]);
@@ -312,6 +372,23 @@ export default function ReadScreen() {
     return 450; // Very large fonts
   }, [fontSizeArabic]);
 
+  const overrideItemLayout = useCallback((layout: any, item: any) => {
+    const sId = item?.surahId || item?.chapter_id;
+    const vNum = item?.verseNumber || item?.verse_number;
+    
+    layout.size = ESTIMATED_ITEM_HEIGHT;
+
+    // Adjust for exceptionally long verses
+    if (sId === 2 && vNum === 282) {
+      layout.size = ESTIMATED_ITEM_HEIGHT * 10;
+    } else if (sId === 4 && vNum === 12) {
+      layout.size = ESTIMATED_ITEM_HEIGHT * 4; 
+    } else if (sId === 4 && vNum === 176) {
+      layout.size = ESTIMATED_ITEM_HEIGHT * 3;
+    } else if (sId === 24 && vNum === 31) {
+      layout.size = ESTIMATED_ITEM_HEIGHT * 4;
+    }
+  }, [ESTIMATED_ITEM_HEIGHT]);
   // Restore saved Page Mode preferences on mount
   useEffect(() => {
     (async () => {
@@ -401,9 +478,7 @@ export default function ReadScreen() {
       scope: scope,
       verses_per_page: vpp ?? defaultVersesPerPage,
       entity_id: scope === 'surah' ? selectedSurah?.id : selectedJuz,
-      entity_name: scope === 'surah' ? selectedSurah?.englishName : `Juz ${selectedJuz}`,
-      ...getCommonParams(),
-    });
+      entity_name: scope === 'surah' ? selectedSurah?.englishName : `Juz ${selectedJuz}`,});
 
     // switch tab when selecting Juz but not loaded
     if (scope === 'juz') {
@@ -483,9 +558,7 @@ export default function ReadScreen() {
           scope: pageModeScope,
           current_page: p,
           new_page: v,
-          verses_per_page: pageModeSessionVpp,
-          ...getCommonParams(),
-        });
+          verses_per_page: pageModeSessionVpp,});
 
         return v;
       });
@@ -506,9 +579,7 @@ export default function ReadScreen() {
           scope: pageModeScope,
           current_page: p,
           new_page: v,
-          verses_per_page: pageModeSessionVpp,
-          ...getCommonParams(),
-        });
+          verses_per_page: pageModeSessionVpp,});
 
         return v;
       });
@@ -780,7 +851,7 @@ export default function ReadScreen() {
         setLoadingError(null);
 
         try {
-          console.log(`[read] Loading verses for ${surah.name} (attempt ${retryCount + 1}/3)...`);
+          if (__DEV__) console.log(`[read] Loading verses for ${surah.name} (attempt ${retryCount + 1}/3)...`);
 
           // Load ALL verses from local DB at once (same as Juz implementation)
           const allVersesFromDB = await fetchVersesForSurah(surah.id);
@@ -814,6 +885,35 @@ export default function ReadScreen() {
               : {}),
           }));
 
+          // INJECT BISMILLAH (Verse 0)
+          if (shouldHaveBismillah(surah.id)) {
+            // Strip Bismillah from verse 1 if applicable
+            if (mappedVerses.length > 0 && mappedVerses[0].verseNumber === 1) {
+              const bismillahMatch = mappedVerses[0].arabicText.match(/^.*?[ٱا]لرَّحِيمِ[\s\u00A0]*/u);
+              if (bismillahMatch) {
+                mappedVerses[0].arabicText = mappedVerses[0].arabicText.substring(bismillahMatch[0].length).trim();
+              }
+              // Also strip from tajweedText if present
+              if (mappedVerses[0].tajweedText) {
+                const tajBismillahMatch = mappedVerses[0].tajweedText.match(/^.*?[ٱا]لرَّحِيمِ<\/tajweed>[\s\u00A0]*/u) 
+                                       || mappedVerses[0].tajweedText.match(/^.*?[ٱا]لرَّحِيمِ[\s\u00A0]*/u);
+                if (tajBismillahMatch) {
+                  mappedVerses[0].tajweedText = mappedVerses[0].tajweedText.substring(tajBismillahMatch[0].length).trim();
+                }
+              }
+            }
+            
+            // Add Bismillah as verse 0
+            mappedVerses.unshift({
+              id: -surah.id, // Negative sentinel ID for virtual verse
+              surahId: surah.id,
+              verseNumber: 0,
+              arabicText: BISMILLAH_ARABIC,
+              translation: getBismillahTranslation(translationLanguage),
+              audioUrl: getAudioUrl(reciterIdentifier, 1, 1),
+            });
+          }
+
           // PERFORMANCE FIX: Local DB already has translations!
           // Removed API call that was causing 3-10 second delays for non-English languages
           // The AlQurandb.sqlite3 database contains English translations (collection_id = 2)
@@ -831,7 +931,7 @@ export default function ReadScreen() {
           // CRITICAL: Retry for ANY error on Android, not just database errors
           // Android can have various initialization timing issues
           if (retryCount < 2) {
-            console.log(`[read] Retrying loadInitialVerses for ${surah.name} (attempt ${retryCount + 2}/3)...`);
+            if (__DEV__) console.log(`[read] Retrying loadInitialVerses for ${surah.name} (attempt ${retryCount + 2}/3)...`);
             // Exponential backoff: 600ms, 1200ms
             const delay = 600 * (retryCount + 1);
             await new Promise(resolve => setTimeout(resolve, delay));
@@ -916,7 +1016,7 @@ export default function ReadScreen() {
       if (selectedSurah || selectedJuz !== null) {
         // Ensure Page Mode is exited when going back to lists
         try { exitPageMode(); } catch { }
-        console.log('[read] Back from verses to list view - clearing params');
+        if (__DEV__) console.log('[read] Back from verses to list view - clearing params');
         // CRITICAL: Clear URL params to allow fresh navigation next time
         router.replace('/(tabs)/read');
         setSelectedJuz(null);
@@ -927,7 +1027,7 @@ export default function ReadScreen() {
       }
       // If already on list view (no selection), navigate to home tab
       else {
-        console.log('[read] Back from list view to home tab');
+        if (__DEV__) console.log('[read] Back from list view to home tab');
         router.replace('/(tabs)/');
       }
 
@@ -1005,9 +1105,9 @@ export default function ReadScreen() {
         // requested surah id. This helps trace cases where selecting Surah X results
         // in audio being generated for Surah Y.
         try {
-          console.log('[read] ▶️ playSurah requested for id:', selectedSurah.id);
+          if (__DEV__) console.log('[read] ▶️ playSurah requested for id:', selectedSurah.id);
           const sampleVerses = await fetchVersesForSurah(selectedSurah.id);
-          console.log(`[read] ▶️ fetchVersesForSurah(${selectedSurah.id}) returned ${sampleVerses?.length ?? 0} verses; sample chapter_ids:`, sampleVerses.slice(0, 5).map(v => v.chapter_id));
+          if (__DEV__) console.log(`[read] ▶️ fetchVersesForSurah(${selectedSurah.id}) returned ${sampleVerses?.length ?? 0} verses; sample chapter_ids:`, sampleVerses.slice(0, 5).map(v => v.chapter_id));
         } catch (e) {
           console.warn('[read] ▶️ fetchVersesForSurah diagnostic failed:', e);
         }
@@ -1031,13 +1131,18 @@ export default function ReadScreen() {
         setIsSurahPaused(false);
       }
 
-      // ANALYTICS: Consolidated audio playback event for surah audio
-      logAudioPlayback({
-        action: action,
-        audio_type: 'surah',
-        surah_id: selectedSurah.id,
-        playback_speed: playbackSpeed.toString(),
-      });
+      // ANALYTICS: Consolidated audio playback event for surah audio (Event 9 — P2)
+      try {
+        logAudioPlayback({
+          action: action,
+          audio_type: 'surah',
+          surah_number: selectedSurah.id ?? 0,
+          surah_name: selectedSurah.englishName || selectedSurah.name || undefined,
+          reciter: useSettingsStore.getState().reciterIdentifier || 'unknown',
+          playback_speed: playbackSpeed,
+          source_screen: 'read_screen',
+        });
+      } catch { /* analytics must never crash */ }
     } catch (e) {
       console.error('Surah audio playback failed:', e);
       setIsPlayingSurah(false);
@@ -1052,6 +1157,7 @@ export default function ReadScreen() {
       versesCount: selectedSurah.versesCount,
     });
     try {
+      const isMarking = !isSurahMemorizedGlobally;
       if (isSurahMemorizedGlobally) {
         await bulkMarkVersesMemorized(surahVerseIds, false);
         surahVerseIds.forEach((id) => {
@@ -1060,6 +1166,21 @@ export default function ReadScreen() {
       } else {
         await bulkMarkVersesMemorized(surahVerseIds, true);
       }
+
+      // ANALYTICS: Explicit surah-level memorization (not generic bulk_mark)
+      // Use surah_number (1-114) consistently, compute juz_number and pages_count
+      const { getJuzForSurah } = require('@/utils/juzCalculator');
+      const juzNumber: number = (typeof getJuzForSurah === 'function' ? getJuzForSurah(selectedSurah.id) : null) ?? null;
+      const defaultVpp = useSettingsStore.getState().defaultVersesPerPage || 15;
+      const pagesCount = Math.ceil(selectedSurah.versesCount / defaultVpp);
+      logAnalyticsEvent('surah_memorization_toggled', {
+        action: isMarking ? 'mark_memorized' : 'unmark_memorized',
+        surah_number: selectedSurah.id,
+        surah_name: selectedSurah.name || selectedSurah.englishName,
+        verses_count: selectedSurah.versesCount,
+        pages_count: pagesCount,
+        juz_number: juzNumber,
+        completion_type: 'manual_bulk',});
     } catch (error) {
       Alert.alert('Error', 'Failed to update memorization status.');
     }
@@ -1072,11 +1193,26 @@ export default function ReadScreen() {
       versesCount: selectedSurah.versesCount,
     });
     try {
+      const isMarking = !isSurahRevisedGlobally;
       if (isSurahRevisedGlobally) {
         surahVerseIds.forEach((verseId) => unmarkVerseAsRevised(verseId));
       } else {
         await bulkMarkVersesRevised(surahVerseIds);
       }
+
+      // ANALYTICS: Explicit surah-level revision
+      const { getJuzForSurah } = require('@/utils/juzCalculator');
+      const juzNumber: number = (typeof getJuzForSurah === 'function' ? getJuzForSurah(selectedSurah.id) : null) ?? null;
+      const defaultVpp = useSettingsStore.getState().defaultVersesPerPage || 15;
+      const pagesCount = Math.ceil(selectedSurah.versesCount / defaultVpp);
+      logAnalyticsEvent('surah_revision_toggled', {
+        action: isMarking ? 'mark_revised' : 'unmark_revised',
+        surah_number: selectedSurah.id,
+        surah_name: selectedSurah.name || selectedSurah.englishName,
+        verses_count: selectedSurah.versesCount,
+        pages_count: pagesCount,
+        juz_number: juzNumber,
+        completion_type: 'manual_bulk',});
     } catch (error) {
       Alert.alert('Error', 'Failed to update revision status.');
     }
@@ -1292,6 +1428,19 @@ export default function ReadScreen() {
         markPageAsMemorized(pageModeScope, entityId, currentPageIndex, pageModeSessionVpp, ids);
         try { showToast('Page memorized'); } catch { }
       }
+
+      // ANALYTICS: Page-level memorization event (feeds home screen Pages stats)
+      const entityName = pageModeScope === 'surah'
+        ? (selectedSurah?.name || selectedSurah?.englishName || `Surah ${entityId}`)
+        : `Juz ${entityId}`;
+      logAnalyticsEvent('page_memorized', {
+        action: allMarked ? 'unmark' : 'mark',
+        scope: pageModeScope,                    // 'surah' or 'juz'
+        entity_id: entityId,
+        entity_name: entityName,
+        page_index: currentPageIndex + 1,        // 1-based page number for readability
+        verses_count: ids.length,
+        verses_per_page: pageModeSessionVpp,});
     } catch (e) {
       console.error('[read] Failed mark page memorized', e);
     }
@@ -1321,6 +1470,19 @@ export default function ReadScreen() {
         markPageAsRevised(pageModeScope, entityId, currentPageIndex, pageModeSessionVpp, ids);
         try { showToast('Page revised'); } catch { }
       }
+
+      // ANALYTICS: Page-level revision event (feeds home screen Pages stats)
+      const entityName = pageModeScope === 'surah'
+        ? (selectedSurah?.name || selectedSurah?.englishName || `Surah ${entityId}`)
+        : `Juz ${entityId}`;
+      logAnalyticsEvent('page_revised', {
+        action: allMarked ? 'unmark' : 'mark',
+        scope: pageModeScope,                    // 'surah' or 'juz'
+        entity_id: entityId,
+        entity_name: entityName,
+        page_index: currentPageIndex + 1,        // 1-based for readability
+        verses_count: ids.length,
+        verses_per_page: pageModeSessionVpp,});
     } catch (e) {
       console.error('[read] Failed mark page revised', e);
     }
@@ -1382,15 +1544,17 @@ export default function ReadScreen() {
     setLastViewedSurahId(surah.id);
     loadInitialVerses(surah);
 
-    // ANALYTICS: Surah selected
-    logAnalyticsEvent('surah_selected', {
-      surah_number: surah.id,
-      surah_name: surah.englishName,
-      revelation_type: surah.revelationType,
-      verse_count: surah.versesCount,
-      source: 'surah_list',
-      ...getCommonParams(),
-    });
+    // ANALYTICS: Surah selected (Event 8 — P2)
+    try {
+      logAnalyticsEvent('surah_selected', {
+        surah_number: surah.id ?? 0,
+        surah_name: (surah.englishName || surah.name || `surah_${surah.id}`).toLowerCase().replace(/\s+/g, '_'),
+        juz_number: (surah as any).juzNumber ?? 0,
+        source: 'browse',
+        verse_count: surah.versesCount ?? 0,
+        revelation_type: surah.revelationType ?? 'unknown',
+      });
+    } catch { /* analytics must never crash */ }
   };
 
   const handleSelectJuz = async (juz: number, retryCount = 0) => {
@@ -1399,16 +1563,16 @@ export default function ReadScreen() {
     setIsJuzLoading(true);
     setJuzLoadingError(null);
 
-    // ANALYTICS: Juz selected
-    logAnalyticsEvent('juz_selected', {
-      juz_number: juz,
-      juz_name: `Juz ${juz}`,
-      entry_point: 'juz_list',
-      ...getCommonParams(),
-    });
+    // ANALYTICS: Juz selected (Event 13 — P2)
+    try {
+      logAnalyticsEvent('juz_selected', {
+        juz_number: juz ?? 0,
+        source: 'browse',
+      });
+    } catch { /* analytics must never crash */ }
 
     try {
-      console.log(`[read] Loading Juz ${juz} (attempt ${retryCount + 1}/3)...`);
+      if (__DEV__) console.log(`[read] Loading Juz ${juz} (attempt ${retryCount + 1}/3)...`);
       const versesData = await fetchVersesForJuz(juz);
 
       // Validate DB returned data
@@ -1444,7 +1608,7 @@ export default function ReadScreen() {
         });
       }
 
-      console.log(`[read] Successfully loaded ${versesData.length} verses for Juz ${juz}`);
+      if (__DEV__) console.log(`[read] Successfully loaded ${versesData.length} verses for Juz ${juz}`);
       setJuzVerses(enrichedVersesData as any);
       setJuzListKey(prev => prev + 1); // Force FlashList rebuild on data change
       setIsJuzLoading(false);
@@ -1479,7 +1643,7 @@ export default function ReadScreen() {
 
       // CRITICAL: Retry for ANY error on Android
       if (retryCount < 2) {
-        console.log(`[read] Retrying Juz ${juz} load (attempt ${retryCount + 2}/3)...`);
+        if (__DEV__) console.log(`[read] Retrying Juz ${juz} load (attempt ${retryCount + 2}/3)...`);
         // Exponential backoff: 600ms, 1200ms
         const delay = 600 * (retryCount + 1);
         await new Promise(resolve => setTimeout(resolve, delay));
@@ -1519,27 +1683,20 @@ export default function ReadScreen() {
       return;
     }
 
-    // ANALYTICS: Bulk mark verses
-    logAnalyticsEvent('bulk_mark_verses', {
-      mark_type: isMarking ? 'memorized' : 'reset_memorized',
-      surah_name: selectedSurah.englishName,
-      verses_count: toUpdate.length,
-      source: 'read_tab',
-      ...getCommonParams(),
-    });
-
-    // Track surah completion if marking all
-    if (isMarking) {
-      logAnalyticsEvent('surah_completed', {
-        surah_number: selectedSurah.id,
-        surah_name: selectedSurah.englishName,
-        verses_count: selectedSurah.versesCount,
-        pages_count: Math.ceil(selectedSurah.versesCount / 10), // Estimate if not in page mode
-        completion_type: 'memorization',
-        juz_number: verses[0]?.juzNumber || 0,
-        ...getCommonParams(),
+    // ANALYTICS: bulk_mark_verses — juz_number only; surah detail omitted to reduce noise
+    try {
+      logAnalyticsEvent('bulk_mark_verses', {
+        juz_number: verses[0]?.juzNumber ?? 0,
+        verse_count: toUpdate.length ?? 0,
+        state: isMarking ? 'memorized' : 'unmemorized',
+        action: isMarking ? 'mark_all' : 'unmark_all',
       });
-    }
+    } catch { /* analytics must never crash */ }
+    // NOTE: surah_completed is NOT fired here intentionally.
+    // It is owned exclusively by progressStore.checkAndCelebrateBadges() which fires it
+    // after bulkMarkVersesMemorized completes, with a _lastCompletedSurahIds dedup guard
+    // that prevents double-fires. Firing it here would cause duplicates.
+
 
     setProgressAction(isMarking ? 'mark-memorized' : 'unmark-memorized');
     setProgressModalVisible(true);
@@ -1547,15 +1704,9 @@ export default function ReadScreen() {
 
     try {
       await bulkMarkVersesMemorized(toUpdate, isMarking);
-      const BATCH_SIZE = 50;
-      for (let i = 0; i < toUpdate.length; i += BATCH_SIZE) {
-        const batch = toUpdate.slice(i, i + BATCH_SIZE);
-        isMarking
-          ? batch.forEach((id) => markVerseAsMemorized(id))
-          : batch.forEach((id) => unmarkVerseAsMemorized(id));
-        setProgressCount(Math.min(i + BATCH_SIZE, toUpdate.length));
-        await new Promise((r) => setTimeout(r, 25));
-      }
+      // Update local count for the UI modal (static)
+      setProgressCount(toUpdate.length);
+      await new Promise((r) => setTimeout(r, 200));
 
       // Celebration now handled globally via CelebrationContext in _layout.tsx
     } catch (error) {
@@ -1583,15 +1734,14 @@ export default function ReadScreen() {
     setProgressCount(0);
 
     try {
-      const BATCH_SIZE = 50;
-      for (let i = 0; i < toUpdate.length; i += BATCH_SIZE) {
-        const batch = toUpdate.slice(i, i + BATCH_SIZE);
-        isMarking
-          ? batch.forEach((id) => markVerseAsRevised(id))
-          : batch.forEach((id) => unmarkVerseAsRevised(id));
-        setProgressCount(Math.min(i + BATCH_SIZE, toUpdate.length));
-        await new Promise((r) => setTimeout(r, 25));
+      if (isMarking) {
+        await bulkMarkVersesRevised(toUpdate);
+      } else {
+        // Fallback for unmarking (direct store access)
+        toUpdate.forEach(id => unmarkVerseAsRevised(id));
       }
+      setProgressCount(toUpdate.length);
+      await new Promise((r) => setTimeout(r, 200));
 
       // Celebration now handled globally via CelebrationContext in _layout.tsx
     } catch (error) {
@@ -1794,7 +1944,7 @@ export default function ReadScreen() {
     if (sid && !Number.isNaN(sid)) {
       const surah = surahsData.find((s) => s.id === sid);
       if (surah && !suppressNextAutoOpen.current) {
-        console.log('[read] Processing navigation params for surah', sid, 'source:', paramSource);
+        if (__DEV__) console.log('[read] Processing navigation params for surah', sid, 'source:', paramSource);
 
         // Track where user came from for back button behavior
         if (paramSource === 'mustahabbah') {
@@ -1822,7 +1972,7 @@ export default function ReadScreen() {
     const vid = paramVerseId ? Number(paramVerseId) : undefined;
 
     if (juzNum && !Number.isNaN(juzNum) && !suppressNextAutoOpen.current) {
-      console.log('[read] Processing Juz navigation params - juzNumber:', juzNum, 'verseId:', vid);
+      if (__DEV__) console.log('[read] Processing Juz navigation params - juzNumber:', juzNum, 'verseId:', vid);
 
       // CRITICAL: Switch to Juz tab FIRST, then load verses
       setTab('juz');
@@ -1853,8 +2003,8 @@ export default function ReadScreen() {
 
     // For Juz mode: wait until juzVerses is populated AND contains a verse from the restored surah.
     // For Surah mode: wait until verses is populated AND from the correct surah.
-    const isSurahDataReady = verses.length > 0 && verses.some(v => v.surahId === surahId);
-    const isJuzDataReady = juzVerses.length > 0 && juzVerses.some(jv => jv.chapter_id === surahId);
+    const isSurahDataReady = tab === 'surah' && verses.length > 0 && verses.some(v => v.surahId === surahId);
+    const isJuzDataReady = tab === 'juz' && juzVerses.length > 0 && juzVerses.some(jv => jv.chapter_id === surahId);
 
     if (!isSurahDataReady && !isJuzDataReady) return; // data not ready yet — wait for next run
 
@@ -1884,39 +2034,39 @@ export default function ReadScreen() {
         }, 300);
       });
     }
-  }, [lastVisibleVerse, verses, juzVerses, clearHandoff]);
+  }, [lastVisibleVerse, verses, juzVerses, clearHandoff, tab]);
 
 
   // Scroll to specific verse in Juz mode after verses are loaded
   useEffect(() => {
     const vid = paramVerseId ? Number(paramVerseId) : undefined;
-    console.log('[read] Juz scroll effect - vid:', vid, 'juzVerses.length:', juzVerses.length, 'tab:', tab);
+    if (__DEV__) console.log('[read] Juz scroll effect - vid:', vid, 'juzVerses.length:', juzVerses.length, 'tab:', tab);
 
     if (!vid || Number.isNaN(vid) || !juzVerses.length || tab !== 'juz') {
-      console.log('[read] Juz scroll effect - conditions not met, skipping');
+      if (__DEV__) console.log('[read] Juz scroll effect - conditions not met, skipping');
       return;
     }
 
     const verseIndex = juzVerses.findIndex((v) => v.verse_id === vid);
-    console.log('[read] Juz scroll effect - searching for verse_id:', vid, 'found at index:', verseIndex);
+    if (__DEV__) console.log('[read] Juz scroll effect - searching for verse_id:', vid, 'found at index:', verseIndex);
 
     if (verseIndex >= 0) {
       // Add delay to ensure FlashList is fully mounted and measured
       setTimeout(() => {
         try {
-          console.log('[read] Attempting to scroll to Juz verse index:', verseIndex);
+          if (__DEV__) console.log('[read] Attempting to scroll to Juz verse index:', verseIndex);
           flatListRef.current?.scrollToIndex({
             index: verseIndex,
             animated: false,
             viewPosition: 0.1,
           });
-          console.log('[read] Successfully scrolled to Juz verse index:', verseIndex);
+          if (__DEV__) console.log('[read] Successfully scrolled to Juz verse index:', verseIndex);
         } catch (e) {
           console.error('[read] Juz auto-scroll to verse failed:', e);
         }
       }, 800); // Slightly longer delay for Juz verses
     } else {
-      console.log('[read] Juz scroll effect - verse not found in juzVerses array');
+      if (__DEV__) console.log('[read] Juz scroll effect - verse not found in juzVerses array');
     }
   }, [juzVerses, paramVerseId, tab]);
 
@@ -1960,7 +2110,7 @@ export default function ReadScreen() {
     (async () => {
       try {
         await getDatabase();
-        console.log('[read] Database pre-initialized successfully');
+        if (__DEV__) console.log('[read] Database pre-initialized successfully');
       } catch (err) {
         console.error('[read] Database pre-initialization failed:', err);
       }
@@ -2014,7 +2164,7 @@ export default function ReadScreen() {
       if (useReadModeStore.getState().pendingPortraitHandoff) {
         useReadModeStore.getState().setPendingPortraitHandoff(false);
         return () => {
-          console.log('[read] Tab lost focus');
+          if (__DEV__) console.log('[read] Tab lost focus');
         };
       }
 
@@ -2050,7 +2200,7 @@ export default function ReadScreen() {
 
       // Cleanup function
       return () => {
-        console.log('[read] Tab lost focus');
+        if (__DEV__) console.log('[read] Tab lost focus');
       };
     }, [paramSurahId, paramJuzNumber, exitPageMode, lastVisibleVerse])
   );
@@ -2060,24 +2210,22 @@ export default function ReadScreen() {
   }, []);
 
   // ==========================================
-  // ANALYTICS: Session Duration Tracking
+  // ANALYTICS: Session Duration Tracking (Event 10 — P2)
   // ==========================================
   useEffect(() => {
     const sessionStart = Date.now();
 
     return () => {
-      const sessionDuration = Math.round((Date.now() - sessionStart) / 1000); // in seconds
-
-      logAnalyticsEvent('recite_session_duration', {
-        duration_seconds: sessionDuration,
-        surah_number: selectedSurah?.id || null,
-        surah_name: selectedSurah?.englishName || null,
-        juz_number: selectedJuz || null,
-        mode: isPageModeActive ? 'page_reading' : 'list_reading',
-        audio_enabled: isPlayingAudio || isPlayingSurah,
-        verses_recited: currentlyPlayingVerse?.verseNumber || (verses.length > 0 ? verses[0].verseNumber : 0),
-        ...getCommonParams(),
-      });
+      const sessionDuration = Math.round((Date.now() - sessionStart) / 1000);
+      try {
+        logAnalyticsEvent('recite_session_duration', {
+          surah_number: selectedSurah?.id ?? 0,
+          surah_name: (selectedSurah?.englishName || selectedSurah?.name || 'unknown').toLowerCase().replace(/\s+/g, '_'),
+          duration_seconds: sessionDuration ?? 0,
+          verses_covered: verses.length ?? 0,
+          session_mode: isPageModeActive ? 'page_mode' : (selectedJuz ? 'juz_mode' : 'surah_mode'),
+        });
+      } catch { /* analytics must never crash */ }
     };
   }, [selectedSurah, selectedJuz, isPageModeActive]);
 
@@ -2102,10 +2250,10 @@ export default function ReadScreen() {
       onPanResponderRelease: (_evt, gestureState) => {
         const { dx } = gestureState;
         if (dx > 50) {
-          if (__DEV__) console.log('[read] Swipe Right -> Prev Page');
+          if (__DEV__) if (__DEV__) console.log('[read] Swipe Right -> Prev Page');
           handlePrevPageRef.current();
         } else if (dx < -50) {
-          if (__DEV__) console.log('[read] Swipe Left -> Next Page');
+          if (__DEV__) if (__DEV__) console.log('[read] Swipe Left -> Next Page');
           handleNextPageRef.current();
         }
       },
@@ -2204,12 +2352,12 @@ export default function ReadScreen() {
                         return;
                       }
 
-                      console.log('[read] Go to verse in Juz mode (surah:verse):', { surahNum, verseNum, selectedJuz });
+                      if (__DEV__) console.log('[read] Go to verse in Juz mode (surah:verse):', { surahNum, verseNum, selectedJuz });
 
                       // Find verse by BOTH chapter_id AND verse_number
                       idx = juzVerses.findIndex((v) => v.chapter_id === surahNum && v.verse_number === verseNum);
 
-                      console.log('[read] Search result: idx =', idx, 'for', surahNum + ':' + verseNum);
+                      if (__DEV__) console.log('[read] Search result: idx =', idx, 'for', surahNum + ':' + verseNum);
 
                       if (idx === -1) {
                         // Check if the surah exists in this juz at all
@@ -2251,17 +2399,17 @@ export default function ReadScreen() {
 
                       // Get the actual verse info for user feedback
                       const targetVerse = juzVerses[idx];
-                      console.log('[read] Go to verse position', versePosition, 'in Juz', selectedJuz,
+                      if (__DEV__) console.log('[read] Go to verse position', versePosition, 'in Juz', selectedJuz,
                         '-> Surah', targetVerse.chapter_id, 'Verse', targetVerse.verse_number);
                     }
                   }
 
-                  console.log('[read] Found verse at index', idx, '- attempting scroll');
+                  if (__DEV__) console.log('[read] Found verse at index', idx, '- attempting scroll');
 
                   // Scroll to verse (only if idx is valid)
                   if (idx !== -1 && idx >= 0) {
                     try {
-                      console.log('[read] Executing scrollToIndex for index:', idx);
+                      if (__DEV__) console.log('[read] Executing scrollToIndex for index:', idx);
 
                       // LOCK HEADER: Prevent layout shifts during jump to avoid Skia/Metal race conditions
                       isAutomatedScrolling.current = true;
@@ -2543,22 +2691,22 @@ export default function ReadScreen() {
         /* ORIGINAL HEADER (List View - Unchanged)     */
         /* ============================================ */
         <View style={styles.headerContainer}>
-          <View style={styles.headerTopRow}>
-            <TouchableOpacity onPress={handleBackToSurahs} style={{ marginRight: 12 }}>
-              <ArrowLeft size={28} color="#C5A059" />
-            </TouchableOpacity>
-            <View style={styles.headerTitleContainer}>
-              <AutoSizeText
-                numberOfLines={2}
-                mode={ResizeTextMode.min_font_size}
-                fontSize={18}
-                minFontSize={14}
-                style={[styles.headerTitle, { paddingHorizontal: 16, textAlign: 'center', lineHeight: 24 }]}
-              >
-                Recite Qur&apos;an in measured and rhythmic tone!
-              </AutoSizeText>
+            <View style={styles.headerTopRow}>
+              <TouchableOpacity onPress={handleBackToSurahs} style={{ marginRight: 12 }}>
+                <ArrowLeft size={28} color="#C5A059" />
+              </TouchableOpacity>
+              <View style={styles.headerTitleContainer}>
+                <AutoSizeText
+                  numberOfLines={2}
+                  mode={ResizeTextMode.min_font_size}
+                  fontSize={18}
+                  minFontSize={14}
+                  style={[styles.headerTitle, { paddingHorizontal: 16, textAlign: 'center', lineHeight: 24 }]}
+                >
+                  Recite Qur&apos;an in measured and rhythmic tone!
+                </AutoSizeText>
+              </View>
             </View>
-          </View>
         </View>
       )}
 
@@ -2568,11 +2716,25 @@ export default function ReadScreen() {
             <Search size={20} color="#888888" />
             <TextInput
               style={[styles.searchInput, { color: '#ffffff' }]}
-              placeholder="Search"
+              placeholder={tab === 'juz' ? "Search Juz (1-30)" : "Search"}
               placeholderTextColor="#888888"
               value={searchQuery}
-              onChangeText={setSearchQuery}
-              editable={tab !== 'juz'}
+              keyboardType={tab === 'juz' ? 'numeric' : 'default'}
+              onChangeText={(text) => {
+                if (tab === 'juz') {
+                  if (text === '') {
+                    setSearchQuery('');
+                    return;
+                  }
+                  if (!/^\d+$/.test(text)) return;
+                  const num = parseInt(text, 10);
+                  if (num >= 1 && num <= 30) {
+                    setSearchQuery(text);
+                  }
+                } else {
+                  setSearchQuery(text);
+                }
+              }}
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -2580,10 +2742,10 @@ export default function ReadScreen() {
               </TouchableOpacity>
             )}
           </View>
-          <TouchableOpacity onPress={() => setTab('surah')} style={[styles.tabButton, tab === 'surah' && { backgroundColor: primary }]}>
+          <TouchableOpacity onPress={() => { setTab('surah'); setSearchQuery(''); }} style={[styles.tabButton, tab === 'surah' && { backgroundColor: primary }]}>
             <Text style={[styles.tabText, tab === 'surah' && styles.tabTextActive]}>Surah</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setTab('juz')} style={[styles.tabButton, tab === 'juz' && { backgroundColor: primary }]}>
+          <TouchableOpacity onPress={() => { setTab('juz'); setSearchQuery(''); }} style={[styles.tabButton, tab === 'juz' && { backgroundColor: primary }]}>
             <Text style={[styles.tabText, tab === 'juz' && styles.tabTextActive]}>Juz</Text>
           </TouchableOpacity>
         </View>
@@ -2629,6 +2791,7 @@ export default function ReadScreen() {
                     getItemType={getVerseType}
                     keyExtractor={(item: any) => `verse-${item.id}-${item.surahId}-${item.verseNumber}`}
                     {...({ estimatedItemSize: ESTIMATED_ITEM_HEIGHT } as any)}
+                    overrideItemLayout={overrideItemLayout}
                     ListEmptyComponent={renderEmpty}
                     contentContainerStyle={styles.verseList}
                     onScroll={handleVerseScroll}
@@ -2643,23 +2806,13 @@ export default function ReadScreen() {
                     renderItem={renderVerseOptimized}
                     keyExtractor={(item: any) => `verse-${item.id}-${item.surahId}-${item.verseNumber}`}
                     {...({ estimatedItemSize: ESTIMATED_ITEM_HEIGHT } as any)}
+                    overrideItemLayout={overrideItemLayout}
                     ListEmptyComponent={renderEmpty}
                     contentContainerStyle={styles.verseList}
                     onScroll={handleVerseScroll}
                     scrollEventThrottle={16}
-                    viewabilityConfig={{
-                      itemVisiblePercentThreshold: 50,
-                      minimumViewTime: 300,
-                    }}
-                    onViewableItemsChanged={({ viewableItems }: any) => {
-                      const firstVisible = viewableItems[0]?.item as Verse;
-                      if (firstVisible) {
-                        setCurrentVisibleVerse({
-                          surahId: firstVisible.surahId,
-                          verseNumber: firstVisible.verseNumber,
-                        });
-                      }
-                    }}
+                    viewabilityConfig={viewabilityConfig}
+                    onViewableItemsChanged={handleSurahViewableItemsChanged}
                   />
                 )}
               </Animated.View>
@@ -2692,6 +2845,7 @@ export default function ReadScreen() {
                     getItemType={getVerseType}
                     keyExtractor={(item: any, index: number) => `juz-${item.id ?? item.verse_id}-${index}`}
                     {...({ estimatedItemSize: ESTIMATED_ITEM_HEIGHT } as any)}
+                    overrideItemLayout={overrideItemLayout}
                     renderItem={renderJuzPageVerse}
                     contentContainerStyle={[styles.versesContent, { backgroundColor: '#1a1a1a' }]}
                     onScroll={handleVerseScroll}
@@ -2705,21 +2859,11 @@ export default function ReadScreen() {
                     getItemType={getVerseType}
                     keyExtractor={(item: any, index: number) => `juz-${item.verse_id}-${item.chapter_id}-${item.verse_number}`}
                     {...({ estimatedItemSize: ESTIMATED_ITEM_HEIGHT } as any)}
+                    overrideItemLayout={overrideItemLayout}
                     onScroll={handleVerseScroll}
                     scrollEventThrottle={16}
-                    viewabilityConfig={{
-                      itemVisiblePercentThreshold: 50,
-                      minimumViewTime: 300,
-                    }}
-                    onViewableItemsChanged={({ viewableItems }: any) => {
-                      const firstVisible = viewableItems[0]?.item as any;
-                      if (firstVisible) {
-                        setCurrentVisibleVerse({
-                          surahId: firstVisible.chapter_id,
-                          verseNumber: firstVisible.verse_number,
-                        });
-                      }
-                    }}
+                    viewabilityConfig={viewabilityConfig}
+                    onViewableItemsChanged={handleJuzViewableItemsChanged}
                     renderItem={({ item, index }: { item: any; index: number }) => {
                       const isPlaying = currentlyPlayingVerse !== null &&
                         currentlyPlayingVerse.surahId === item.chapter_id &&
@@ -2781,7 +2925,7 @@ export default function ReadScreen() {
             />
           </View>
         ) : (
-          <JuzMemorization onOpenJuz={handleSelectJuz} />
+          <JuzMemorization onOpenJuz={handleSelectJuz} searchQuery={searchQuery} />
         )}
       </View>
 

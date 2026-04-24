@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Linking } from 'react-native';
+import { Linking, Platform } from 'react-native';
+import * as StoreReview from 'expo-store-review';
 // Lazily require 'react-native-in-app-review' to avoid bundler errors when
 // the native module isn't installed in development or CI environments.
 function getInAppReview(): any | null {
@@ -121,5 +122,57 @@ export async function resetConsecutiveOpens() {
     await AsyncStorage.removeItem(KEY_LAST_OPEN_DAY);
   } catch (e) {
     console.log('[review] resetConsecutiveOpens failed', e);
+  }
+}
+
+// ─── NEW IN-APP REVIEW FLOW ─────────────────────────────────────────────
+
+import { ReviewPromptState } from '@/store/settingsStore';
+import { ANDROID_PACKAGE_ID, IOS_APP_STORE_ID } from '@/constants/appConfig';
+
+const IOS_APP_ID = IOS_APP_STORE_ID || '1234567890';
+const ANDROID_PKG = ANDROID_PACKAGE_ID || 'com.ihafidh.app';
+
+export function shouldShowReviewPrompt(
+  state: ReviewPromptState,
+  sessionShownFlag: boolean
+): boolean {
+  if (state.hasRated) return false;
+  if (sessionShownFlag) return false;
+
+  const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+  if (state.lastShownAt && now() - state.lastShownAt < FOURTEEN_DAYS_MS) {
+    return false;
+  }
+
+  return true;
+}
+
+export async function openReview(): Promise<void> {
+  if (Platform.OS === 'ios') {
+    try {
+      const available = await StoreReview.isAvailableAsync();
+      if (available) {
+        await StoreReview.requestReview();
+      } else {
+        await Linking.openURL(
+          `https://apps.apple.com/app/id${IOS_APP_ID}?action=write-review`
+        );
+      }
+    } catch (e) {
+      console.log('[review] iOS openReview failed', e);
+      await Linking.openURL(
+        `https://apps.apple.com/app/id${IOS_APP_ID}?action=write-review`
+      );
+    }
+  } else {
+    try {
+      const marketUrl = `market://details?id=${ANDROID_PKG}&showAllReviews=true`;
+      const webUrl = `https://play.google.com/store/apps/details?id=${ANDROID_PKG}`;
+      const canOpen = await Linking.canOpenURL(marketUrl);
+      await Linking.openURL(canOpen ? marketUrl : webUrl);
+    } catch (e) {
+      console.log('[review] Android openReview failed', e);
+    }
   }
 }

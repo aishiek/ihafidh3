@@ -118,31 +118,37 @@ export async function getMalayTafsir(surah: number, ayah: number): Promise<Tafsi
       resultCache.set(key, null);
       return null;
     }
-    let found: TafsirResult | null = null;
-    db.transaction((tx: any) => {
-      tx.executeSql(
-        sql,
-        params,
-        (_: any, resultSet: any) => {
-          const r = resultSet?.rows?._array?.[0];
-          console.debug('[localMalayTafsir] Raw DB row:', r);
-          if (r && r.text) {
-            found = {
-              resourceId: 0,
-              resourceName: 'Malay Tafsir',
-              verseKey: ayahKey,
-              text: String(r.text),
-            };
+    // legacy sync path: execute SQL and build result via Promise wrapper
+    return new Promise((resolve) => {
+      db.transaction((tx: any) => {
+        tx.executeSql(
+          sql,
+          params,
+          (_: any, resultSet: any) => {
+            const r = resultSet?.rows?._array?.[0];
+            console.debug('[localMalayTafsir] Raw DB row:', r);
+            if (r && r.text) {
+              const res: TafsirResult = {
+                resourceId: 0,
+                resourceName: 'Malay Tafsir',
+                verseKey: ayahKey,
+                text: String(r.text),
+              };
+              resultCache.set(key, res);
+              resolve(res);
+            } else {
+              resultCache.set(key, null);
+              resolve(null);
+            }
+          },
+          (_: any, err: any) => {
+            console.warn('[localMalayTafsir] query error', err);
+            resolve(null);
+            return true;
           }
-        },
-        (_: any, err: any) => {
-          console.warn('[localMalayTafsir] query error', err);
-          return true;
-        }
-      );
+        );
+      });
     });
-    resultCache.set(key, found);
-    return found;
   } catch (e) {
     console.error('[localMalayTafsir] getMalayTafsir error', e);
     resultCache.set(key, null);

@@ -97,14 +97,33 @@ async function ensureSqliteDirectory(): Promise<void> {
 async function copyDatabaseFile(): Promise<void> {
   try {
     const fileInfo = await FileSystem.getInfoAsync(DB_PATH);
-    if (!fileInfo.exists) {
+    const MIGRATION_KEY = 'db_allah_migration_v1';
+    
+    // Low-level version check without full AsyncStorage dependency
+    // We can use a small side-file or just a SQL check
+    let needsForceUpdate = false;
+    try {
+      const { getItem } = require('@react-native-async-storage/async-storage').default || require('@react-native-async-storage/async-storage');
+      const migrated = await getItem(MIGRATION_KEY);
+      if (!migrated) needsForceUpdate = true;
+    } catch (e) {
+      // If storage fails, we only copy if missing (standard behavior)
+      needsForceUpdate = false;
+    }
+
+    if (!fileInfo.exists || needsForceUpdate) {
       const assetPath = await loadAssetPath();
-      log('juzDbService', 'Copying DB from', assetPath, 'to', DB_PATH);
+      log('juzDbService', 'Copying DB (force update/new install) from', assetPath, 'to', DB_PATH);
       await FileSystem.copyAsync({
         from: assetPath,
         to: DB_PATH,
       });
       log('juzDbService', 'Successfully copied DB to SQLite directory');
+
+      try {
+        const { setItem } = require('@react-native-async-storage/async-storage').default || require('@react-native-async-storage/async-storage');
+        await setItem(MIGRATION_KEY, 'true');
+      } catch (e) {}
 
       // CRITICAL: Android needs time for file system to sync
       // Without this, SQLite may try to open the file before it's fully written

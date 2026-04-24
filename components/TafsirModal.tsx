@@ -3,7 +3,8 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { useThemeStore } from '@/store/themeStore';
 import { LinearGradient } from 'expo-linear-gradient';
 import { X } from 'lucide-react-native';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { ActivityIndicator, Dimensions, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 interface TafsirModalProps {
@@ -29,6 +30,7 @@ export default function TafsirModal({ visible, onClose, surahId, verseNumber, su
   const translationLanguage = useSettingsStore(s => s.translationLanguage);
   const themeMode = useThemeStore(s => s.themeMode);
   const isDark = forceLightMode !== undefined ? !forceLightMode : themeMode === 'dark';
+  const startTimeRef = useRef<number | null>(null);
 
   const title = useMemo(() => `Tafsir ${surahId}:${verseNumber}`, [surahId, verseNumber]);
   const bodyMaxHeight = useMemo(() => Math.floor(Dimensions.get('window').height * 0.6), []);
@@ -58,6 +60,22 @@ export default function TafsirModal({ visible, onClose, surahId, verseNumber, su
     }
     if (visible) load();
     return () => { cancelled = true; };
+  }, [visible, surahId, verseNumber, translationLanguage]);
+
+  useEffect(() => {
+    if (visible) {
+      startTimeRef.current = Date.now();
+    } else if (startTimeRef.current) {
+      const duration = Math.round((Date.now() - startTimeRef.current) / 1000);
+      // ANALYTICS: Tafsir session duration
+      logAnalyticsEvent('tafsir_closed', {
+        surah_id: surahId,
+        verse_number: verseNumber,
+        duration_seconds: duration,
+        language: translationLanguage || 'en',
+      });
+      startTimeRef.current = null;
+    }
   }, [visible, surahId, verseNumber, translationLanguage]);
 
   return (

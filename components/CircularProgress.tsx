@@ -35,16 +35,19 @@ export default function CircularProgress({
   const strokeDashoffset = circumference - (progress / 100) * circumference;
   
   return (
-    <View style={styles.container}>
+    <TouchableOpacity 
+      style={styles.container} 
+      onPress={onInfoPress} 
+      disabled={!onInfoPress}
+      activeOpacity={0.7}
+    >
       <View style={[styles.progressContainer, { width: size, height: size }]}>
         {onInfoPress && (
-          <TouchableOpacity 
+          <View 
             style={[styles.infoButton, { bottom: -8, zIndex: 10 }]} 
-            onPress={onInfoPress}
-            hitSlop={{top: 15, bottom: 15, left: 15, right: 15}}
           >
             <Info size={18} color={progressColor || colors.primary} />
-          </TouchableOpacity>
+          </View>
         )}
         <Svg width={size} height={size} style={StyleSheet.absoluteFillObject}>
           {/* Background circle */}
@@ -89,7 +92,7 @@ export default function CircularProgress({
           of {value.split('/')[1]}
         </Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 

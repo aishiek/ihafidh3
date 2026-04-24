@@ -2,7 +2,7 @@
   "expo": {
     "name": "iHafidh",
     "slug": "ihafidh2",
-    "version": "2.0.9",
+    "version": "2.1.2",
     "orientation": "default",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
@@ -52,7 +52,7 @@
       "entitlements": {
         "aps-environment": "development"
       },
-      "buildNumber": "27",
+      "buildNumber": "29",
       "googleServicesFile": "./assets/firebase/GoogleService-Info.plist",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app needs access to your location to determine Qibla direction and to enhance fasting calendar accuracy.",
@@ -95,7 +95,8 @@
           "UIInterfaceOrientationPortraitUpsideDown",
           "UIInterfaceOrientationLandscapeLeft",
           "UIInterfaceOrientationLandscapeRight"
-        ]
+        ],
+        "FirebaseAutomaticScreenReportingEnabled": false
       },
       "runtimeVersion": {
         "policy": "sdkVersion"
@@ -103,7 +104,7 @@
     },
     "android": {
       "package": "com.ihafidh",
-      "versionCode": 37,
+      "versionCode": 40,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
@@ -134,7 +135,10 @@
             "DEFAULT"
           ]
         }
-      ]
+      ],
+      "metaData": {
+        "google_analytics_automatic_screen_reporting_enabled": "false"
+      }
     },
     "web": {
       "favicon": "./assets/images/favicon.png",

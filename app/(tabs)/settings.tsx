@@ -13,7 +13,8 @@ import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtil
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
 import { router, Stack } from 'expo-router';
-import { Bell, Calendar, Globe, MessageSquare, Music, Play, Square, User } from 'lucide-react-native';
+import { Bell, Calendar, Globe, HelpCircle, Info, MessageSquare, Music, Play, PlayCircle, Square, Star, User } from 'lucide-react-native';
+import { useAppWalkthrough } from '@/hooks/useAppWalkthrough';
 import React, { useMemo, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -22,6 +23,9 @@ const USER_NAME_KEY = 'user_name';
 export default function SettingsScreen() {
   const { theme, colorScheme, setColorScheme } = useThemeStore();
   const { userName, translationLanguage, reciterIdentifier, showTranslation, showTransliteration, fontSizeArabic, fontSizeTransliteration, fontSizeTranslation, arabicFont, setUserName, setTranslationLanguage, setReciterIdentifier, setShowTranslation, setShowTransliteration, setFontSizeArabic, setFontSizeTransliteration, setFontSizeTranslation, setArabicFont } = useSettingsStore();
+  const { resetWalkthrough } = useAppWalkthrough();
+  const setForceShowUpdateModal = useSettingsStore((s) => s.setForceShowUpdateModal);
+  const setForceShowUpdateModalMode = useSettingsStore((s) => s.setForceShowUpdateModalMode);
 
   // Mixed state management integration
   const unifiedTheme = useUnifiedTheme();
@@ -79,7 +83,6 @@ export default function SettingsScreen() {
     try {
       const trimmedName = localName.trim();
 
-      console.log('Saving user data - name before:', userName);
 
       // Update Zustand store and AsyncStorage
       setUserName(trimmedName);
@@ -90,7 +93,46 @@ export default function SettingsScreen() {
       setArabicFont(localArabicFont);
       await AsyncStorage.setItem(USER_NAME_KEY, trimmedName);
 
-      console.log('Saving user data - name after:', trimmedName);
+
+      // ANALYTICS: setting_changed (P3)
+      // Required: setting_name, new_value (cast to string)
+      try {
+        const { logAnalyticsEvent: logAE } = require('@/utils/analyticsHelper');
+        if (selectedTranslation !== translationLanguage) {
+          logAE('setting_changed', { setting_name: 'translation_language', new_value: String(selectedTranslation).substring(0, 50) });
+        }
+        if (selectedReciter !== reciterIdentifier) {
+          logAE('setting_changed', { setting_name: 'reciter', new_value: String(selectedReciter).substring(0, 50) });
+        }
+        if (localArabicFont !== arabicFont) {
+          logAE('setting_changed', { setting_name: 'arabic_font', new_value: String(localArabicFont).substring(0, 50) });
+        }
+        if (localShowTranslation !== showTranslation) {
+          logAE('setting_changed', { setting_name: 'show_translation', new_value: String(localShowTranslation) });
+        }
+        if (localShowTransliteration !== showTransliteration) {
+          logAE('setting_changed', { setting_name: 'show_transliteration', new_value: String(localShowTransliteration) });
+        }
+        
+        // ANALYTICS: onboarding_completed (P1)
+        // Prompt 7 — fire when user completes the initial setup (first name save)
+        if (!userName && trimmedName) {
+          try {
+            const { useProgressStore: _ps } = require('@/store/progressStore');
+            const revSchedule = _ps.getState()?.revisionSchedule;
+            logAE('onboarding_completed', {
+              memorization_goal: revSchedule?.versesPerDay ?? null,   // daily verse goal
+              selected_surah: revSchedule?.surahsPerWeek?.[0] ?? null, // first chosen surah (if set)
+              timestamp: new Date().toISOString(),
+            });
+          } catch {
+            // Fallback: log with only what is guaranteed to be in scope
+            logAE('onboarding_completed', {
+              timestamp: new Date().toISOString(),
+            });
+          }
+        }
+      } catch { /* analytics must never crash */ }
 
       Alert.alert(
         'Settings Saved',
@@ -106,6 +148,7 @@ export default function SettingsScreen() {
       );
     }
   };
+
 
   const sendFeedback = () => {
     const emailSubject = 'iHafidh App Feedback';
@@ -251,16 +294,18 @@ export default function SettingsScreen() {
       fontWeight: '600',
     },
     feedbackButton: {
-      backgroundColor: theme.primary,
-      borderRadius: 8,
+      backgroundColor: '#1C1C1E',
+      borderRadius: 12,
       padding: 16,
       alignItems: 'center',
       marginBottom: 12,
+      borderWidth: 1,
+      borderColor: theme.primary,
     },
     feedbackButtonText: {
-      color: '#FFFFFF',
+      color: theme.primary,
       fontSize: 16,
-      fontWeight: '600',
+      fontWeight: '700',
     },
     feedbackText: {
       fontSize: 14,
@@ -325,17 +370,17 @@ export default function SettingsScreen() {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      paddingVertical: 6,
-      paddingHorizontal: 10,
-      borderRadius: 4,
-      marginTop: 6,
-      marginBottom: 6,
+      padding: 10,
+      borderRadius: 8,
       borderWidth: 1,
-      alignSelf: 'center',
+      marginTop: 8,
+      marginBottom: 16,
+      backgroundColor: '#1C1C1E',
+      borderColor: theme.primary,
     },
     previewButtonText: {
-      color: '#FFFFFF',
-      fontSize: 13,
+      color: theme.primary,
+      fontSize: 14,
       fontWeight: '700',
     },
     languageOptionSubtext: {
@@ -465,29 +510,28 @@ export default function SettingsScreen() {
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: theme.primary,
+            backgroundColor: '#1C1C1E',
             borderRadius: 20,
             paddingVertical: 8,
-            paddingHorizontal: 16,
+            paddingHorizontal: 24,
             minWidth: 140,
             alignSelf: 'center',
-            opacity: 0.94,
-            borderWidth: 0.5,
-            borderColor: 'rgba(255,255,255,0.12)',
-            shadowColor: '#000',
+            borderWidth: 1.5,
+            borderColor: theme.primary,
+            shadowColor: theme.primary,
             shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.12,
-            shadowRadius: 3,
-            elevation: 2,
+            shadowOpacity: 0.3,
+            shadowRadius: 4,
+            elevation: 4,
           }}>
-            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Save</Text>
+            <Text style={{ color: theme.primary, fontWeight: '800', fontSize: 15, letterSpacing: 0.5 }}>Save</Text>
           </Pressable>
         </View>
       )}
 
       <Stack.Screen
         options={{
-          title: 'Settings',
+          title: 'Setup',
           headerStyle: { backgroundColor: theme.background },
           headerTintColor: theme.text,
           headerTitleStyle: { fontWeight: 'bold' },
@@ -552,19 +596,13 @@ export default function SettingsScreen() {
 
           {/* Preview Button */}
           <Pressable
-            style={[
-              styles.previewButton,
-              {
-                backgroundColor: playingReciter === selectedReciter ? '#ef4444' : theme.primary,
-                borderColor: theme.primary
-              }
-            ]}
+            style={styles.previewButton}
             onPress={playingReciter === selectedReciter ? stopPreview : playPreview}
           >
             {playingReciter === selectedReciter ? (
-              <Square size={14} color="#fff" fill="#fff" style={{ marginRight: 6 }} />
+              <Square size={14} color={theme.primary} fill={theme.primary} style={{ marginRight: 6 }} />
             ) : (
-              <Play size={14} color="#fff" fill="#fff" style={{ marginRight: 6 }} />
+              <Play size={14} color={theme.primary} fill={theme.primary} style={{ marginRight: 6 }} />
             )}
             <Text style={styles.previewButtonText}>
               {playingReciter === selectedReciter ? 'Stop' : 'Preview'}
@@ -938,7 +976,7 @@ export default function SettingsScreen() {
           {/* Fasting Notifications Status (Global Master) */}
           <View style={styles.displayOption}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Bell size={16} color={'#FFFFFF'} style={{ marginRight: 8 }} />
+              <Bell size={16} color={theme.primary} style={{ marginRight: 8 }} />
               <Text style={[styles.displayOptionText, { color: theme.text }]}>Enable Fasting Notifications</Text>
             </View>
             <Pressable
@@ -963,7 +1001,7 @@ export default function SettingsScreen() {
             onPress={() => setShowLocationSelector(true)}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Globe size={16} color={'#FFFFFF'} style={{ marginRight: 8 }} />
+              <Globe size={16} color={theme.primary} style={{ marginRight: 8 }} />
               <Text style={[styles.displayOptionText, { color: theme.text }]}>Location</Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -978,23 +1016,72 @@ export default function SettingsScreen() {
 
           {/* Navigate to full fasting settings */}
           <Pressable
-            style={[styles.feedbackButton, { backgroundColor: theme.primary, marginTop: 16 }]}
+            style={[styles.feedbackButton, { marginTop: 16 }]}
             onPress={() => router.push('/fasting/settings')}
           >
             <Text style={styles.feedbackButtonText}>Manage Fasting Settings</Text>
           </Pressable>
         </View>
 
+        {/* Help & Guide Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionTitle}>
+            <HelpCircle size={20} color={theme.primary} style={styles.sectionIcon} />
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Help & Support</Text>
+          </View>
+
+          <Text style={styles.feedbackText}>
+            Need help? Explore our feature guide or view what's new in this release.
+          </Text>
+
+          <Pressable 
+            style={styles.feedbackButton} 
+            onPress={() => router.push('/(tabs)/help')}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <HelpCircle size={18} color={theme.primary} style={{ marginRight: 10 }} />
+              <Text style={styles.feedbackButtonText}>Feature Guide</Text>
+            </View>
+          </Pressable>
+
+          <Pressable 
+            style={[styles.feedbackButton, { marginTop: 8 }]} 
+            onPress={() => {
+              setForceShowUpdateModalMode('update');
+              setForceShowUpdateModal(true);
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Info size={18} color={theme.primary} style={{ marginRight: 10 }} />
+              <Text style={styles.feedbackButtonText}>What's New</Text>
+            </View>
+          </Pressable>
+
+        </View>
+
         {/* Feedback Section */}
         <View style={styles.section}>
           <View style={styles.sectionTitle}>
             <MessageSquare size={20} color={theme.primary} style={styles.sectionIcon} />
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Feedback & Support</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Feedback</Text>
           </View>
 
           <Text style={styles.feedbackText}>
             We value your feedback! Help us improve iHafidh by sharing your thoughts, suggestions, or reporting any issues.
           </Text>
+
+          <Pressable 
+            style={[styles.feedbackButton, { marginBottom: 12 }]} 
+            onPress={() => {
+              setForceShowUpdateModalMode('rate');
+              setForceShowUpdateModal(true);
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Star size={18} color={theme.primary} fill={theme.primary} style={{ marginRight: 10 }} />
+              <Text style={styles.feedbackButtonText}>Enjoying iHafidh? Rate Us!</Text>
+            </View>
+          </Pressable>
 
           <Pressable style={styles.feedbackButton} onPress={sendFeedback}>
             <Text style={styles.feedbackButtonText}>Send Feedback</Text>
@@ -1020,7 +1107,7 @@ export default function SettingsScreen() {
             setTimeout(() => setDebugTapCount(0), 2000);
           }}
         >
-          <Text style={styles.versionText}>Ver-2.0.9</Text>
+          <Text style={styles.versionText}>Ver-2.1.2</Text>
         </Pressable>
       </ScrollView>
 

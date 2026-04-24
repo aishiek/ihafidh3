@@ -19,11 +19,9 @@ const FastingSettings: React.FC = () => {
   const fastingContext = useContext(FastingCalendarContext);
   React.useEffect(() => {
     // ANALYTICS: Fasting tab viewed
-    const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
+    const { logAnalyticsEvent} = require('@/utils/analyticsHelper');
     logAnalyticsEvent('fasting_tab_viewed', {
-      tab_name: 'settings',
-      ...getCommonParams(),
-    });
+      tab_name: 'settings',});
   }, []);
 
   if (!fastingContext) {

@@ -10,6 +10,7 @@ import { ArrowRight } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import LayoutService from '../mushaf/services/layoutService';
+import { logAnalyticsEvent } from '@/utils/analyticsHelper';
 
 export default function SurahScreen() {
   const { id: surahId } = useLocalSearchParams<{ id: string }>();
@@ -314,15 +315,24 @@ export default function SurahScreen() {
     try {
       if (isCurrentlyMemorized) {
         await bulkMarkVersesMemorized(surahVerseIds, false);
-        // Guard: ensure all individual marks are cleared
-        surahVerseIds.forEach(id => {
-          if (memorizedVerses.includes(id)) {
-            unmarkVerseAsMemorized(id);
-          }
-        });
       } else {
         await bulkMarkVersesMemorized(surahVerseIds, true);
       }
+
+      // ANALYTICS: Surah-level memorization toggle
+      const pagesCount = Math.ceil(surah.versesCount / 15); // standard estimate
+      const { getJuzForSurah } = require('@/utils/juzCalculator');
+      const juzNum = typeof getJuzForSurah === 'function' ? getJuzForSurah(surah.id) : 0;
+
+      logAnalyticsEvent('surah_memorization_toggled', {
+        action: isCurrentlyMemorized ? 'unmark_memorized' : 'mark_memorized',
+        surah_number: surah.id,
+        surah_name: surah.name || surah.englishName,
+        verses_count: surah.versesCount,
+        pages_count: pagesCount,
+        juz_number: juzNum,
+        completion_type: 'manual_bulk',
+      });
     } catch (error) {
       console.error('Failed to toggle surah memorization:', error);
       Alert.alert('Error', 'Failed to update memorization status. Please try again.');
@@ -336,12 +346,25 @@ export default function SurahScreen() {
     const isCurrentlyRevised = isSurahRevisedGlobally;
     try {
       if (isCurrentlyRevised) {
-        surahVerseIds.forEach(verseId => {
-          unmarkVerseAsRevised(verseId);
-        });
+        await bulkMarkVersesRevised(surahVerseIds, false);
       } else {
-        await bulkMarkVersesRevised(surahVerseIds);
+        await bulkMarkVersesRevised(surahVerseIds, true);
       }
+
+      // ANALYTICS: Surah-level revision toggle
+      const pagesCount = Math.ceil(surah.versesCount / 15);
+      const { getJuzForSurah } = require('@/utils/juzCalculator');
+      const juzNum = typeof getJuzForSurah === 'function' ? getJuzForSurah(surah.id) : 0;
+
+      logAnalyticsEvent('surah_revision_toggled', {
+        action: isCurrentlyRevised ? 'unmark_revised' : 'mark_revised',
+        surah_number: surah.id,
+        surah_name: surah.name || surah.englishName,
+        verses_count: surah.versesCount,
+        pages_count: pagesCount,
+        juz_number: juzNum,
+        completion_type: 'manual_bulk',
+      });
     } catch (error) {
       console.error('Failed to toggle surah revision:', error);
       Alert.alert('Error', 'Failed to update revision status. Please try again.');

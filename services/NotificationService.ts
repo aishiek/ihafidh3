@@ -7,6 +7,7 @@ import notifee, {
     TriggerType
 } from '@notifee/react-native';
 import { Platform } from 'react-native';
+import { logAnalyticsEvent } from '@/utils/analyticsHelper';
 
 // ============================================================================
 // INITIALIZATION (Call ONCE at app startup)
@@ -113,13 +114,16 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 
     if (settings.authorizationStatus >= 1) { // 1 = AUTHORIZED, 2 = PROVISIONAL
       console.log('[NotificationService] Permission granted');
+      logAnalyticsEvent('notification_permission_status', { status: 'granted' });
       return true;
     }
 
     console.log('[NotificationService] Permission denied');
+    logAnalyticsEvent('notification_permission_status', { status: 'denied' });
     return false;
-  } catch (error) {
+  } catch (error: any) {
     console.error('[NotificationService] Permission request failed:', error);
+    logAnalyticsEvent('notification_permission_status', { status: 'error', error: error?.message });
     return false;
   }
 }

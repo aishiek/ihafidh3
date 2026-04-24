@@ -4,7 +4,7 @@ import { fetchSingleVerse } from '@/services/quranApi';
 import { useBookmarkStore } from '@/store/bookmarkStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useProgressStore } from '@/store/progressStore';
-import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
+import {logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { getTodayCardVerse } from '@/utils/ayahOfTheDay';
 import { useIsFocused } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
@@ -144,7 +144,7 @@ interface AyahOfTheDayCardProps {
 }
 
 // Branded Footer Component for Share Image - Modern & Compact Design
-const BrandedFooter = ({ colors }: { colors: any }) => {
+export const BrandedFooter = ({ colors }: { colors: any }) => {
   const openPlayStore = async () => {
     const intent = 'market://details?id=com.ihafidh';
     const web = 'https://play.google.com/store/apps/details?id=com.ihafidh';
@@ -385,16 +385,14 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style, highl
       );
     } catch {}
     
-    // ANALYTICS: Track Ayah of the Day card interaction
-    logAnalyticsEvent('ayah_of_day_read', {
-      surah_id: ayah.surahId,
-      surah_name: ayah.surahName,
-      verse_number: ayah.verseNumber,
-      language: translationLang,
-      is_memorized: useProgressStore.getState().memorizedVerses.includes(ayah.verseId),
-      source: 'home_card',
-      ...getCommonParams(),
-    });
+    // ANALYTICS: ayah_of_day_read (P3)
+    // Required: surah_number, verse_number
+    try {
+      logAnalyticsEvent('ayah_of_day_read', {
+        surah_number: ayah.surahId ?? 0,
+        verse_number: ayah.verseNumber ?? 0,
+      });
+    } catch { /* analytics must never crash */ }
     
     // Replace navigation when opening a specific verse to avoid duplicate Read entries
     // After fixing FlashList keys and recycling issues, scroll to specific verse should work reliably
@@ -447,6 +445,15 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style, highl
         title: 'Share Ayah of the Day',
         message: `${ayah.surahName} • Ayah ${ayah.verseNumber}\n\nDownload iHafidh: ${storeUrl}`,
         subject: 'Ayah of the Day from iHafidh',
+      });
+
+      // ANALYTICS: Track social share
+      logAnalyticsEvent('social_share', {
+        content_type: 'ayah_of_day',
+        surah_id: ayah.surahId,
+        surah_name: ayah.surahName,
+        verse_number: ayah.verseNumber,
+        source: 'home_card',
       });
     } catch (error: any) {
       const msg = error?.message || '';

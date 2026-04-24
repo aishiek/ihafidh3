@@ -81,16 +81,18 @@ export class TajweedParser {
       }
       // 2. Check for Madd (elongation indicator)
       else if (char === this.MADD_ALIF) {
-        // Don't render the madd indicator itself, just mark previous letter as madd
-        // Mark previous segment as madd if it exists and is a madd letter
         if (segments.length > 0) {
           const prevSeg = segments[segments.length - 1];
-          if (prevSeg.text.match(/[اوي]/)) {
+          // Append dagger alif to previous segment so it stays with its base letter
+          prevSeg.text += char;
+          if (prevSeg.text.match(/[اوي\u0670]/)) {
             prevSeg.color = TAJWEED_COLORS.madd;
             prevSeg.rule = 'madd';
           }
+        } else {
+          // No previous segment — push as its own (sanitizeRunsForSkia will handle it)
+          segments.push({ text: char, color: TAJWEED_COLORS.default });
         }
-        // Skip rendering this character (don't add to segments)
         i++;
         continue;
       }

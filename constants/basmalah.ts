@@ -4,6 +4,7 @@
 
 export const BISMILLAH_ARABIC = 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';
 export const BISMILLAH_TRANSLATION_EN = 'In the name of Allah, the Entirely Merciful, the Especially Merciful.';
+export const BISMILLAH_TRANSLATION_TA_FULL = 'அளவற்ற அருளாளனும், நிகரற்ற அன்புடையோனுமாகிய அல்லாஹ்வின் திருப்பெயரால்(துவங்குகிறேன்)';
 export const BISMILLAH_AUDIO_URL = 'https://verses.quran.com/Bismillah.mp3';
 
 /**
@@ -44,6 +45,14 @@ export const BISMILLAH_WBW = [
     ms: 'Yang Maha Penyayang',
   },
 ];
+
+export function getBismillahTranslation(language: string): string {
+  const base = (language.split('.')[0] || 'en').toLowerCase();
+  if (base === 'ta') return BISMILLAH_TRANSLATION_TA_FULL;
+  if (base === 'id') return BISMILLAH_WBW.map((w) => w.id).filter(Boolean).join(' ');
+  if (base === 'ms') return BISMILLAH_WBW.map((w) => w.ms).filter(Boolean).join(' ');
+  return BISMILLAH_TRANSLATION_EN;
+}
 
 /**
  * Utility: Determines if a surah should have Bismillah prepended.

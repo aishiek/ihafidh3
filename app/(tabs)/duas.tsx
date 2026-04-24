@@ -98,11 +98,12 @@ export default function QuranicDuasScreen() {
     }, []);
 
     const navigateToDua = (dua: QuranicDua) => {
+        const globalVerseId = getVerseId(dua.surahNumber, dua.verseNumber);
         router.push({
             pathname: '/(tabs)/read', // Using the main reading tab
             params: {
                 surahId: dua.surahNumber.toString(),
-                scrollToVerse: dua.verseNumber.toString(),
+                verseId: globalVerseId.toString(),
                 verseNumberEnd: dua.verseNumberEnd ? dua.verseNumberEnd.toString() : undefined,
                 source: 'surahList', // CRITICAL: Forces Surah mode display in VerseItem
                 fromDuas: 'true'     // Track origin for back navigation cycle

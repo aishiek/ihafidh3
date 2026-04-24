@@ -1,8 +1,10 @@
 import { initDatabase, logBasicStats, runIntegrityCheck } from '@/assets/database/QuranDatabase';
 import AnnouncementModal, { AnnouncementConfig } from '@/components/AnnouncementModal';
+import AutoRotateBanner from '@/components/AutoRotateBanner';
 import CelebrationModal from '@/components/CelebrationModal';
 import { FastingCalendarProvider } from '@/components/fasting/context/FastingCalendarContext';
 import ReviewSoftPrompt from '@/components/ReviewSoftPrompt';
+import SadaqahPrompt from '@/components/SadaqahPrompt';
 import UpdateModal from '@/components/UpdateModal';
 import { LATEST_VERSION, MIN_SUPPORTED_VERSION } from '@/constants/appConfig';
 import { CelebrationProvider, useCelebration } from '@/contexts/CelebrationContext';
@@ -14,16 +16,17 @@ import type { Badge } from '@/store/badgeStore';
 import { useBadgeStore } from '@/store/badgeStore';
 import { useProgressStore } from '@/store/progressStore';
 import { useSettingsStore } from '@/store/settingsStore';
-import { getCommonParams, getScreenNameFromPath, logAnalyticsEvent, logScreenView, setUserProperties } from '@/utils/analyticsHelper';
+import { getScreenNameFromPath, logAnalyticsEvent, logScreenView, setUserProperties } from '@/utils/analyticsHelper';
 import { initializeAudio } from '@/utils/audioUtils';
 import { getTodayCardVerse } from '@/utils/ayahOfTheDay';
 import { initGlobalErrorHandlers } from '@/utils/globalErrorHandlers';
 import { fetchRemoteVersionConfig, getEffectiveVersionConfig, type RemoteVersionConfig } from '@/utils/remoteVersion';
-import { canPromptNative, trackAppOpenAndCheckTrigger } from '@/utils/reviewPrompt';
+import { canPromptNative, trackAppOpenAndCheckTrigger, shouldShowReviewPrompt, openReview } from '@/utils/reviewPrompt';
 import { runTurboModuleProbe } from '@/utils/turboModuleProbe';
 import { getCurrentVersion, isVersionLower } from '@/utils/versionUtils';
 import notifee, { EventType } from '@notifee/react-native';
 import * as Font from 'expo-font';
+import { CopilotProvider } from 'react-native-copilot';
 import { Stack, router, usePathname } from 'expo-router';
 import React, { Component, ReactNode } from 'react';
 import { ActivityIndicator, AppState, AppStateStatus, Platform, Text, View } from 'react-native';
@@ -84,9 +87,9 @@ async function loadAppFontsOnce() {
   let kfgqpcAsset: any | null = null;
   try {
     // @ts-ignore: Metro resolve guarded
-    kfgqpcAsset = require('../assets/fonts/UthmanicHafs_V22.ttf');
+    kfgqpcAsset = require('../assets/fonts/UthmanicHafs1.otf');
   } catch (e: any) {
-    console.warn('[fonts] UthmanicHafs_V22.ttf not found in assets/fonts – skipping optional font');
+    console.warn('[fonts] UthmanicHafs1.otf not found in assets/fonts – skipping optional font');
   }
 
   const fontMap: Record<string, any> = {
@@ -157,7 +160,7 @@ function RootLayoutContent() {
   const [showAnnouncement, setShowAnnouncement] = React.useState(false);
   const [announcement, setAnnouncement] = React.useState<AnnouncementConfig | null>(null);
   const [showReviewSoftPrompt, setShowReviewSoftPrompt] = React.useState(false);
-  const [currentVersion, setCurrentVersion] = React.useState('2.0.9');
+  const [currentVersion, setCurrentVersion] = React.useState('2.1.2');
   const [latestVersion, setLatestVersion] = React.useState<string | null>(null);
   const [releaseNotes, setReleaseNotes] = React.useState<string[] | undefined>(undefined);
   const [iosAppIdOverride, setIosAppIdOverride] = React.useState<string | null>(null);
@@ -168,6 +171,28 @@ function RootLayoutContent() {
   const revisionReminderSettings = useSettingsStore(s => s.revisionReminderSettings);
   const lastSeenVersion = useSettingsStore(s => s.lastSeenVersion);
   const setLastSeenVersion = useSettingsStore(s => s.setLastSeenVersion);
+  const forceShowUpdateModal = useSettingsStore(s => s.forceShowUpdateModal);
+  const setForceShowUpdateModal = useSettingsStore(s => s.setForceShowUpdateModal);
+  const forceShowUpdateModalMode = useSettingsStore(s => s.forceShowUpdateModalMode);
+  const setForceShowUpdateModalMode = useSettingsStore(s => s.setForceShowUpdateModalMode);
+
+  const reviewPromptState = useSettingsStore(s => s.reviewPromptState);
+  const reviewPromptSessionShown = useSettingsStore(s => s.reviewPromptSessionShown);
+  const setReviewPromptState = useSettingsStore(s => s.setReviewPromptState);
+  const setReviewPromptSessionShown = useSettingsStore(s => s.setReviewPromptSessionShown);
+  const sadaqahPromptVisible = useSettingsStore(s => s.sadaqahPromptVisible);
+  const sadaqahPromptTrigger = useSettingsStore(s => s.sadaqahPromptTrigger);
+  const triggerSadaqahPrompt = useSettingsStore(s => s.triggerSadaqahPrompt);
+  const closeSadaqahPrompt = useSettingsStore(s => s.closeSadaqahPrompt);
+
+  // "What's New" button in Settings sets forceShowUpdateModal → show modal immediately
+  React.useEffect(() => {
+    if (forceShowUpdateModal) {
+      setForceShowUpdateModal(false);
+      setForcedUpdate(false);   // treat as soft/announcement, not a forced upgrade
+      setShowUpdatePrompt(true);
+    }
+  }, [forceShowUpdateModal]);
 
   // Global celebration hook - available on all screens
   const {
@@ -205,7 +230,7 @@ function RootLayoutContent() {
   // ANALYTICS: App Lifecycle - App Open
   // ==========================================
   React.useEffect(() => {
-    logAnalyticsEvent('app_open', getCommonParams());
+    logAnalyticsEvent('app_open');
     // Track consecutive opens and show the soft review prompt on the 7th consecutive day
     (async () => {
       try {
@@ -222,17 +247,24 @@ function RootLayoutContent() {
   // ==========================================
   React.useEffect(() => {
     const initUserProperties = async () => {
-      const totalMemorized = useProgressStore.getState().memorizedVerses.length;
-      const preferredFont = useSettingsStore.getState().arabicFont;
-      const preferredLanguage = useSettingsStore.getState().translationLanguage;
+      // Ensure hydration is complete to avoid sending 0s for user properties on cold launch
+      const isHydrated = () => 
+        useProgressStore.persist.hasHydrated() && 
+        useSettingsStore.persist.hasHydrated();
 
-      await setUserProperties({
-        memorization_level: getMemorizationLevel(totalMemorized),
-        preferred_font: preferredFont,
-        preferred_language: preferredLanguage,
-        user_type: totalMemorized > 0 ? 'active_learner' : 'new_user',
-        os: Platform.OS,
-      });
+      if (!isHydrated()) {
+        const interval = setInterval(() => {
+          if (isHydrated()) {
+            clearInterval(interval);
+            const { syncFirebaseUserProperties } = require('@/utils/analyticsHelper');
+            syncFirebaseUserProperties();
+          }
+        }, 100);
+        setTimeout(() => clearInterval(interval), 5000); // Failsafe
+      } else {
+        const { syncFirebaseUserProperties } = require('@/utils/analyticsHelper');
+        syncFirebaseUserProperties();
+      }
     };
 
     initUserProperties();
@@ -574,6 +606,16 @@ function RootLayoutContent() {
     if (!data) return;
     console.log('[NotificationInteraction] Handling:', data);
 
+    // ANALYTICS: notification_open (P3)
+    // Required: notification_type, surah_number (if applicable)
+    try {
+      const { logAnalyticsEvent } = require('@/utils/analyticsHelper');
+      logAnalyticsEvent('notification_open', {
+        notification_type: data.type || 'unknown',
+        surah_number: data.surahId || 0,
+      });
+    } catch { /* analytics must never crash */ }
+
     switch (data.type) {
       case 'daily_ayah':
       case 'daily-ayah': {
@@ -581,7 +623,7 @@ function RootLayoutContent() {
           const surahId = data.surahId || getTodayCardVerse(new Date()).surahId;
           const verseId = data.verseNumber || getTodayCardVerse(new Date()).verseNumber;
           const qs = `?highlightAyah=1&surahId=${surahId}&verseId=${verseId}`;
-          try { router.replace(`/${qs}`); } catch { router.push(`/${qs}`); }
+          try { router.replace(`/(tabs)/index${qs}`); } catch { router.push(`/(tabs)/index${qs}`); }
         } else {
           const today = getTodayCardVerse(new Date());
           try { router.replace(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); } catch { router.push(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); }
@@ -676,10 +718,10 @@ function RootLayoutContent() {
           await logBasicStats('[foreground]');
 
           // ANALYTICS: App foregrounded
-          logAnalyticsEvent('app_foregrounded', getCommonParams());
+          logAnalyticsEvent('app_foregrounded');
         } else if (next === 'background') {
           // ANALYTICS: App backgrounded
-          logAnalyticsEvent('app_backgrounded', getCommonParams());
+          logAnalyticsEvent('app_backgrounded');
         }
       } catch (e) {
         console.log('[db] lifecycle handler error', e);
@@ -691,11 +733,18 @@ function RootLayoutContent() {
 
   // ==========================================
   // ANALYTICS: Screen View Tracking
+  // Expo Router exposes its NavigationContainer ref via useNavigationContainerRef.
+  // We mirror the NavigationContainer onStateChange pattern from the Firebase docs,
+  // ==========================================
+  // Analytics: Automatic Screen Tracking
   // ==========================================
   const pathname = usePathname();
+
   React.useEffect(() => {
-    const screenName = getScreenNameFromPath(pathname);
-    logScreenView(screenName);
+    if (pathname) {
+      const screenName = getScreenNameFromPath(pathname);
+      logScreenView(screenName).catch(() => {});
+    }
   }, [pathname]);
 
   try {
@@ -721,6 +770,7 @@ function RootLayoutContent() {
       <RootErrorBoundary>
         <FastingCalendarProvider>
           <View style={{ flex: 1, backgroundColor: '#1a1a1a' }}>
+            <AutoRotateBanner />
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
               <Stack.Screen 
@@ -738,11 +788,16 @@ function RootLayoutContent() {
               forced={forcedUpdate}
               currentVersion={currentVersion}
               latestVersion={latestVersion}
+              mode={forceShowUpdateModalMode}
               onClose={() => {
                 if (latestVersion) {
                   setLastDismissedVersion(latestVersion);
                 }
                 setShowUpdatePrompt(false);
+                // Delay mode reset to avoid flickering during fade-out
+                setTimeout(() => {
+                  setForceShowUpdateModalMode('whats_new');
+                }, 500);
               }}
               releaseNotes={releaseNotes}
               iosAppIdOverride={iosAppIdOverride}
@@ -763,9 +818,44 @@ function RootLayoutContent() {
               type={celebrationType}
               customMessage={customMessage}
               badgeName={badgeName}
-              onComplete={hideCelebration}
+              onComplete={() => {
+                hideCelebration();
+                if (celebrationType === 'badge-unlocked' || badgeName) {
+                  // After celebration, check if we should show the review prompt
+                  setTimeout(() => {
+                    if (shouldShowReviewPrompt(reviewPromptState, reviewPromptSessionShown)) {
+                      triggerSadaqahPrompt('badge_unlocked');
+                    }
+                  }, 1500);
+                }
+              }}
             />
             <ReviewSoftPrompt visible={showReviewSoftPrompt} onClose={() => setShowReviewSoftPrompt(false)} />
+            <SadaqahPrompt
+              visible={sadaqahPromptVisible}
+              trigger={sadaqahPromptTrigger || 'first_quiz'}
+              onClose={async (didRate, neverAskAgain) => {
+                closeSadaqahPrompt();
+                setReviewPromptSessionShown(true);
+                
+                if (didRate) {
+                  logAnalyticsEvent('review_prompt_tapped', { trigger: sadaqahPromptTrigger });
+                  setReviewPromptState({ hasRated: true });
+                  await openReview();
+                } else {
+                  logAnalyticsEvent('review_prompt_dismissed', { trigger: sadaqahPromptTrigger });
+                  if (neverAskAgain) {
+                    setReviewPromptState({ hasRated: true }); // treat "never ask again" as hasRated so we don't ask
+                  } else {
+                    setReviewPromptState({ 
+                      lastShownAt: Date.now(),
+                      lastDismissedAt: Date.now(),
+                      shownCount: (reviewPromptState.shownCount || 0) + 1
+                    });
+                  }
+                }
+              }}
+            />
           </View>
         </FastingCalendarProvider>
       </RootErrorBoundary>

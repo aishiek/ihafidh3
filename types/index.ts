@@ -33,6 +33,7 @@ export interface Verse {
     revelationType: string;
   };
   hasBismillahPrefix?: boolean;
+  surahName?: string;
 }
 
 export interface QuizQuestion {

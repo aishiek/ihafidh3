@@ -5,7 +5,7 @@ import { getOrSetInstallDate } from '@/utils/installDate';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
-import Svg, { Circle, Line, Path, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, G, Line, Path, Text as SvgText, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
@@ -202,7 +202,7 @@ export default function LifetimeProgressCard() {
   const height = 220;
   const pad = {
     top: 20,
-    right: 20,
+    right: 40, // Increased to prevent max-date label clipping
     bottom: 40,
     left: Math.max(45, availableWidth * 0.12)
   };
@@ -216,12 +216,12 @@ export default function LifetimeProgressCard() {
     ? Math.max(minDayWidth, chartContentWidth / (effectivePointCount - 1))
     : maxDayWidth;
 
-  // Chart dimensions
-  const totalChartWidth = effectivePointCount * dayWidth;
-  const needsHorizontalScroll = dayWidth <= minDayWidth && totalChartWidth > availableWidth - pad.left - pad.right;
+  // Chart dimensions - exact width needed for all points plus padding
+  const totalChartWidth = pad.left + (effectivePointCount > 0 ? (effectivePointCount - 1) * dayWidth : 0) + pad.right;
+  const needsHorizontalScroll = totalChartWidth > availableWidth;
 
   const chartWidth = needsHorizontalScroll
-    ? totalChartWidth + 80
+    ? totalChartWidth
     : availableWidth;
 
   // Layout - responsive dimensions
@@ -336,8 +336,8 @@ export default function LifetimeProgressCard() {
           bounces={false}
           style={{ marginTop: 12 }}
         >
-          <View style={{ width: chartWidth }}>
-            <Svg width={chartWidth} height={height}>
+          <View style={{ width: chartWidth + 20 /* Add safe buffer to right side */ }}>
+            <Svg width={chartWidth + 20} height={height}>
               <Defs>
                 <LinearGradient id="memGradient" x1="0" y1="0" x2="0" y2="1">
                   <Stop offset="0%" stopColor={colors.primary} stopOpacity="0.3" />
@@ -420,33 +420,53 @@ export default function LifetimeProgressCard() {
                 return <Circle key={`r-dot-${index}`} cx={x} cy={y} r={3.5} fill={colors.accent} />;
               })}
 
-              {/* Revised Activity markers */}
+              {/* Revised Activity markers (Small dots for activity days) */}
               {showRevisedLine && effectiveRevPoints.filter(p => p.hasActivity).map((point, index) => {
                 const x = pad.left + effectiveRevPoints.indexOf(point) * dayWidth;
                 const y = yScale(point.total);
                 return <Circle key={`r-dot-${index}`} cx={x} cy={y} r={3} fill={colors.accent} />;
               })}
-            </Svg>
 
-            {/* X-axis labels */}
-            <View style={styles.labelsRow}>
-              <View style={{ flex: 1, alignItems: 'flex-start' }}>
-                <Text style={[styles.axisLabel, { color: colors.textSecondary, fontSize: 10 }]}>
-                  {effectiveMemPoints.length > 0
-                    ? new Date(effectiveMemPoints[0].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                    : ''
-                  }
-                </Text>
-              </View>
-              <View style={{ flex: 1, alignItems: 'flex-end', paddingRight: 4 }}>
-                <Text style={[styles.axisLabel, { color: colors.textSecondary, fontSize: 10 }]}>
-                  {effectiveMemPoints.length > 0
-                    ? new Date(effectiveMemPoints[effectiveMemPoints.length - 1].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                    : ''
-                  }
-                </Text>
-              </View>
-            </View>
+              {/* X-axis labels (Start, Middle, End) inside SVG for perfect alignment */}
+              {effectiveMemPoints.length > 1 && (
+                <G>
+                  {/* Start Date */}
+                  <SvgText
+                    x={pad.left}
+                    y={height - 5}
+                    fontSize={10}
+                    fill={colors.textSecondary}
+                    textAnchor="start"
+                  >
+                    {new Date(effectiveMemPoints[0].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </SvgText>
+
+                  {/* Middle Date (Only if we have ample padding and points) */}
+                  {effectiveMemPoints.length > 25 && needsHorizontalScroll && (
+                    <SvgText
+                      x={pad.left + Math.floor(effectiveMemPoints.length / 2) * dayWidth}
+                      y={height - 5}
+                      fontSize={10}
+                      fill={colors.textSecondary}
+                      textAnchor="middle"
+                    >
+                      {new Date(effectiveMemPoints[Math.floor(effectiveMemPoints.length / 2)].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </SvgText>
+                  )}
+
+                  {/* End Date */}
+                  <SvgText
+                    x={pad.left + (effectiveMemPoints.length - 1) * dayWidth}
+                    y={height - 5}
+                    fontSize={10}
+                    fill={colors.textSecondary}
+                    textAnchor="end"
+                  >
+                    {new Date(effectiveMemPoints[effectiveMemPoints.length - 1].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </SvgText>
+                </G>
+              )}
+            </Svg>
           </View>
         </ScrollView>
       )}
@@ -468,11 +488,4 @@ const styles = StyleSheet.create({
   legendValue: { fontSize: 12, marginLeft: 2 },
   emptyBox: { height: 160, justifyContent: 'center', alignItems: 'center' },
   emptyText: { fontSize: 14, fontStyle: 'italic' },
-  labelsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingTop: 8,
-    paddingHorizontal: 20 // Add horizontal padding to align with chart padding
-  },
-  axisLabel: { fontSize: 10 },
 });

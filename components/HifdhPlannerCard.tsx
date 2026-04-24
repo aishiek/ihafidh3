@@ -98,6 +98,21 @@ export default function HifdhPlannerCard() {
     return { total, completed, percent: total ? Math.round((completed / total) * 100) : 0 };
   }, [entries, memorizedVerses, revised]);
 
+  const hasAnyPlans = useMemo(() => {
+    return Object.values(plansByDate).some((arr) => arr.length > 0);
+  }, [plansByDate]);
+
+  const suggestedSurah = useMemo(() => {
+    let startId = 0;
+    for (const s of surahsData) {
+      // Fast check: count how many memorized verses fall into this surah
+      const memorizedInSurah = memorizedVerses.filter(v => v > startId && v <= startId + s.versesCount).length;
+      if (memorizedInSurah < s.versesCount) return s;
+      startId += s.versesCount;
+    }
+    return surahsData[0];
+  }, [memorizedVerses]);
+
   const monthSummary = useMemo(() => {
     const now = new Date();
     const month = now.getMonth();
@@ -231,7 +246,22 @@ export default function HifdhPlannerCard() {
 
       <View style={{ marginTop: 8 }}>
         {entries.length === 0 ? (
-          <Text style={styles.emptyText}>No plans for this day. Add one below.</Text>
+          !hasAnyPlans ? (
+            <View style={styles.emptyStateContainer}>
+              <Text style={styles.emptyStateTitle}>Ready to begin your journey?</Text>
+              <Text style={styles.emptyText}>Pick a surah to start planning your next 7 days.</Text>
+              <TouchableOpacity 
+                style={styles.suggestedBtn}
+                onPress={() => {
+                  addPlan(selectedDate, { surahId: suggestedSurah.id, startVerse: 1, endVerse: suggestedSurah.versesCount }, { trigger: 'manual', method: 'surah' });
+                }}
+              >
+                <Text style={styles.suggestedBtnText}>Start with {suggestedSurah.englishName}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <Text style={styles.emptyText}>No plans for this day. Add one below.</Text>
+          )
         ) : (
           entries.map((p) => {
             const s = computeEntryStatus(p.surahId, p.startVerse, p.endVerse);
@@ -278,7 +308,11 @@ const styles = StyleSheet.create({
   overallRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
   overallText: { color: '#ddd' },
   overallPct: { color: '#fff', fontWeight: '700' },
-  emptyText: { color: '#aaa', fontStyle: 'italic', marginTop: 8 },
+  emptyStateContainer: { padding: 16, backgroundColor: '#1f1f1f', borderRadius: 12, alignItems: 'center', marginTop: 8 },
+  emptyStateTitle: { color: '#fff', fontSize: 16, fontWeight: '600', marginBottom: 4 },
+  emptyText: { color: '#aaa', fontStyle: 'italic', marginTop: 8, textAlign: 'center' },
+  suggestedBtn: { marginTop: 16, paddingVertical: 10, paddingHorizontal: 16, backgroundColor: '#333', borderRadius: 20, borderWidth: 1, borderColor: '#444' },
+  suggestedBtnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
   entryRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 12, backgroundColor: '#1f1f1f', borderRadius: 10, marginTop: 8, borderWidth: 1, borderColor: 'transparent' },
   entryTitle: { color: '#fff', fontWeight: '600' },
   entryMeta: { color: '#bbb', fontSize: 12, marginTop: 2 },

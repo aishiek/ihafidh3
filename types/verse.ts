@@ -9,6 +9,8 @@ export interface Verse {
   audioUrl?: string;
   isMemorized?: boolean;
   isRevised?: boolean;
+  pageNumber?: number;
+  surahName?: string;
 }
 
 export interface VerseStatus {

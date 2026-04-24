@@ -109,7 +109,7 @@ const openDb = async () => {
       return null;
     }
     db = SQLite.openDatabaseSync('quran.db');
-    console.log('[bookmarkStore] Database opened');
+    if (__DEV__) console.log('[bookmarkStore] Database opened');
     return db;
   } catch (e) {
     console.warn('[bookmarkStore] Failed to open DB', e);
@@ -147,7 +147,7 @@ const ensureSchema = async () => {
           );
           CREATE INDEX IF NOT EXISTS idx_bookmarks_verseId ON bookmarks(verseId);
         `);
-        console.log('[bookmarkStore] Created bookmarks table and index');
+        if (__DEV__) console.log('[bookmarkStore] Created bookmarks table and index');
       }
     } else {
       // Table exists - check if we need to add new columns for migration
@@ -161,7 +161,7 @@ const ensureSchema = async () => {
         if (!columnNames.includes('source')) {
           if ('execAsync' in _db && typeof _db.execAsync === 'function') {
             await _db.execAsync(`ALTER TABLE bookmarks ADD COLUMN source TEXT;`);
-            console.log('[bookmarkStore] Added source column');
+            if (__DEV__) console.log('[bookmarkStore] Added source column');
           }
         }
         
@@ -169,7 +169,7 @@ const ensureSchema = async () => {
         if (!columnNames.includes('juzNumber')) {
           if ('execAsync' in _db && typeof _db.execAsync === 'function') {
             await _db.execAsync(`ALTER TABLE bookmarks ADD COLUMN juzNumber INTEGER;`);
-            console.log('[bookmarkStore] Added juzNumber column');
+            if (__DEV__) console.log('[bookmarkStore] Added juzNumber column');
           }
         }
       }
@@ -178,7 +178,7 @@ const ensureSchema = async () => {
       if ('execAsync' in _db && typeof _db.execAsync === 'function') {
         await _db.execAsync(`CREATE INDEX IF NOT EXISTS idx_bookmarks_verseId ON bookmarks(verseId);`);
       }
-      console.log('[bookmarkStore] Bookmarks table exists');
+      if (__DEV__) console.log('[bookmarkStore] Bookmarks table exists');
     }
     return true;
   } catch (e) {
@@ -210,7 +210,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
       );
       const setIds = new Set((rows || []).map(r => r.verseId));
       set({ bookmarks: rows || [], bookmarksSet: setIds, initialized: true });
-      console.log(`[bookmarkStore] Initialization complete (${rows?.length || 0} rows)`);
+      if (__DEV__) console.log(`[bookmarkStore] Initialization complete (${rows?.length || 0} rows)`);
     } catch (e) {
       console.warn('[bookmarkStore] init failed', e);
       set({ initialized: true });
@@ -227,7 +227,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
       );
       const setIds = new Set((rows || []).map(r => r.verseId));
       set({ bookmarks: rows || [], bookmarksSet: setIds, initialized: true });
-      console.log(`[bookmarkStore] Reloaded (${rows?.length || 0} rows)`);
+      if (__DEV__) console.log(`[bookmarkStore] Reloaded (${rows?.length || 0} rows)`);
     } catch (e) {
       console.warn('[bookmarkStore] reload failed', e);
     }
@@ -241,7 +241,7 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
         `DELETE FROM bookmarks WHERE datetime(createdAt) < datetime('now', ?)`,
         [`-${days} days`]
       );
-      console.log(`[bookmarkStore] Cleanup complete (older than ${days} days)`);
+      if (__DEV__) console.log(`[bookmarkStore] Cleanup complete (older than ${days} days)`);
       // optional refresh
       await get().reloadBookmarks();
     } catch (e) {
@@ -306,19 +306,19 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
         });
         scheduleFlushAdds();
       });
-      console.log('[bookmarkStore] addBookmark queued');
+      if (__DEV__) console.log('[bookmarkStore] addBookmark queued');
 
-      // ANALYTICS: Bookmark added
-      const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
-      logAnalyticsEvent('bookmark_added', {
-        verse_id: verseId,
-        surah_id: surahId,
-        surah_name: surahName,
-        verse_number: verseNumber,
-        source: source || 'unknown',
-        juz_number: juzNumber || null,
-        ...getCommonParams(),
-      });
+      // ANALYTICS: bookmark_added — aggregate stats only, no surah name to reduce noise
+      const { logAnalyticsEvent} = require('@/utils/analyticsHelper');
+      try {
+        logAnalyticsEvent('bookmark_added', {
+          surah_number: surahId ?? 0,
+          verse_number: verseNumber ?? 0,
+          source: source || 'unknown',
+          juz_number: juzNumber || 0,
+          total_count: get().bookmarksSet.size,
+        });
+      } catch { /* analytics must never crash */ }
     } catch (e) {
       console.warn('[bookmarkStore] add failed', e);
     }
@@ -335,15 +335,16 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
         const item = state.bookmarks.find(b => b.verseId === verseId);
         updatedSet.delete(verseId);
 
-        // ANALYTICS: Bookmark removed
-        const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
-        logAnalyticsEvent('bookmark_removed', {
-          verse_id: verseId,
-          surah_id: item?.surahId || null,
-          surah_name: item?.surahName || 'unknown',
-          verse_number: item?.verseNumber || null,
-          ...getCommonParams(),
-        });
+        // ANALYTICS: bookmark_removed — aggregate stats only, no surah name
+        const { logAnalyticsEvent} = require('@/utils/analyticsHelper');
+        try {
+          logAnalyticsEvent('bookmark_removed', {
+            surah_number: item?.surahId || 0,
+            verse_number: item?.verseNumber || 0,
+            source: item?.source || 'unknown',
+            total_count: updatedSet.size,
+          });
+        } catch { /* analytics must never crash */ }
 
         return { bookmarks: state.bookmarks.filter(b => b.verseId !== verseId), bookmarksSet: updatedSet };
       });

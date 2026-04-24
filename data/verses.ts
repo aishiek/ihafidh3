@@ -85,6 +85,7 @@ export async function getVersesBySurah(
       translation: rv.translation || '',
       transliteration: rv.transliteration,
       juzNumber: rv.part_id,
+      pageNumber: rv.page_id ? Number(rv.page_id) : undefined,
     }));
 
     // 3. Apply stripping and audio logic

@@ -1,5 +1,5 @@
 import { AVAILABLE_LAYOUTS } from '@/types/layout';
-import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
+import {logAnalyticsEvent } from '@/utils/analyticsHelper';
 import RNFS from 'react-native-fs';
 import { unzip } from 'react-native-zip-archive';
 import { MUSHAF_CACHE_DIR } from '../utils/mushafConstants';
@@ -595,9 +595,7 @@ class MushafDownloadService {
         logAnalyticsEvent('mushaf_download_completed', {
           layout_id: layoutId,
           layout_name: layout?.layout_name || layoutId,
-          total_pages: counts.count,
-          ...getCommonParams(),
-        });
+          total_pages: counts.count,});
         
         onProgress?.({ total: 1, current: 1, percentage: 100, stage: 'complete', statusMessage: 'Download complete! ✅' });
       }

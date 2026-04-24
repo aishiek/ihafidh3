@@ -139,6 +139,11 @@ export default function MonthlyHifdhCalendar() {
     });
   };
 
+  React.useEffect(() => {
+    const { logAnalyticsEvent} = require('@/utils/analyticsHelper');
+    logAnalyticsEvent('hifdh_planner_opened', {});
+  }, []);
+
   return (
     <View style={styles.wrapper}>
       {/* Calendar Card - match revision theme */}

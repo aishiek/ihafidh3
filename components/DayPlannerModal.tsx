@@ -224,7 +224,7 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
           <Pressable
             style={({ pressed }) => ({
               flex: 1,
-              marginHorizontal: 4,
+              marginHorizontal: 2,
               paddingVertical: 9,
               borderRadius: 8,
               alignItems: 'center',
@@ -234,14 +234,42 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
             })}
             onPress={() => setPickerVisible(true)}
           >
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff' }}>
-              Add Plan
-            </Text>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#ffffff' }}>Add</Text>
           </Pressable>
+          
           <Pressable
             style={({ pressed }) => ({
               flex: 1,
-              marginHorizontal: 4,
+              marginHorizontal: 2,
+              paddingVertical: 9,
+              borderRadius: 8,
+              alignItems: 'center',
+              backgroundColor: pressed ? '#333333' : '#000000',
+              borderColor: '#4ade80',
+              borderWidth: 1,
+            })}
+            onPress={async () => {
+              if (!dateISO) return;
+              await handleMarkCompleted();
+              const { logAnalyticsEvent } = require('@/utils/analyticsHelper');
+              logAnalyticsEvent('hifdh_task_completed', {
+                task_category: 'daily',
+                entity_id: dateISO,
+                date: dateISO,
+                verses_count: uniqueVerses.size,
+              });
+              Alert.alert('Success', 'All planned verses marked as completed.');
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#ffffff' }}>Mark Done</Text>
+            </View>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => ({
+              flex: 1,
+              marginHorizontal: 2,
               paddingVertical: 9,
               borderRadius: 8,
               alignItems: 'center',
@@ -251,27 +279,26 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
             })}
             onPress={() => setCopyModalVisible(true)}
           >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Copy size={14} color="#3b82f6" />
-              <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff' }}>Copy</Text>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#ffffff' }}>Copy</Text>
             </View>
           </Pressable>
+
           <Pressable
             style={({ pressed }) => ({
               flex: 1,
-              marginHorizontal: 4,
+              marginHorizontal: 2,
               paddingVertical: 9,
               borderRadius: 8,
               alignItems: 'center',
               backgroundColor: pressed ? '#333333' : '#000000',
-              borderColor: '#8b5cf6',
+              borderColor: '#ef4444',
               borderWidth: 1,
             })}
             onPress={() => { if (dateISO) (plansByDate[dateISO] || []).forEach(p => removePlan(dateISO, p.id)); }}
           >
-            <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff' }}>
-              Reset
-            </Text>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#ffffff' }}>Reset</Text>
           </Pressable>
         </View>
 

@@ -1,4 +1,4 @@
-import notifee, { AndroidImportance } from '@notifee/react-native';
+import notifee, { AndroidImportance, AndroidStyle } from '@notifee/react-native';
 import messaging from '@react-native-firebase/messaging';
 import { PermissionsAndroid, Platform } from 'react-native';
 
@@ -153,6 +153,10 @@ export class PushNotificationService {
                         // High priority ensures heads-up notification
                         importance: AndroidImportance.HIGH,
                         pressAction: { id: 'default' },
+                        style: {
+                            type: AndroidStyle.BIGTEXT,
+                            text: remoteMessage.notification?.body || ''
+                        }
                     },
                     ios: {
                         sound: 'default',

@@ -73,17 +73,17 @@ export const useQuranStore = create<QuranState>((set, get) => ({
   initializeDatabase: async () => {
     const state = get();
     if (state.isInitialized) {
-      console.log("Database already initialized");
+      if (__DEV__) console.log("Database already initialized");
       return;
     }
     
     try {
-      console.log("Initializing Quran database...");
+      if (__DEV__) console.log("Initializing Quran database...");
       set({ isLoading: true, error: null });
       
-      console.log("Initializing SQLite database...");
+      if (__DEV__) console.log("Initializing SQLite database...");
       await initDatabase();
-      console.log("Database initialized successfully");
+      if (__DEV__) console.log("Database initialized successfully");
       
       set({ isInitialized: true, isLoading: false });
       

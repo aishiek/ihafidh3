@@ -15,7 +15,7 @@ import { Canvas, Paragraph, Skia, TextAlign, TextDirection, useFonts } from '@sh
 // ... (rest of imports)
 
 import React, { useMemo, useState } from 'react';
-import { Text as RNText, StyleProp, TextStyle, View } from 'react-native';
+import { Text as RNText, StyleProp, TextStyle, View, Platform } from 'react-native';
 
 /**
  * Detects if text starts with combining mark (production-safe for Skia)
@@ -679,12 +679,16 @@ const TajweedText: React.FC<TajweedTextProps> = ({
       builder.pushStyle({
         color: Skia.Color(segment.color),
         fontSize: fontSize,
-        fontFamilies: ['QuranicFont'],
+        fontFamilies: ['QuranicFont', 'sans-serif'],
         heightMultiplier: heightMultiplier, // Apply calculated line-height ratio
       });
-      // Safe to add directly - sanitizeRunsForSkia ensures no combining mark starts
-      builder.addText(segment.text);
-      totalTextLength += segment.text.length;
+      // Fix Android ligature swallowing: isolate U+06DD so it doesn't combine with preceding grapheme
+      let textToAdd = segment.text;
+      if (Platform.OS === 'android' && textToAdd.includes('\u06DD')) {
+        textToAdd = textToAdd.replace('\u06DD', '\u200C\u06DD');
+      }
+      builder.addText(textToAdd);
+      totalTextLength += textToAdd.length;
       builder.pop();
     });
 
@@ -694,7 +698,7 @@ const TajweedText: React.FC<TajweedTextProps> = ({
 
     // Calculate overlay position for decorative verse numbers (Tajweed mode)
     let overlay = null;
-    if (verseNumber && mushafText.endsWith('\u06DD')) {
+    if (Platform.OS === 'ios' && verseNumber && mushafText.endsWith('\u06DD')) {
       try {
         // Find position of the last character (the glyph ۝)
         const rects = p.getRectsForRange(totalTextLength - 1, totalTextLength);
@@ -704,22 +708,41 @@ const TajweedText: React.FC<TajweedTextProps> = ({
           // Create small paragraph for digits to handle perfect centering inside frame
           const digits = _toArabicDigits(verseNumber);
           const digitFontSize = digits.length > 2 ? fontSize * 0.35 : fontSize * 0.45;
+          const digitCount = digits.length;
 
-          const dBuilder = Skia.ParagraphBuilder.Make({ textAlign: TextAlign.Center }, fontMgr);
+          const dBuilder = Skia.ParagraphBuilder.Make({ 
+            textAlign: TextAlign.Center,
+            maxLines: 1,
+            // Android needs strutStyle to force single line height and prevent vertical stacking
+            ...(Platform.OS === 'android' ? {
+              ellipsis: '',        // prevent visual artifacts if it decides to overflow
+              strutStyle: {
+                strutEnabled: true,
+                forceStrutHeight: true,
+                fontSize: digitFontSize,
+                heightMultiplier: 1.0, // tight single line
+              }
+            } : {})
+          }, fontMgr);
+
           dBuilder.pushStyle({
             color: Skia.Color('#ffffff'), // Match standard text color
             fontSize: digitFontSize,
-            fontFamilies: ['QuranicFont'],
+            fontFamilies: ['QuranicFont', 'sans-serif'],
           });
           dBuilder.addText(digits);
           const dp = dBuilder.build();
-          dp.layout(glyphRect.width);
+          
+          // Android Skia often wraps too early, so we scale width based on digit count
+          const layoutWidth = digitFontSize * digitCount * 2.2;
+          dp.layout(layoutWidth);
 
           overlay = {
             para: dp,
-            x: glyphRect.x,
-            // Center digits vertically within glyph box with small optical adjustment
-            y: glyphRect.y + (glyphRect.height - dp.getHeight()) / 2 + (fontSize * 0.04),
+            // Re-center the x position after layout width change (true center)
+            x: glyphRect.x + (glyphRect.width / 2) - (layoutWidth / 2),
+            // Center digits vertically within glyph box
+            y: glyphRect.y + (glyphRect.height - dp.getHeight()) / 2,
           };
         }
       } catch (e) {

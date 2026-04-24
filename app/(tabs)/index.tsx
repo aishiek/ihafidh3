@@ -1,7 +1,8 @@
 import { MushafDownloadCard } from '@/app/mushaf/components/MushafDownloadCard';
 import { getJuzProgress } from '@/assets/database/QuranDatabase';
-import AyahOfTheDayCard from '@/components/AyahOfTheDayCard';
+import AyahOfTheDayCard, { BrandedFooter } from '@/components/AyahOfTheDayCard';
 import MinimalTopStrip from '@/components/MinimalTopStrip';
+import { StreakShareCard } from '@/components/StreakShareCard';
 import { QuranProgressTracker } from '@/data/quranProgress';
 import { surahsData } from '@/data/surahs';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -10,7 +11,7 @@ import { usePlannerStore } from '@/store/plannerStore';
 import { useProgressStore } from '@/store/progressStore';
 import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
-import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
+import { logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { calculateCurrentBadge } from '@/utils/badgeUtils';
 import { formatDate } from '@/utils/dateUtils';
 import { calculateJuzProgress, calculateOverallJuzStats } from '@/utils/juzCalculator';
@@ -29,11 +30,14 @@ import {
     Info,
     Play,
     RotateCcw,
+    Share2,
     Target,
     XCircle
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Dimensions, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, Dimensions, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
+import Share from 'react-native-share';
+import ViewShot from 'react-native-view-shot';
 import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
@@ -129,7 +133,8 @@ export default function HomeScreen() {
     sessionStartTime,
     timeSpent,
     initializeActiveTimeManager,
-    activeTimeManager
+    activeTimeManager,
+    dailyActivities
   } = useActivityStore();
   const quranStore = useQuranStore.getState();
 
@@ -146,6 +151,170 @@ export default function HomeScreen() {
   const [activeReadingTime, setActiveReadingTime] = useState(0);
   const [showStreakTooltip, setShowStreakTooltip] = useState(false);
   const [showPlannerInfo, setShowPlannerInfo] = useState(false);
+
+  const streakViewShotRef = useRef<any>(null);
+  const [isSharingStreak, setIsSharingStreak] = useState(false);
+
+  const handleShareStreak = async () => {
+    if (isSharingStreak) return;
+    setIsSharingStreak(true);
+    try {
+      // Small artificial delay to guarantee hidden rendering layout completion
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      if (!streakViewShotRef.current) throw new Error('Ref not ready');
+
+      const uri = await streakViewShotRef.current.capture({
+        format: 'png',
+        quality: 1.0,
+        result: 'tmpfile',
+        width: 380 * 3,   // 1140px
+        height: 520 * 3,  // 1560px
+        snapshotContentContainer: false,
+      });
+
+      if (!uri) throw new Error('Capture failed');
+      
+      const storeUrl = Platform.OS === 'ios' ? 'https://apps.apple.com/sg/app/ihafidh/id6752505055' : 'https://play.google.com/store/apps/details?id=com.ihafidh';
+      
+      await Share.open({
+        url: uri.startsWith('file://') ? uri : `file://${uri}`,
+        title: 'Share my Streak',
+        message: `I'm on a ${dailyStreak}-day Quran learning streak!\n\nJoin me on iHafidh: ${storeUrl}`,
+        type: 'image/png',
+      });
+
+      logAnalyticsEvent('social_share', {
+        content_type: 'streak',
+        streak_length: dailyStreak,
+        source: 'home_streak_card'
+      });
+    } catch (e: any) {
+      if (!e?.message?.includes('User did not share') && !e?.message?.includes('User cancelled')) {
+        console.error('Streak share failed:', e);
+      }
+    } finally {
+      setIsSharingStreak(false);
+    }
+  };
+
+  
+  const [showQuranTimeModal, setShowQuranTimeModal] = useState(false);
+  const [quranTimeTab, setQuranTimeTab] = useState<'Weekly' | 'Monthly'>('Weekly');
+  const [focusedBarIndex, setFocusedBarIndex] = useState<number | null>(null);
+
+  const quranTimeChartData = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const activityMap = new Map<string, number>();
+    // Convert to minutes immediately
+    dailyActivities.forEach(a => activityMap.set(a.date, Math.floor(a.timeSpent / 60)));
+
+    const todayStr = useActivityStore.getState().timeSpent.lastResetDaily; 
+    const liveTodaySecs = useActivityStore.getState().getTimeSpentToday();
+    activityMap.set(todayStr, Math.floor(liveTodaySecs / 60));
+
+    const bars: { label: string; value: number; isToday?: boolean; originalDate?: string }[] = [];
+    let totalTime = 0; // now in minutes
+    let daysActive = 0;
+    let bestSessionTime = 0;
+    let bestSessionDate = '';
+    
+    // Formatting for minutes
+    const formatTimeMins = (mins: number) => {
+      if (!mins || mins < 1) return '0m';
+      const h = Math.floor(mins / 60);
+      const m = Math.floor(mins % 60);
+      if (h > 0) return `${h}h ${m}m`;
+      return `${m}m`;
+    };
+
+    if (quranTimeTab === 'Weekly') {
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        const ds = d.toISOString().split('T')[0];
+        let val = activityMap.get(ds) || 0;
+        if (val > 1440) val = 1440; // max 24 hours per day
+        
+        totalTime += val;
+        if (val >= 1) daysActive++; 
+        
+        if (val > bestSessionTime) {
+          bestSessionTime = val;
+          bestSessionDate = d.toLocaleDateString('en-US', { weekday: 'short' });
+        }
+        
+        bars.push({
+          label: d.toLocaleDateString('en-US', { weekday: 'short' }),
+          value: val,
+          isToday: i === 0,
+          originalDate: ds
+        });
+      }
+    } else {
+      const buckets = [
+          { label: 'WK1', start: 34, end: 28 }, 
+          { label: 'WK2', start: 27, end: 21 },
+          { label: 'WK3', start: 20, end: 14 },
+          { label: 'WK4', start: 13, end: 7 },
+          { label: 'WK5', start: 6, end: 0 }
+      ];
+
+      buckets.forEach((b, idx) => {
+        let bucketTotal = 0;
+        for (let i = b.start; i >= b.end; i--) {
+          const d = new Date(today);
+          d.setDate(today.getDate() - i);
+          const ds = d.toISOString().split('T')[0];
+          let val = activityMap.get(ds) || 0;
+          if (val > 1440) val = 1440; // max 24 hours per day
+          bucketTotal += val;
+          totalTime += val;
+          if (val >= 1) daysActive++;
+          
+          if (val > bestSessionTime) {
+            bestSessionTime = val;
+            bestSessionDate = d.toLocaleDateString('en-US', { weekday: 'short' }) + ' ' + d.getDate();
+          }
+        }
+        bars.push({
+          label: b.label,
+          value: bucketTotal,
+          isToday: idx === 4, 
+        });
+      });
+    }
+
+    const maxValOuter = Math.max(...bars.map(b => b.value));
+    let chartCeiling = 60; // minimum one hour scale
+    if (maxValOuter > 60) {
+      chartCeiling = Math.ceil(maxValOuter / 60) * 60; 
+      if (quranTimeTab === 'Weekly' && chartCeiling > 1440) {
+        chartCeiling = 1440;
+      }
+    }
+    const maxVal = chartCeiling; 
+    
+    const yLabels = [
+       `${Math.round(chartCeiling / 60)}h`,
+       `${((chartCeiling / 60) / 2).toFixed(1).replace('.0', '')}h`
+    ];
+
+    return {
+      bars: bars.map(b => ({ ...b, heightPerc: (b.value / maxVal) * 100, formattedValue: formatTimeMins(b.value) })),
+      totalTime,
+      daysActive,
+      dailyAvg: Math.round(totalTime / (quranTimeTab === 'Weekly' ? 7 : 35)),
+      bestSessionTime,
+      bestSessionDate,
+      bestSessionFormatted: formatTimeMins(bestSessionTime), 
+      isEmpty: totalTime < 1,
+      totalDays: quranTimeTab === 'Weekly' ? 7 : 35,
+      yLabels
+    };
+  }, [dailyActivities, quranTimeTab, activeReadingTime]);
 
   // --- Helpers for planner verse id mapping ---
   const getGlobalStartIdForSurah = (surahId: number) => {
@@ -452,9 +621,7 @@ export default function HomeScreen() {
   useEffect(() => {
     if (mustahabbahMemorized > previousMustahabbahCount.current) {
       logAnalyticsEvent('mustahabbah_completed', {
-        total_completed: mustahabbahMemorized,
-        ...getCommonParams(),
-      });
+        total_completed: mustahabbahMemorized,});
       previousMustahabbahCount.current = mustahabbahMemorized;
     }
   }, [mustahabbahMemorized]);
@@ -602,22 +769,24 @@ export default function HomeScreen() {
     if (lastReadVerse) {
       const verseDetails = findVerseById(lastReadVerse.id);
       const surah = surahsData.find(s => s.id === verseDetails.surahId);
+      const isJuzContext = (lastReadVerse as any).readContext === 'juz' && lastReadVerse.juzNumber;
+
       actions.push({
         title: 'Continue Reading',
-        subtitle: surah ? `${surah.name} (${surah.arabicName})` : 'Resume',
+        subtitle: isJuzContext
+          ? `Juz ${lastReadVerse.juzNumber} (${surah?.name || 'Resume'})`
+          : (surah ? `${surah.name} (${surah.arabicName})` : 'Resume'),
         icon: Play,
         color: '#4CAF50',
         action: async () => {
           if (surah) {
-            console.log('[home] Continue Reading clicked - navigating to:', { surahId: surah.id, verseNumber: verseDetails.verseNumber, source: 'continueReading' });
+            console.log('[home] Continue Reading clicked - navigating to:', { surahId: surah.id, verseNumber: verseDetails.verseNumber, source: isJuzContext ? 'juzList' : 'continueReading' });
 
             // ANALYTICS: Continue reading clicked
             logAnalyticsEvent('continue_reading_clicked', {
               surah_id: surah.id,
               surah_name: surah.englishName,
-              verse_number: verseDetails.verseNumber,
-              ...getCommonParams(),
-            });
+              verse_number: verseDetails.verseNumber,});
 
             await saveLastRead(surah.id, verseDetails.verseNumber);
             // Use safeNavigation.replace to avoid stacking duplicate Read entries when resuming
@@ -625,8 +794,9 @@ export default function HomeScreen() {
               pathname: '/(tabs)/read',
               params: {
                 surahId: surah.id.toString(),
-                verseId: verseDetails.verseNumber.toString(),
-                source: 'continueReading'
+                verseId: isJuzContext ? lastReadVerse.id.toString() : verseDetails.verseNumber.toString(),
+                juzNumber: isJuzContext ? lastReadVerse.juzNumber?.toString() : undefined,
+                source: isJuzContext ? 'juzList' : 'continueReading'
               }
             });
           }
@@ -764,22 +934,36 @@ export default function HomeScreen() {
   };
 
   const StreakCard = ({ title, value, subtitle, icon: Icon, color = '#2196F3' }: { title: string; value: string | number; subtitle?: string; icon: any; color?: string; }) => (
-    <View style={styles.statCard}>
+    <Pressable 
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setShowStreakTooltip(true);
+      }}
+      style={styles.statCard}
+    >
       <Icon size={28} color={color} style={{ marginBottom: 4 }} />
       <Text style={styles.statTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{title}</Text>
       <Text style={[styles.statValue, { color }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{value}</Text>
       {subtitle ? <Text style={styles.statSubtitle}>{subtitle}</Text> : null}
-      <Pressable
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          setShowStreakTooltip(true);
-        }}
-        style={styles.infoButton}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-      >
+      <View style={[styles.infoButton, { left: 8, top: 8 }]}>
         <Info size={14} color="#888" />
-      </Pressable>
-    </View>
+      </View>
+      <View style={[styles.infoButton, { right: 8, top: 8 }]}>
+        <Pressable 
+          onPress={(e) => { 
+            e.stopPropagation(); 
+            handleShareStreak(); 
+          }} 
+          hitSlop={12}
+        >
+          {isSharingStreak ? (
+            <ActivityIndicator size="small" color={color} />
+          ) : (
+            <Share2 size={14} color={color} />
+          )}
+        </Pressable>
+      </View>
+    </Pressable>
   );
 
   const ActionCard = ({ title, subtitle, icon: Icon, color, action }: { title: string; subtitle: string; icon: any; color: string; action: () => void; }) => (
@@ -1172,9 +1356,7 @@ export default function HomeScreen() {
               onPress={() => {
                 logAnalyticsEvent('juz_selected', {
                   juz_number: 'all', // Since it's the overview card
-                  completion_percent: Math.round((stats.juz.completed / 30) * 100),
-                  ...getCommonParams(),
-                });
+                  completion_percent: Math.round((stats.juz.completed / 30) * 100),});
                 router.push('/(tabs)/progress'); // Navigate to detailed progress
               }}
             />
@@ -1300,39 +1482,16 @@ export default function HomeScreen() {
 
             {/* Badges Card */}
             <Pressable
-              style={styles.badgeCard}
+              style={[styles.actionCard, { borderColor: '#8b5cf6' }]}
               onPress={() => router.push('/(tabs)/badges')}
             >
-              <View style={styles.badgeIcon}>
-                <Award size={24} color="#fff" />
+              <View style={[styles.actionIconWrap, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
+                <Award size={24} color="#8b5cf6" />
               </View>
-              <View style={styles.badgeContent}>
-                <Text style={styles.badgeTitle}>Badges</Text>
-                <Text style={styles.badgeSubtitle}>{currentBadge.name}</Text>
-              </View>
-            </Pressable>
-
-            {/* Quiz Card */}
-            <Pressable
-              style={styles.quizCard}
-              onPress={() => {
-                logAnalyticsEvent('quick_action_used', {
-                  action_type: 'take_quiz',
-                  memorized_verses_count: memorizedVerses.length,
-                  ...getCommonParams(),
-                });
-                router.push('/quiz');
-              }}
-              disabled={memorizedVerses.length === 0}
-            >
-              <View style={styles.quizIcon}>
-                <Target size={24} color="#fff" />
-              </View>
-              <View style={styles.quizContent}>
-                <Text style={styles.quizTitle}>Take Quiz</Text>
-                <Text style={styles.quizSubtitle}>
-                  {memorizedVerses.length > 0 ? "Test your knowledge" : "Memorize verses first"}
-                </Text>
+              <View style={styles.actionCardText}>
+                <Text style={styles.actionCardTitle}>Your Badges</Text>
+                <Text style={styles.actionCardSubtitle} numberOfLines={1}>{currentBadge.name}</Text>
+                <Text style={[styles.actionCardSubtitle, { fontSize: 11, marginTop: 1, opacity: 0.8 }]} numberOfLines={1}>Tap to see achievements</Text>
               </View>
             </Pressable>
           </View>
@@ -1354,7 +1513,11 @@ export default function HomeScreen() {
                   {parts.secondary ? <Text style={[styles.timeSecondary, { color: secondaryColor }]}>{' ' + parts.secondary}</Text> : null}
                 </>
               );
-              return <StatCard title="Quran Time" value={timeValue} subtitle="Active time spent" icon={Clock} color={qcolor} />;
+              return (
+                <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowQuranTimeModal(true); }}>
+                  <StatCard title="Quran Time" value={timeValue} subtitle="Active time spent" icon={Clock} color={qcolor} />
+                </Pressable>
+              );
             })()}
             <StreakCard title="Streak" value={stats.currentStreak} subtitle="Day streak" icon={FireStreakIcon} color={getStreakColor(stats.currentStreak)} />
           </View>
@@ -1381,9 +1544,7 @@ export default function HomeScreen() {
                   logAnalyticsEvent('mustahabbah_surah_selected', {
                     surah_id: surahId,
                     surah_name: surah?.englishName || 'Unknown',
-                    status: getSurahStatus(item),
-                    ...getCommonParams(),
-                  });
+                    status: getSurahStatus(item),});
 
                   useQuranStore.getState().setLastViewedSurahId(surahId);
 
@@ -1438,6 +1599,131 @@ export default function HomeScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Quran Time Modal */}
+      <Modal
+        visible={showQuranTimeModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowQuranTimeModal(false)}
+      >
+        <Pressable
+          style={styles.tooltipOverlay}
+          onPress={() => setShowQuranTimeModal(false)}
+        >
+          <Pressable style={[styles.tooltipContainer, { width: '90%', maxWidth: 400, padding: 24 }]}>
+            <View style={[styles.tooltipHeader, { marginBottom: 16 }]}>
+              <Clock size={24} color="#4CAF50" />
+              <Text style={[styles.tooltipTitle, { marginLeft: 8 }]}>Quran Time</Text>
+            </View>
+            <Text style={{ color: '#9CA3AF', fontSize: 14, marginBottom: 20 }}>
+              Your reading time breakdown
+            </Text>
+
+            {/* Tabs */}
+            <View style={{ flexDirection: 'row', backgroundColor: '#111827', borderRadius: 8, padding: 4, marginBottom: 32 }}>
+              <Pressable
+                style={{ flex: 1, paddingVertical: 8, borderRadius: 6, backgroundColor: quranTimeTab === 'Weekly' ? '#4CAF50' : 'transparent', alignItems: 'center' }}
+                onPress={() => setQuranTimeTab('Weekly')}
+              >
+                <Text style={{ color: quranTimeTab === 'Weekly' ? '#FFF' : '#9CA3AF', fontWeight: 'bold' }}>Weekly</Text>
+              </Pressable>
+              <Pressable
+                style={{ flex: 1, paddingVertical: 8, borderRadius: 6, backgroundColor: quranTimeTab === 'Monthly' ? '#4CAF50' : 'transparent', alignItems: 'center' }}
+                onPress={() => setQuranTimeTab('Monthly')}
+              >
+                <Text style={{ color: quranTimeTab === 'Monthly' ? '#FFF' : '#9CA3AF', fontWeight: 'bold' }}>Monthly</Text>
+              </Pressable>
+            </View>
+
+            {/* Chart Area */}
+            {quranTimeChartData.isEmpty ? (
+              <View style={{ height: 160, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111827', borderRadius: 12, marginBottom: 24 }}>
+                <Clock size={32} color="#374151" style={{ marginBottom: 8 }} />
+                <Text style={{ color: '#9CA3AF', fontSize: 14, textAlign: 'center', paddingHorizontal: 20 }}>
+                  Start reading to see your breakdown. Your active reading time will appear here!
+                </Text>
+              </View>
+            ) : (
+              <View style={{ height: 160, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 24, paddingLeft: 32, paddingRight: 4 }}>
+                {/* Horizontal Grid lines & Y Axis */}
+                <View style={{ position: 'absolute', left: 32, right: 0, bottom: 22 + 120, height: 1, backgroundColor: '#374151', opacity: 0.3 }} />
+                <View style={{ position: 'absolute', left: 32, right: 0, bottom: 22 + 60, height: 1, backgroundColor: '#374151', opacity: 0.3 }} />
+                <View style={{ position: 'absolute', left: 32, right: 0, bottom: 22, height: 1, backgroundColor: '#374151', opacity: 0.3 }} />
+                
+                <Text style={{ position: 'absolute', left: 0, bottom: 22 + 120 - 7, width: 26, textAlign: 'right', color: '#6B7280', fontSize: 10 }}>{quranTimeChartData.yLabels[0]}</Text>
+                <Text style={{ position: 'absolute', left: 0, bottom: 22 + 60 - 7, width: 26, textAlign: 'right', color: '#6B7280', fontSize: 10 }}>{quranTimeChartData.yLabels[1]}</Text>
+                <Text style={{ position: 'absolute', left: 0, bottom: 22 - 7, width: 26, textAlign: 'right', color: '#6B7280', fontSize: 10 }}>0h</Text>
+
+                {quranTimeChartData.bars.map((bar, idx) => (
+                  <View key={idx} style={{ alignItems: 'center', flex: 1 }}>
+                    {focusedBarIndex === idx && bar.value > 0 && (
+                      <View style={{ position: 'absolute', top: -35, backgroundColor: '#374151', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, zIndex: 10, minWidth: 60, alignItems: 'center' }}>
+                        <Text style={{ color: '#FFF', fontSize: 12, fontWeight: 'bold' }} numberOfLines={1}>{bar.formattedValue}</Text>
+                      </View>
+                    )}
+                    {/* The Bar */}
+                    <Pressable
+                      style={{ 
+                        width: '70%', 
+                        maxWidth: 32, 
+                        height: bar.value > 0 ? Math.max(4, (120 * bar.heightPerc) / 100) : 4, 
+                        backgroundColor: bar.isToday ? '#4ADE80' : '#22C55E', 
+                        opacity: bar.isToday ? 1 : 0.6,
+                        borderRadius: 4,
+                        marginBottom: 8
+                      }}
+                      onPressIn={() => setFocusedBarIndex(idx)}
+                      onPressOut={() => setFocusedBarIndex(null)}
+                    />
+                    <Text style={{ color: bar.isToday ? '#4ADE80' : '#6B7280', fontSize: 11, fontWeight: bar.isToday ? 'bold' : 'normal' }}>
+                      {bar.label}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Summary Stats */}
+            {!quranTimeChartData.isEmpty && (
+              <>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+                  <View style={{ flex: 1, backgroundColor: '#111827', borderRadius: 12, padding: 12, alignItems: 'center' }}>
+                    <Text style={{ color: '#FFF', fontSize: 16, fontWeight: 'bold', marginBottom: 2 }}>{formatTotalTime(quranTimeChartData.totalTime * 60)}</Text>
+                    <Text style={{ color: '#6B7280', fontSize: 11 }}>Total</Text>
+                  </View>
+                  <View style={{ flex: 1, backgroundColor: '#111827', borderRadius: 12, padding: 12, alignItems: 'center' }}>
+                    <Text style={{ color: '#FFF', fontSize: 16, fontWeight: 'bold', marginBottom: 2 }}>{formatTotalTime(quranTimeChartData.dailyAvg * 60)}</Text>
+                    <Text style={{ color: '#6B7280', fontSize: 11 }}>Daily avg</Text>
+                  </View>
+                  <View style={{ flex: 1, backgroundColor: '#111827', borderRadius: 12, padding: 12, alignItems: 'center' }}>
+                    <Text style={{ color: '#FFF', fontSize: 16, fontWeight: 'bold', marginBottom: 2 }}>{quranTimeChartData.daysActive}/{quranTimeChartData.totalDays}</Text>
+                    <Text style={{ color: '#6B7280', fontSize: 11 }}>Days active</Text>
+                  </View>
+                </View>
+
+                {/* Best session */}
+                {quranTimeChartData.bestSessionTime > 0 && (
+                  <View style={{ flexDirection: 'row', backgroundColor: '#064E3B', borderRadius: 12, padding: 16, alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, borderWidth: 1, borderColor: '#065F46' }}>
+                    <View>
+                      <Text style={{ color: '#4ADE80', fontSize: 12, fontWeight: 'bold', marginBottom: 4 }}>Best session</Text>
+                      <Text style={{ color: '#FFF', fontSize: 16, fontWeight: 'bold' }}>{quranTimeChartData.bestSessionDate} • {quranTimeChartData.bestSessionFormatted}</Text>
+                    </View>
+                    <Text style={{ fontSize: 24 }}>🏆</Text>
+                  </View>
+                )}
+              </>
+            )}
+
+            <Pressable
+              style={[styles.tooltipCloseButton, { backgroundColor: '#4CAF50', borderColor: '#4CAF50' }]}
+              onPress={() => setShowQuranTimeModal(false)}
+            >
+              <Text style={[styles.tooltipCloseText, { color: '#FFF' }]}>Got it!</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Streak Tooltip Modal */}
       <Modal
@@ -1513,6 +1799,13 @@ export default function HomeScreen() {
           </View>
         </Pressable>
       </Modal>
+
+      {/* Hidden ViewShot for Streak Sharing (High Resolution) */}
+      <View style={{ position: 'absolute', top: -9999, left: 0, width: 380, height: 520, backgroundColor: '#000' }} pointerEvents="none">
+        <ViewShot ref={streakViewShotRef} options={{ format: 'png', quality: 1.0 }}>
+          {isSharingStreak && <StreakShareCard streakCount={dailyStreak} />}
+        </ViewShot>
+      </View>
     </>
   );
 }

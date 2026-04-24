@@ -1,7 +1,7 @@
 import { QuranProgressTracker } from '@/data/quranProgress';
 import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
-import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
+import {logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { calculateCurrentBadge, getBadgeStates } from '@/utils/badgeUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
@@ -79,26 +79,27 @@ export default function BadgesScreen() {
     }
   }, [memorizedVerses, progress.juz.completed]);
 
-  // ANALYTICS: Track badges screen view on mount
-  useEffect(() => {
-    const currentBadge = calculateCurrentBadge(memorizedVerses, progress.juz.completed);
-    const nextBadge = badges.find((badge: any) => !badge.isUnlocked);
-    
-    logAnalyticsEvent('badges_screen_viewed', {
-      current_badge_name: currentBadge.name,
-      current_badge_level: currentBadge.level,
-      memorized_verses_count: memorizedVerses.length,
-      completed_juz: progress.juz.completed,
-      next_badge_progress: nextBadge ? `${nextBadge.progress || 0}%` : 'none',
-      ...getCommonParams(),
-    });
-  }, []);
 
   // Consolidate badge state from shared helper
   const badges = useMemo(() => getBadgeStates(memorizedVerses, progress.juz.completed), [memorizedVerses, progress.juz.completed]);
 
   const currentBadge = useMemo(() => calculateCurrentBadge(memorizedVerses, progress.juz.completed), [memorizedVerses, progress.juz.completed]);
   const nextBadge = badges.find(badge => !badge.isUnlocked);
+
+  // ANALYTICS: Track badges screen view on mount (Event 6 — P1)
+  useEffect(() => {
+    try {
+      const unlockedBadges = badges.filter((b: any) => b.isUnlocked);
+      const newestBadge = unlockedBadges.length > 0
+        ? (unlockedBadges[unlockedBadges.length - 1]?.name ?? 'none').toLowerCase().replace(/\s+/g, '_')
+        : 'none';
+      logAnalyticsEvent('badges_screen_viewed', {
+        total_badges_earned: unlockedBadges.length ?? 0,
+        newest_badge: newestBadge,
+      });
+    } catch { /* analytics must never crash */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const BadgeCard = ({ badge, isCurrent = false, isNext = false }: { 
     badge: any; 

@@ -51,21 +51,20 @@ export const usePlannerStore = create<PlannerState>()(
           };
 
           // ANALYTICS: Hifdh verse planned
-          const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
+          const { logAnalyticsEvent} = require('@/utils/analyticsHelper');
           const { surahsData } = require('@/data/surahs');
           const surah = surahsData.find((s: any) => s.id === entry.surahId);
           const count = entry.endVerse - entry.startVerse + 1;
 
-          logAnalyticsEvent('hifdh_verse_planned', {
-            surah_id: entry.surahId,
-            surah_name: surah?.englishName || `Surah ${entry.surahId}`,
-            start_verse: entry.startVerse,
-            end_verse: entry.endVerse,
-            count,
-            trigger: options?.trigger || 'manual',
-            method: options?.method || (entry.startVerse === 1 && surah && entry.endVerse === surah.versesCount ? 'surah' : 'range'),
-            ...getCommonParams(),
-          });
+          // ANALYTICS: hifdh_verse_planned — surah_id + bulk stats only
+          try {
+            logAnalyticsEvent('hifdh_verse_planned', {
+              surah_id: entry.surahId ?? 0,
+              verse_count: count,
+              trigger: options?.trigger || 'manual',
+              method: options?.method || (entry.startVerse === 1 && surah && entry.endVerse === surah.versesCount ? 'surah' : 'range'),
+            });
+          } catch { /* analytics must never crash */ }
 
           return {
             plansByDate: {
@@ -94,26 +93,21 @@ export const usePlannerStore = create<PlannerState>()(
           const newList = list.map((p) => (p.id === id ? { ...p, ...updates } : p));
 
           // ANALYTICS: Note added/deleted
-          const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
+          const { logAnalyticsEvent} = require('@/utils/analyticsHelper');
           const { surahsData } = require('@/data/surahs');
           const surah = surahsData.find((s: any) => s.id === (updates.surahId || oldEntry?.surahId));
 
           if (updates.note !== undefined) {
              if (updates.note && updates.note.trim().length > 0) {
-                // Note added or updated
-                logAnalyticsEvent('note_added', {
-                   surah_id: surah?.id || null,
-                   surah_name: surah?.englishName || 'unknown',
-                   content_length: updates.note.length,
-                   ...getCommonParams(),
-                });
+                // ANALYTICS: note_added — aggregate only, no surah context
+                try {
+                  logAnalyticsEvent('note_added', { content_length: updates.note.length });
+                } catch { /* analytics must never crash */ }
              } else if (oldEntry?.note) {
-                // Note deleted (passed as empty string or previously existed)
-                logAnalyticsEvent('note_deleted', {
-                   surah_id: surah?.id || null,
-                   surah_name: surah?.englishName || 'unknown',
-                   ...getCommonParams(),
-                });
+                // ANALYTICS: note_deleted — no params needed, count is implicit
+                try {
+                  logAnalyticsEvent('note_deleted', {});
+                } catch { /* analytics must never crash */ }
              }
           }
 

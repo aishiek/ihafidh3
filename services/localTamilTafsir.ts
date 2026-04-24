@@ -8,11 +8,11 @@ export async function debugTamilTafsirDb(): Promise<void> {
     }
     db.transaction((tx: any) => {
       tx.executeSql(
-        'SELECT COUNT(*) as count FROM tamil_tafsir',
+        'SELECT COUNT(*) as count FROM tafsir',
         [],
         (_: any, resultSet: any) => {
           const count = resultSet?.rows?._array?.[0]?.count;
-          console.log('[localTamilTafsir] debug: tamil_tafsir row count =', count);
+          console.log('[localTamilTafsir] debug: tafsir row count =', count);
         },
         (_: any, err: any) => {
           console.warn('[localTamilTafsir] debug: count query error', err);
@@ -20,8 +20,8 @@ export async function debugTamilTafsirDb(): Promise<void> {
         }
       );
       tx.executeSql(
-        'SELECT * FROM tamil_tafsir WHERE surah = ? AND ayah = ? LIMIT 1',
-        [2, 1],
+        'SELECT * FROM tafsir WHERE ayah_key = ? LIMIT 1',
+        ['2:1'],
         (_: any, resultSet: any) => {
           const row = resultSet?.rows?._array?.[0];
           if (row) {
@@ -171,11 +171,16 @@ export async function getTamilTafsir(surah: number, ayah: number): Promise<Tafsi
       return null;
     }
 
-    // Query: find a row where ayah_key matches "surah:ayah"
-
-  const ayahKey = `${surah}:${ayah}`;
-  const sql = 'SELECT text FROM tafsir WHERE from_ayah = ? AND to_ayah = ? LIMIT 1';
-  const params = [ayahKey, ayahKey];
+    // Query: find a row where ayah_key matches, but support groupings (ranges).
+    // Surah 2:4 may point to group_ayah_key 2:3 where the actual text is stored.
+    const ayahKey = `${surah}:${ayah}`;
+    const sql = `
+      SELECT text FROM tafsir 
+      WHERE ayah_key = (SELECT COALESCE(group_ayah_key, ayah_key) FROM tafsir WHERE ayah_key = ?) 
+         OR ayah_key = ?
+      LIMIT 1
+    `;
+    const params = [ayahKey, ayahKey];
   console.debug('[localTamilTafsir] SQL:', sql, 'params:', params);
 
     // Some sqlite wrappers provide async helpers (getAllAsync). Prefer them if available.
@@ -197,33 +202,37 @@ export async function getTamilTafsir(surah: number, ayah: number): Promise<Tafsi
       return null;
     }
 
-    // sync path: execute SQL and build result
-    let found: TafsirResult | null = null;
-    db.transaction((tx: any) => {
-      tx.executeSql(
-        sql,
-        params,
-        (_: any, resultSet: any) => {
-          const r = resultSet?.rows?._array?.[0];
-          console.debug('[localTamilTafsir] Raw DB row:', r);
-          if (r && r.text) {
-            found = {
-              resourceId: 0,
-              resourceName: 'Tamil Tafsir',
-              verseKey: ayahKey,
-              text: String(r.text),
-            };
+    // legacy sync path: execute SQL and build result via Promise wrapper
+    return new Promise((resolve) => {
+      db.transaction((tx: any) => {
+        tx.executeSql(
+          sql,
+          params,
+          (_: any, resultSet: any) => {
+            const r = resultSet?.rows?._array?.[0];
+            console.debug('[localTamilTafsir] Raw DB row:', r);
+            if (r && r.text) {
+              const res: TafsirResult = {
+                resourceId: 0,
+                resourceName: 'Tamil Tafsir',
+                verseKey: ayahKey,
+                text: String(r.text),
+              };
+              resultCache.set(key, res);
+              resolve(res);
+            } else {
+              resultCache.set(key, null);
+              resolve(null);
+            }
+          },
+          (_: any, err: any) => {
+            console.warn('[localTamilTafsir] query error', err);
+            resolve(null);
+            return true;
           }
-        },
-        (_: any, err: any) => {
-          console.warn('[localTamilTafsir] query error', err);
-          return true;
-        }
-      );
+        );
+      });
     });
-
-    resultCache.set(key, found);
-    return found;
   } catch (e) {
     console.error('[localTamilTafsir] getTamilTafsir error', e);
     resultCache.set(key, null);

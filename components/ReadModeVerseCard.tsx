@@ -54,6 +54,7 @@ interface ReadModeVerseCardProps {
     surahId: number;
     surahName: string;
     verseNumber: number;
+    pageNumber?: number;
     arabicText: string;
     translation: string | null;
     transliteration: string | null;
@@ -76,6 +77,7 @@ export function ReadModeVerseCard({
     id,
     surahId,
     verseNumber,
+    pageNumber,
     arabicText,
     translation,
     isWbwActive,
@@ -233,7 +235,7 @@ export function ReadModeVerseCard({
             <View style={styles.verseHeader}>
                 <View style={styles.referenceBadge}>
                     <Text style={[styles.referenceText, isParchmentLight && { color: '#5D4037' }]}>
-                        {surahId}:{verseNumber}
+                        {surahId}:{verseNumber}{pageNumber ? ` · Pg ${pageNumber}` : ''}
                     </Text>
                 </View>
                 <View style={styles.actions}>
@@ -308,15 +310,15 @@ export function ReadModeVerseCard({
                                     </LinearGradient>
                                 </MaskedView>
 
-                                {/* Only show dots if WBW mode is explicitly ON */}
-                                {isWbwActive && (
+                                 {/* Only show dots if WBW mode is explicitly ON */}
+                                {/* {isWbwActive && (
                                     <View style={[
                                         styles.dot,
                                         isSelected && styles.dotSelected,
                                         isParchmentLight ? styles.dotLight : styles.dotDark,
                                         isSelected && isParchmentLight && styles.dotSelectedLight
                                     ]} />
-                                )}
+                                )} */}
                             </TouchableOpacity>
                         );
                     })}
@@ -370,7 +372,6 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#D4AF37',
         fontWeight: 'bold',
-        textTransform: 'uppercase',
         letterSpacing: 1,
     },
     actions: {

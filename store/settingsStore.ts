@@ -1,5 +1,5 @@
 import { AppSettings } from '@/types';
-import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
+import {logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { clearAudioCache } from '@/utils/audioCacheUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
@@ -30,6 +30,13 @@ export interface RevisionReminderSettings {
 
 export interface PageReminderSettings {
   enabled: boolean;
+}
+
+export interface ReviewPromptState {
+  hasRated: boolean;             // true = never show again
+  lastShownAt: number | null;    // timestamp ms
+  shownCount: number;            // lifetime impressions
+  lastDismissedAt: number | null;
 }
 
 export interface SettingsState extends AppSettings {
@@ -91,6 +98,26 @@ export interface SettingsState extends AppSettings {
   // Last app version seen by the user (used to detect successful upgrades)
   lastSeenVersion: string | null;
   setLastSeenVersion: (version: string) => void;
+  // Cross-screen walkthrough replay signal (set in Settings → read by Read on focus)
+  walkthroughReplayPending: boolean;
+  setWalkthroughReplayPending: (pending: boolean) => void;
+  // Cross-screen force-show UpdateModal signal (set in Settings → consumed in _layout)
+  forceShowUpdateModal: boolean;
+  setForceShowUpdateModal: (show: boolean) => void;
+  // Mode for the force-shown UpdateModal: 'whats_new' or 'rate'
+  forceShowUpdateModalMode: 'whats_new' | 'rate';
+  setForceShowUpdateModalMode: (mode: 'whats_new' | 'rate') => void;
+  // Review prompt tracking
+  reviewPromptState: ReviewPromptState;
+  setReviewPromptState: (patch: Partial<ReviewPromptState>) => void;
+  // Session scoped review prompt flag
+  reviewPromptSessionShown: boolean;
+  setReviewPromptSessionShown: (shown: boolean) => void;
+  // Global SadaqahPrompt trigger
+  sadaqahPromptVisible: boolean;
+  sadaqahPromptTrigger: 'first_quiz' | 'tenth_quiz' | 'juz_completed' | 'badge_unlocked' | null;
+  triggerSadaqahPrompt: (trigger: 'first_quiz' | 'tenth_quiz' | 'juz_completed' | 'badge_unlocked') => void;
+  closeSadaqahPrompt: () => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -139,6 +166,16 @@ export const useSettingsStore = create<SettingsState>()(
         lastDailyAyahVerse: null,
         // default Verses per page for Page Mode
         defaultVersesPerPage: 15,
+        reviewPromptState: {
+          hasRated: false,
+          lastShownAt: null,
+          shownCount: 0,
+          lastDismissedAt: null,
+        },
+
+        reviewPromptSessionShown: false,
+        sadaqahPromptVisible: false,
+        sadaqahPromptTrigger: null,
 
         setTheme: (theme) => {
           const previous = get().theme;
@@ -146,9 +183,7 @@ export const useSettingsStore = create<SettingsState>()(
           logAnalyticsEvent('setting_changed', {
             setting_key: 'theme',
             new_value: theme,
-            previous_value: previous,
-            ...getCommonParams(),
-          });
+            previous_value: previous,});
         },
         setRepeatMode: (repeatMode) => {
           const previous = get().repeatMode;
@@ -156,9 +191,7 @@ export const useSettingsStore = create<SettingsState>()(
           logAnalyticsEvent('setting_changed', {
             setting_key: 'repeat_mode',
             new_value: repeatMode.toString(),
-            previous_value: previous.toString(),
-            ...getCommonParams(),
-          });
+            previous_value: previous.toString(),});
         },
         setFontSizeArabic: (fontSizeArabic) => {
           const previous = get().fontSizeArabic;
@@ -166,9 +199,7 @@ export const useSettingsStore = create<SettingsState>()(
           logAnalyticsEvent('setting_changed', {
             setting_key: 'font_size_arabic',
             new_value: fontSizeArabic.toString(),
-            previous_value: previous.toString(),
-            ...getCommonParams(),
-          });
+            previous_value: previous.toString(),});
         },
         setFontSizeTransliteration: (fontSizeTransliteration) => {
           const previous = get().fontSizeTransliteration;
@@ -176,9 +207,7 @@ export const useSettingsStore = create<SettingsState>()(
           logAnalyticsEvent('setting_changed', {
             setting_key: 'font_size_transliteration',
             new_value: fontSizeTransliteration.toString(),
-            previous_value: (previous || 0).toString(),
-            ...getCommonParams(),
-          });
+            previous_value: (previous || 0).toString(),});
         },
         setFontSizeTranslation: (fontSizeTranslation) => {
           const previous = get().fontSizeTranslation;
@@ -186,9 +215,7 @@ export const useSettingsStore = create<SettingsState>()(
           logAnalyticsEvent('setting_changed', {
             setting_key: 'font_size_translation',
             new_value: fontSizeTranslation.toString(),
-            previous_value: previous.toString(),
-            ...getCommonParams(),
-          });
+            previous_value: previous.toString(),});
         },
         setArabicFont: (arabicFont) => {
           const font = (
@@ -205,9 +232,7 @@ export const useSettingsStore = create<SettingsState>()(
           logAnalyticsEvent('setting_changed', {
             setting_key: 'arabic_font',
             new_value: font,
-            previous_value: previous,
-            ...getCommonParams(),
-          });
+            previous_value: previous,});
         },
         setShowTranslation: (showTranslation) => {
           const previous = get().showTranslation;
@@ -215,9 +240,7 @@ export const useSettingsStore = create<SettingsState>()(
           logAnalyticsEvent('setting_changed', {
             setting_key: 'show_translation',
             new_value: showTranslation.toString(),
-            previous_value: previous.toString(),
-            ...getCommonParams(),
-          });
+            previous_value: previous.toString(),});
         },
         setShowTransliteration: (showTransliteration) => {
           const previous = get().showTransliteration;
@@ -225,9 +248,7 @@ export const useSettingsStore = create<SettingsState>()(
           logAnalyticsEvent('setting_changed', {
             setting_key: 'show_transliteration',
             new_value: showTransliteration.toString(),
-            previous_value: previous.toString(),
-            ...getCommonParams(),
-          });
+            previous_value: previous.toString(),});
         },
         setReadModeLightTheme: (readModeLightTheme) => {
           const previous = get().readModeLightTheme;
@@ -235,9 +256,7 @@ export const useSettingsStore = create<SettingsState>()(
           logAnalyticsEvent('setting_changed', {
             setting_key: 'read_mode_light_theme',
             new_value: readModeLightTheme.toString(),
-            previous_value: previous.toString(),
-            ...getCommonParams(),
-          });
+            previous_value: previous.toString(),});
         },
         setWbwEnabled: (wbwEnabled: boolean) => {
           const previous = get().wbwEnabled;
@@ -245,9 +264,7 @@ export const useSettingsStore = create<SettingsState>()(
           logAnalyticsEvent('setting_changed', {
             setting_key: 'wbw_enabled',
             new_value: wbwEnabled.toString(),
-            previous_value: previous.toString(),
-            ...getCommonParams(),
-          });
+            previous_value: previous.toString(),});
         },
         setAutoPlayAudio: (autoPlayAudio) => {
           const previous = get().autoPlayAudio;
@@ -255,9 +272,7 @@ export const useSettingsStore = create<SettingsState>()(
           logAnalyticsEvent('setting_changed', {
             setting_key: 'auto_play_audio',
             new_value: autoPlayAudio.toString(),
-            previous_value: previous.toString(),
-            ...getCommonParams(),
-          });
+            previous_value: previous.toString(),});
         },
         setNotificationsEnabled: (notificationsEnabled) => {
           const previous = get().notificationsEnabled;
@@ -265,14 +280,26 @@ export const useSettingsStore = create<SettingsState>()(
           logAnalyticsEvent('setting_changed', {
             setting_key: 'notifications_enabled',
             new_value: notificationsEnabled.toString(),
-            previous_value: previous.toString(),
-            ...getCommonParams(),
-          });
+            previous_value: previous.toString(),});
         },
-        setReminderTime: (reminderTime) => set({ reminderTime }),
-        setAyahDailyNotificationsEnabled: (enabled: boolean) => set({ ayahDailyNotificationsEnabled: enabled }),
+        setReminderTime: (reminderTime) => {
+          const previous = get().reminderTime;
+          set({ reminderTime });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'reminder_time',
+            new_value: reminderTime.toString(),
+            previous_value: previous.toString(),});
+        },
+        setAyahDailyNotificationsEnabled: (enabled: boolean) => {
+          const previous = get().ayahDailyNotificationsEnabled;
+          set({ ayahDailyNotificationsEnabled: enabled });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'ayah_daily_notifications_enabled',
+            new_value: enabled.toString(),
+            previous_value: (previous ?? false).toString(),});
+        },
         setUserName: (userName) => {
-          console.log('Setting userName in store:', userName);
+          if (__DEV__) console.log('Setting userName in store:', userName);
           set({ userName });
         },
         setUserEmail: (userEmail) => {
@@ -295,9 +322,7 @@ export const useSettingsStore = create<SettingsState>()(
           logAnalyticsEvent('setting_changed', {
             setting_key: 'translation_language',
             new_value: translationLanguage,
-            previous_value: previous,
-            ...getCommonParams(),
-          });
+            previous_value: previous,});
         },
         setReciterIdentifier: (reciterIdentifier) => {
           // Clear audio cache when changing reciter
@@ -311,13 +336,32 @@ export const useSettingsStore = create<SettingsState>()(
           logAnalyticsEvent('setting_changed', {
             setting_key: 'reciter',
             new_value: reciterIdentifier,
-            previous_value: previous,
-            ...getCommonParams(),
-          });
+            previous_value: previous,});
         },
-        setMushafRepeatMode: (mushafRepeatMode) => set({ mushafRepeatMode }),
-        setMushafInfiniteLoop: (mushafInfiniteLoop) => set({ mushafInfiniteLoop }),
-        setMushafRepeatScope: (mushafRepeatScope) => set({ mushafRepeatScope }),
+        setMushafRepeatMode: (mushafRepeatMode) => {
+          const previous = get().mushafRepeatMode;
+          set({ mushafRepeatMode });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'mushaf_repeat_mode',
+            new_value: mushafRepeatMode.toString(),
+            previous_value: previous.toString(),});
+        },
+        setMushafInfiniteLoop: (mushafInfiniteLoop) => {
+          const previous = get().mushafInfiniteLoop;
+          set({ mushafInfiniteLoop });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'mushaf_infinite_loop',
+            new_value: mushafInfiniteLoop.toString(),
+            previous_value: previous.toString(),});
+        },
+        setMushafRepeatScope: (mushafRepeatScope) => {
+          const previous = get().mushafRepeatScope;
+          set({ mushafRepeatScope });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'mushaf_repeat_scope',
+            new_value: mushafRepeatScope,
+            previous_value: previous,});
+        },
         setPlaybackSpeed: (playbackSpeed) => {
           set({ playbackSpeed });
 
@@ -328,49 +372,96 @@ export const useSettingsStore = create<SettingsState>()(
           logAnalyticsEvent('setting_changed', {
             setting_key: 'playback_speed',
             new_value: playbackSpeed.toString(),
-            previous_value: previous.toString(),
-            ...getCommonParams(),
-          });
+            previous_value: previous.toString(),});
         },
         setInfiniteLoop: (infiniteLoop) => set({ infiniteLoop }),
-        setNotificationSetting: (key, value) =>
+        setNotificationSetting: (key, value) => {
+          const previous = get().notificationSettings?.[key];
           set((state) => ({
             notificationSettings: {
               ...state.notificationSettings,
               [key]: value,
             },
-          })),
-        setRevisionReminderSettings: (settings) =>
+          }));
+          logAnalyticsEvent('setting_changed', {
+            setting_key: `notification_${key}`,
+            new_value: value.toString(),
+            previous_value: (previous ?? false).toString(),});
+        },
+        setRevisionReminderSettings: (settings) => {
+          const previous = get().revisionReminderSettings;
           set((state) => ({
             revisionReminderSettings: {
               ...state.revisionReminderSettings,
               ...settings,
             },
-          })),
-        setPageReminderSettings: (settings) =>
+          }));
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'revision_reminder',
+            new_value: JSON.stringify(settings),
+            previous_value: JSON.stringify(previous),});
+        },
+        setPageReminderSettings: (settings) => {
+          const previous = get().pageReminderSettings;
           set((state) => ({
             pageReminderSettings: {
               ...state.pageReminderSettings,
               ...settings,
             },
-          })),
+          }));
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'page_reminder',
+            new_value: JSON.stringify(settings),
+            previous_value: JSON.stringify(previous),});
+        },
         setLastDailyAyah: (date, verse) =>
           set({ lastDailyAyahDate: date, lastDailyAyahVerse: verse }),
         setDefaultVersesPerPage: (v: number) => {
+          const previous = get().defaultVersesPerPage;
           const clamped = Math.max(3, Math.min(20, Math.floor(v) || 3));
           set({ defaultVersesPerPage: clamped });
+          logAnalyticsEvent('setting_changed', {
+            setting_key: 'default_verses_per_page',
+            new_value: clamped.toString(),
+            previous_value: previous.toString(),});
         },
         lastDismissedVersion: null,
         setLastDismissedVersion: (version) => set({ lastDismissedVersion: version }),
         lastSeenVersion: null,
         setLastSeenVersion: (version) => set({ lastSeenVersion: version }),
+        walkthroughReplayPending: false,
+        setWalkthroughReplayPending: (pending) => set({ walkthroughReplayPending: pending }),
+        forceShowUpdateModal: false,
+        setForceShowUpdateModal: (show) => set({ forceShowUpdateModal: show }),
+        forceShowUpdateModalMode: 'whats_new',
+        setForceShowUpdateModalMode: (mode) => set({ forceShowUpdateModalMode: mode }),
+        setReviewPromptState: (patch) => set((state) => ({
+          reviewPromptState: { ...state.reviewPromptState, ...patch }
+        })),
+        setReviewPromptSessionShown: (shown) => set({ reviewPromptSessionShown: shown }),
+        triggerSadaqahPrompt: (trigger) => set({ sadaqahPromptVisible: true, sadaqahPromptTrigger: trigger }),
+        closeSadaqahPrompt: () => set({ sadaqahPromptVisible: false }),
       };
     },
     {
       name: 'ihafidh-settings',
       storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => {
+        // Exclude transient session-only flags from persistence
+        const { 
+          lastDismissedVersion, 
+          forceShowUpdateModal,
+          forceShowUpdateModalMode,
+          walkthroughReplayPending,
+          reviewPromptSessionShown,
+          sadaqahPromptVisible,
+          sadaqahPromptTrigger,
+          ...persistedState 
+        } = state;
+        return persistedState;
+      },
       onRehydrateStorage: () => (state) => {
-        console.log('Settings store rehydrated:', state);
+        if (__DEV__) console.log('Settings store rehydrated:', state);
         if (state) {
           // Ensure all properties have default values
           state.userName = state.userName || '';
@@ -436,6 +527,15 @@ export const useSettingsStore = create<SettingsState>()(
           (state as any).lastDismissedVersion = (state as any).lastDismissedVersion || null;
           // @ts-ignore - persisted last seen app version
           (state as any).lastSeenVersion = (state as any).lastSeenVersion || null;
+          // @ts-ignore - ensure review prompt state exists
+          if (!(state as any).reviewPromptState) {
+            (state as any).reviewPromptState = {
+              hasRated: false,
+              lastShownAt: null,
+              shownCount: 0,
+              lastDismissedAt: null,
+            };
+          }
         }
       },
     }

@@ -59,11 +59,9 @@ export default function CalendarScreen() {
   // Initial load
   useEffect(() => {
     // ANALYTICS: Fasting tab viewed
-    const { logAnalyticsEvent, getCommonParams } = require('@/utils/analyticsHelper');
+    const { logAnalyticsEvent} = require('@/utils/analyticsHelper');
     logAnalyticsEvent('fasting_tab_viewed', {
-      tab_name: 'calendar',
-      ...getCommonParams(),
-    });
+      tab_name: 'calendar',});
 
     if (state.currentMonth) {
       loadCalendarData(state.currentMonth);

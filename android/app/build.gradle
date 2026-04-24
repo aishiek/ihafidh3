@@ -1,7 +1,6 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
-apply plugin: "com.google.gms.google-services"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 
@@ -10,18 +9,7 @@ def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
  * By default you don't need to apply any configuration, just uncomment the lines you need.
  */
 react {
-    def getEntryFile = {
-        try {
-            def entryFileText = ["node", "-e", "require('expo/scripts/resolveAppEntry')", projectRoot, "android", "absolute"].execute(null, rootDir).text.trim()
-            if (entryFileText) {
-                return file(entryFileText)
-            }
-        } catch (Exception e) {
-            // Log or ignore
-        }
-        return file("$projectRoot/index.js")
-    }
-    entryFile = getEntryFile()
+    entryFile = file(["node", "-e", "require('expo/scripts/resolveAppEntry')", projectRoot, "android", "absolute"].execute(null, rootDir).text.trim())
     reactNativeDir = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
     hermesCommand = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsolutePath() + "/sdks/hermesc/%OS-BIN%/hermesc"
     codegenDir = new File(["node", "--print", "require.resolve('@react-native/codegen/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
@@ -104,8 +92,8 @@ android {
         applicationId 'com.ihafidh'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 36
-        versionName "2.0.8"
+        versionCode 40
+        versionName "2.1.2"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
@@ -117,10 +105,24 @@ android {
             keyPassword 'android'
         }
         release {
-            storeFile file('../../my-upload-key.keystore')
-            storePassword System.getenv("KEYSTORE_PASSWORD") ?: 'D0ntf0rget#'
-            keyAlias System.getenv("KEY_ALIAS") ?: 'my-key-alias'
-            keyPassword System.getenv("KEY_PASSWORD") ?: 'D0ntf0rget#'
+            def uploadStoreFileProp = findProperty('MYAPP_UPLOAD_STORE_FILE')
+            def uploadStoreFile
+            if (uploadStoreFileProp) {
+                def f = file(uploadStoreFileProp)
+                if (f.exists()) {
+                    uploadStoreFile = uploadStoreFileProp
+                } else {
+                    def candidate = file("${projectRoot}/${uploadStoreFileProp.replaceAll('^\\.\\./','')}")
+                    if (candidate.exists()) {
+                        uploadStoreFile = candidate.absolutePath
+                    }
+                }
+            }
+            if (!uploadStoreFile) uploadStoreFile = "${projectRoot}/my-upload-key.keystore"
+            storeFile file(uploadStoreFile)
+            storePassword findProperty('MYAPP_UPLOAD_STORE_PASSWORD') ?: 'iHafidhapp@2025'
+            keyAlias findProperty('MYAPP_UPLOAD_KEY_ALIAS') ?: 'my-key-alias'
+            keyPassword findProperty('MYAPP_UPLOAD_KEY_PASSWORD') ?: 'iHafidhapp@2025'
         }
     }
     buildTypes {
@@ -128,7 +130,8 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Production keystore configuration
+            // Caution! In production, you need to generate your own keystore file.
+            // see https://reactnative.dev/docs/signed-apk-android.
             signingConfig signingConfigs.release
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
@@ -136,6 +139,30 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
             def enablePngCrunchInRelease = findProperty('android.enablePngCrunchInReleaseBuilds') ?: 'true'
             crunchPngs enablePngCrunchInRelease.toBoolean()
+        }
+    }
+
+    /**
+     * Product Flavors
+     * - production: normal release build (AAB for Play Store) → com.ihafidh
+     * - staging:    sideload APK for testing alongside production → com.ihafidh.staging
+     *
+     * Build commands:
+     *   Production AAB:  ./gradlew bundleProductionRelease
+     *   Production APK:  ./gradlew assembleProductionRelease   (or just assembleRelease for default)
+     *   Staging APK:     ./gradlew assembleStagingRelease
+     */
+    flavorDimensions "env"
+    productFlavors {
+        production {
+            dimension "env"
+            // keeps everything from defaultConfig — no overrides needed
+        }
+        staging {
+            dimension "env"
+            applicationIdSuffix ".staging"
+            versionNameSuffix "-staging"
+            // App name override is in: android/app/src/staging/res/values/strings.xml
         }
     }
     packagingOptions {
@@ -197,3 +224,5 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+apply plugin: 'com.google.gms.google-services'

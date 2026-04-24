@@ -1,7 +1,7 @@
 {
   "name": "ihafidh3",
   "main": "expo-router/entry",
-  "version": "2.0.9",
+  "version": "2.1.2",
   "scripts": {
     "start": "expo start --dev-client",
     "android": "cross-env NODE_ENV=development expo run:android",
@@ -28,7 +28,7 @@
     "@babel/runtime": "^7.26.0",
     "@expo/metro-runtime": "~6.1.2",
     "@notifee/react-native": "^9.1.8",
-    "@react-native-async-storage/async-storage": "^2.0.0",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "^11.4.1",
     "@react-native-firebase/analytics": "^23.8.3",
     "@react-native-firebase/app": "^23.8.3",
@@ -61,6 +61,7 @@
     "expo-sensors": "~15.0.8",
     "expo-sqlite": "~16.0.10",
     "expo-status-bar": "~3.0.9",
+    "expo-store-review": "~9.0.9",
     "expo-task-manager": "~14.0.9",
     "expo-web-browser": "~15.0.10",
     "grapheme-splitter": "^1.0.4",
@@ -72,6 +73,7 @@
     "react-native": "^0.81.4",
     "react-native-auto-size-text": "^1.1.1",
     "react-native-confetti-cannon": "^1.5.2",
+    "react-native-copilot": "^3.3.3",
     "react-native-fs": "^2.20.0",
     "react-native-gesture-handler": "~2.28.0",
     "react-native-in-app-review": "^4.4.2",

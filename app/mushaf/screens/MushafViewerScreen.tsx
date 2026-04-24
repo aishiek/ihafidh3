@@ -1,5 +1,5 @@
 import { useThemeStore } from '@/store/themeStore';
-import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
+import {logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { useCustomColors } from '@/utils/themeUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
@@ -40,9 +40,7 @@ export default function MushafViewerScreen() {
   useEffect(() => {
     logAnalyticsEvent('mushaf_screen_viewed', {
       source: params?.source || 'direct',
-      initial_page: params?.pageNumber || 'last_read',
-      ...getCommonParams(),
-    });
+      initial_page: params?.pageNumber || 'last_read',});
   }, []);
   const navigation = useNavigation();
   const router = useRouter();
@@ -318,14 +316,15 @@ export default function MushafViewerScreen() {
   const handlePageChange = (pageNum: number) => {
     const direction = pageNum > currentPage ? 'next' : pageNum < currentPage ? 'prev' : 'jump';
     
-    // ANALYTICS: Track Mushaf page navigation
-    logAnalyticsEvent('mushaf_page_changed', {
-      from_page: currentPage,
-      to_page: pageNum,
-      direction: direction,
-      total_pages: totalPages,
-      ...getCommonParams(),
-    });
+    // ANALYTICS: mushaf_page_changed (P3)
+    // Required: page_number, surah_number, navigation_type: 'swipe' | 'tap' | 'jump'
+    try {
+      logAnalyticsEvent('mushaf_page_changed', {
+        page_number: pageNum ?? 0,
+        surah_number: 0, // P3-TODO: resolve from pageMetadata.surahId when metadata is available at this scope
+        navigation_type: direction === 'next' || direction === 'prev' ? 'tap' : 'jump',
+      });
+    } catch { /* analytics must never crash */ }
     
     setCurrentPage(pageNum);
   };

@@ -1,5 +1,5 @@
 import { AVAILABLE_LAYOUTS } from '@/types/layout';
-import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
+import {logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { router } from 'expo-router';
 import { CheckCircle, Circle, Download, X } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
@@ -74,9 +74,7 @@ const LayoutSelector: React.FC<LayoutSelectorProps> = ({ visible, onClose, onLay
         // ANALYTICS: Track layout download initiated
         logAnalyticsEvent('mushaf_layout_download_initiated', {
           layout_id: layoutId,
-          layout_name: AVAILABLE_LAYOUTS.find(l => l.layout_id === layoutId)?.layout_name,
-          ...getCommonParams(),
-        });
+          layout_name: AVAILABLE_LAYOUTS.find(l => l.layout_id === layoutId)?.layout_name,});
         onClose(); // Close the modal first
         router.push('/mushaf/settings'); // Navigate to download page
         return;
@@ -100,9 +98,7 @@ const LayoutSelector: React.FC<LayoutSelectorProps> = ({ visible, onClose, onLay
           previous_layout: previousLayoutName,
           trigger: 'viewer',
           from_layout_id: activeLayoutId,
-          to_layout_id: layoutId,
-          ...getCommonParams(),
-        });
+          to_layout_id: layoutId,});
         
         setActiveLayoutId(layoutId);
         onLayoutSelected(layoutId);

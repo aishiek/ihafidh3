@@ -7,19 +7,38 @@ import { useBookmarkStore } from '@/store/bookmarkStore';
 import { useProgressStore } from '@/store/progressStore';
 import { PLAYBACK_SPEED_OPTIONS, useSettingsStore, type PlaybackSpeed } from '@/store/settingsStore';
 import { Verse } from '@/types';
-import { getCommonParams, logAnalyticsEvent, logAudioPlayback } from '@/utils/analyticsHelper';
+import {logAnalyticsEvent, logAudioPlayback } from '@/utils/analyticsHelper';
 import { setPlaybackSpeed as setAudioPlaybackSpeed } from '@/utils/audioUtils';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
 import * as Haptics from 'expo-haptics';
 import { ArrowLeft, Bookmark as BookmarkIcon, BookOpen, Check, Infinity as InfinityIcon, Play, RefreshCw } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, unstable_batchedUpdates } from 'react-native';
 import TafsirModal from './TafsirModal';
 import TajweedText from './TajweedText';
 // Direct import to avoid Suspense conflicts with FlashList
 import SajdahIcon from '@/assets/svg/islamic-patterns/SajdahIcon';
 import { isSajdah } from '@/utils/isSajdah';
+import Svg, { Path } from 'react-native-svg';
+
+// 1. Redesigned with actual app icons, inline icon demos, and expandable cards.
+// 2. Performance-optimized containers and FlashList hooks.
+// 3. Conditional Tajweed mode rendering with Skia.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Pre-define all possible container styles to avoid creating new object references
+// on every render, which prevents expensive Android re-measuring during FlashList recycling.
+const CONTAINER_STYLES = StyleSheet.create({
+  playing: { backgroundColor: '#1E3A8A', borderColor: '#3B82F6', borderWidth: 2 },
+  highlighted: { backgroundColor: '#D4AF3715', borderColor: '#D4AF37', borderWidth: 2 },
+  completed: { backgroundColor: '#1a1a1a', borderColor: '#10B981', borderWidth: 2 },
+  basmalah: { backgroundColor: '#1a1a1a', borderColor: '#ffffff', borderWidth: 1, marginVertical: 8 },
+  memorizedAndRevised: { backgroundColor: '#4CAF5015', borderColor: '#4CAF50', borderWidth: 2, borderTopColor: '#4CAF50', borderBottomColor: '#FF9800', borderLeftColor: '#4CAF50', borderRightColor: '#FF9800' },
+  memorized: { backgroundColor: '#4CAF5020', borderColor: '#4CAF50', borderWidth: 2 },
+  revised: { backgroundColor: '#211f1e', borderColor: '#FF9800', borderWidth: 2 },
+  default: { backgroundColor: '#1a1a1a', borderColor: '#ffffff', borderWidth: 1 }
+});
 
 interface VerseItemProps {
   verse: Verse;
@@ -104,7 +123,7 @@ const VerseItem = ({
   const bookmarksSet = useBookmarkStore(state => state.bookmarksSet);
 
   // ============ LOCAL STATE ============
-  const [repeatCount, setRepeatCount] = useState<number>(repeatMode || 1);
+  const [repeatCount, setRepeatCount] = useState<number>(() => repeatMode || 1);
   const [showPlaybackModal, setShowPlaybackModal] = useState(false);
   const [showTafsirModal, setShowTafsirModal] = useState(false);
   // per-verse Go modal (small, opens to jump to a verse via moveToVerse prop)
@@ -115,6 +134,7 @@ const VerseItem = ({
   const [remoteTransliteration, setRemoteTransliteration] = useState<string | null>(null);
   const [remoteTranslation, setRemoteTranslation] = useState<string | null>(null);
   const [localData, setLocalData] = useState({
+    verseId: verse.id,
     arabic: null as string | null,
     transliteration: null as string | null,
     translation: null as string | null,
@@ -127,14 +147,12 @@ const VerseItem = ({
   const translationAbortRef = useRef<AbortController | null>(null);
   const localDbAbortRef = useRef<AbortController | null>(null);
   // CRITICAL: Track if component is mounted and visible
-  const isMountedRef = useRef(true);
   const loadingStartedRef = useRef(false);
 
   // ============ CRITICAL FIX: Reset all local state when verse changes (Fix for FlashList recycling) ============
   useEffect(() => {
     // When the verse ID changes (component recycled to show different verse),
     // reset ALL local state to prevent showing old verse's content
-    setRepeatCount(repeatMode || 1);
     setShowPlaybackModal(false);
     setShowTafsirModal(false);
     setShowGoModal(false);
@@ -144,6 +162,7 @@ const VerseItem = ({
     setRemoteTransliteration(null);
     setRemoteTranslation(null);
     setLocalData({
+      verseId: verse.id,
       arabic: null,
       transliteration: null,
       translation: null,
@@ -158,7 +177,9 @@ const VerseItem = ({
     translationAbortRef.current?.abort();
     localDbAbortRef.current?.abort();
 
-  }, [verse.id, verse.surahId, verse.verseNumber, repeatMode]);
+  }, [verse.id]);
+
+
 
   // ============ DERIVED STATE ============
   const surahId = useMemo(() => getSurahId(verse), [verse.surahId, (verse as any).surahNumber, verse.surah?.number]);
@@ -223,10 +244,8 @@ const VerseItem = ({
     // Get the base text
     if (arabicFont === 'tajweed' && (verse as any).tajweedText) {
       text = (verse as any).tajweedText;
-      // console.log('[VerseItem] Using tajweedText:', text.substring(0, 100));
-    } else if (localData.arabic && localData.arabic.trim().length > 0) {
+    } else if (localData.verseId === verse.id && localData.arabic && localData.arabic.trim().length > 0) {
       text = localData.arabic;
-      // console.log('[VerseItem] Using localData.arabic:', text.substring(0, 100));
     } else {
       text = arabicText || '';
       // console.log('[VerseItem] Using arabicText:', text.substring(0, 100));
@@ -235,98 +254,43 @@ const VerseItem = ({
     // Append verse end glyph for Tajweed mode (both iOS and Android)
     // TajweedText handles Android fallback with colored segments
     if (arabicFont === 'tajweed' && text && !text.endsWith('\u06DD')) {
-      text = `${text}\u06DD`;
+      // For Bismillah, we don't append it to the base string if we want to color it separately in the JSX
+      if (!isBasmalah) {
+        text = `${text}\u06DD`;
+      }
     }
 
     // console.log('[VerseItem] Final text length:', text.length);
     return text;
-  }, [arabicFont, (verse as any).tajweedText, localData.arabic, arabicText]);
+  }, [arabicFont, (verse as any).tajweedText, localData.arabic, arabicText, isBasmalah]);
 
   // Simplified: prefer remote (English) transliteration when available, then local cache, then prop.
   const displayedTransliteration = useMemo(() => {
     if (remoteTransliteration != null) return remoteTransliteration;
-    if (localData.transliteration) return localData.transliteration;
+    if (localData.verseId === verse.id && localData.transliteration) return localData.transliteration;
     return verse.transliteration || null;
-  }, [remoteTransliteration, localData.transliteration, verse.transliteration]);
+  }, [remoteTransliteration, localData.verseId, localData.transliteration, verse.transliteration, verse.id]);
 
   const displayedTranslation = useMemo(() => {
-    return remoteTranslation || localData.translation || verse.translation || defaultTranslation;
-  }, [remoteTranslation, localData.translation, verse.translation, defaultTranslation]);
+    return remoteTranslation || (localData.verseId === verse.id ? localData.translation : null) || verse.translation || defaultTranslation;
+  }, [remoteTranslation, localData.verseId, localData.translation, verse.translation, defaultTranslation, verse.id]);
 
   // ============ CONTAINER STYLE ============
   const containerStyle = useMemo(() => {
+    if (pageIsPlaying) return CONTAINER_STYLES.playing;
+    if (highlighted) return CONTAINER_STYLES.highlighted;
+    if (pageIsCompleted) return CONTAINER_STYLES.completed;
+    if (isBasmalah) return CONTAINER_STYLES.basmalah;
+
     const isMemorized = memorized || surahMemorizedGlobally;
     const isRevised = revised || surahRevisedGlobally;
 
-    // Page-mode PLAYING state takes precedence (blue)
-    if (pageIsPlaying) {
-      return {
-        backgroundColor: '#1E3A8A',
-        borderColor: '#3B82F6',
-        borderWidth: 2,
-      };
-    }
-
-    // Explicit highlight state (gold border) for search/navigation results
-    if (highlighted) {
-      return {
-        backgroundColor: '#D4AF3715',
-        borderColor: '#D4AF37',
-        borderWidth: 2,
-      };
-    }
-
-    // Page-mode COMPLETED state (green border) has next precedence
-    if (pageIsCompleted) {
-      return {
-        backgroundColor: '#1a1a1a',
-        borderColor: '#10B981',
-        borderWidth: 2,
-      };
-    }
-
-    if (isBasmalah) {
-      return {
-        backgroundColor: 'rgba(255, 215, 0, 0.03)',
-        borderColor: 'rgba(255, 215, 0, 0.15)',
-        borderWidth: 1,
-        marginVertical: 24,
-        paddingVertical: 32,
-        opacity: 0.9,
-      };
-    }
-
-    if (isMemorized && isRevised) {
-      return {
-        backgroundColor: '#4CAF5015',
-        borderColor: '#4CAF50',
-        borderWidth: 2,
-        borderTopColor: '#4CAF50',
-        borderBottomColor: '#FF9800',
-        borderLeftColor: '#4CAF50',
-        borderRightColor: '#FF9800',
-      };
-    }
-    if (isMemorized) {
-      return {
-        backgroundColor: '#4CAF5020',
-        borderColor: '#4CAF50',
-        borderWidth: 2,
-      };
-    }
-    if (isRevised) {
-      return {
-        backgroundColor: '#211f1e',
-        borderColor: '#FF9800',
-        borderWidth: 2,
-      };
-    }
-    return {
-      backgroundColor: '#1a1a1a',
-      borderColor: '#ffffff',
-      borderWidth: 1,
-    };
-  }, [memorized, surahMemorizedGlobally, revised, surahRevisedGlobally, pageIsPlaying, pageIsCompleted]);
+    if (isMemorized && isRevised) return CONTAINER_STYLES.memorizedAndRevised;
+    if (isMemorized) return CONTAINER_STYLES.memorized;
+    if (isRevised) return CONTAINER_STYLES.revised;
+    
+    return CONTAINER_STYLES.default;
+  }, [memorized, surahMemorizedGlobally, revised, surahRevisedGlobally, pageIsPlaying, pageIsCompleted, highlighted, isBasmalah]);
 
   // ============ EVENT HANDLERS (using getState() to prevent re-renders) ============
 
@@ -359,15 +323,15 @@ const VerseItem = ({
         await useBookmarkStore.getState().removeBookmark(verse.id);
       }
 
-      // ANALYTICS: Bookmark toggled
-      logAnalyticsEvent('verse_bookmark_toggled', {
-        action: action,
-        verse_id: verse.id,
-        surah_id: surahId || 0,
-        verse_number: verse.verseNumber || 0,
-        source,
-        ...getCommonParams(),
-      });
+      // ANALYTICS: verse_bookmark_toggled (P3)
+      // Required: surah_number, verse_number, state: 'bookmarked' | 'unbookmarked'
+      try {
+        logAnalyticsEvent('verse_bookmark_toggled', {
+          surah_number: surahId ?? 0,
+          verse_number: verse.verseNumber ?? 0,
+          state: action === 'add' ? 'bookmarked' : 'unbookmarked',
+        });
+      } catch { /* analytics must never crash */ }
     } catch (error) {
       console.error('[VerseItem] Bookmark toggle failed:', error);
     } finally {
@@ -377,8 +341,6 @@ const VerseItem = ({
 
   const handleMarkMemorized = useCallback(() => {
     try {
-      const action = memorized ? 'unmark' : 'mark';
-
       if (memorized) {
         useProgressStore.getState().unmarkVerseAsMemorized(verse.id);
       } else {
@@ -388,42 +350,22 @@ const VerseItem = ({
           useProgressStore.getState().checkAndCelebrateBadges();
         }, 100);
       }
-
-      // ANALYTICS: Verse memorization toggled
-      logAnalyticsEvent('verse_memorization_toggled', {
-        action: action,
-        verse_id: verse.id,
-        surah_id: surahId || 0,
-        verse_number: verse.verseNumber || 0,
-        ...getCommonParams(),
-      });
     } catch (error) {
       console.error('[VerseItem] Mark memorized failed:', error);
     }
-  }, [memorized, verse.id, surahId, verse.verseNumber]);
+  }, [memorized, verse.id]);
 
   const handleMarkRevised = useCallback(() => {
     try {
-      const action = revised ? 'unmark' : 'mark';
-
       if (revised) {
         useProgressStore.getState().unmarkVerseAsRevised(verse.id);
       } else {
         useProgressStore.getState().markVerseAsRevised(verse.id);
       }
-
-      // ANALYTICS: Verse revision toggled
-      logAnalyticsEvent('verse_revision_toggled', {
-        action: action,
-        verse_id: verse.id,
-        surah_id: surahId || 0,
-        verse_number: verse.verseNumber || 0,
-        ...getCommonParams(),
-      });
     } catch (error) {
       console.error('[VerseItem] Mark revised failed:', error);
     }
-  }, [revised, verse.id, surahId, verse.verseNumber]);
+  }, [revised, verse.id]);
 
   const handlePlaybackSpeedPress = useCallback((speed: PlaybackSpeed) => {
     try {
@@ -448,13 +390,17 @@ const VerseItem = ({
   }, [infiniteLoop]);
 
   const handleOpenTafsir = useCallback(() => {
-    // ANALYTICS: Tafsir opened
-    logAnalyticsEvent('tafsir_opened', {
-      verse_id: verse.id,
-      surah_id: surahId || 0,
-      verse_number: verse.verseNumber || 0,
-      ...getCommonParams(),
-    });
+    // ANALYTICS: tafsir_opened (P3)
+    // Required params: surah_number, verse_number, tafsir_source
+    try {
+      const { useSettingsStore: ss } = require('@/store/settingsStore');
+      const lang = ss.getState().translationLanguage || 'unknown';
+      logAnalyticsEvent('tafsir_opened', {
+        surah_number: surahId ?? 0,
+        verse_number: verse.verseNumber ?? 0,
+        tafsir_source: lang.toLowerCase().replace(/\./g, '_').substring(0, 50),
+      });
+    } catch { /* analytics must never crash */ }
     setShowTafsirModal(true);
   }, [verse.id, surahId, verse.verseNumber]);
 
@@ -475,18 +421,22 @@ const VerseItem = ({
       const verseNum = verse.verseNumber || 0;
       onPlayAudio(surahNum, verseNum, undefined, repeatCount, infiniteLoop);
 
-      // ANALYTICS: Consolidated audio playback event
-      logAudioPlayback({
-        action: 'play',
-        audio_type: 'verse',
-        surah_id: surahNum,
-        verse_id: verse.id,
-        verse_number: verseNum,
-        playback_speed: playbackSpeed.toString(),
-        repeat_count: repeatCount,
-        infinite_loop: infiniteLoop,
-        source,
-      });
+      // ANALYTICS: Consolidated audio playback event (Event 9 — P2)
+      try {
+        const { useSettingsStore } = require('@/store/settingsStore');
+        logAudioPlayback({
+          action: 'play',
+          audio_type: 'verse',
+          surah_number: surahNum ?? 0,
+          surah_name: verse.surahName || undefined,
+          verse_number: verseNum ?? 0,
+          reciter: useSettingsStore.getState().reciterIdentifier || 'unknown',
+          playback_speed: playbackSpeed,
+          repeat_count: repeatCount,
+          infinite_loop: infiniteLoop,
+          source_screen: source || 'read_mode',
+        });
+      } catch { /* analytics must never crash */ }
     } catch (error) {
       console.error('[VerseItem] Play audio failed:', error);
     }
@@ -498,7 +448,16 @@ const VerseItem = ({
   useEffect(() => {
     if (!surahId || loadingStartedRef.current) return;
 
-    isMountedRef.current = true;
+    // CRITICAL FIX: Skip local DB loading if we already have the primary required texts
+    // This stops redundant state updates and Double-Render flickering on Android
+    const hasArabic = typeof verse.arabicText === 'string' && verse.arabicText.length > 0;
+    const hasTranslation = typeof verse.translation === 'string' && verse.translation.length > 0;
+    const hasTajweed = arabicFont === 'tajweed' ? typeof (verse as any).tajweedText === 'string' : true;
+    
+    if (hasArabic && hasTranslation && hasTajweed) {
+      return; // Skip fetch entirely
+    }
+
     loadingStartedRef.current = true;
 
     const controller = new AbortController();
@@ -506,7 +465,7 @@ const VerseItem = ({
 
     // CRITICAL FIX: Debounce to avoid rapid loading during fast scrolls
     const timeoutId = setTimeout(async () => {
-      if (!isMountedRef.current || controller.signal.aborted) return;
+      if (controller.signal.aborted) return;
 
       try {
         const cachedArabic = cacheGet<string>(surahId, verse.verseNumber, 'local_ar');
@@ -514,13 +473,16 @@ const VerseItem = ({
         const cachedTrans = cacheGet<string>(surahId, verse.verseNumber, 'local_en');
 
         if (cachedArabic || cachedTranslit || cachedTrans) {
-          if (isMountedRef.current && !controller.signal.aborted) {
-            setLocalData({
-              arabic: cachedArabic || null,
-              transliteration: cachedTranslit || null,
-              translation: cachedTrans || null,
+          if (!controller.signal.aborted) {
+            unstable_batchedUpdates(() => {
+              setLocalData({
+                verseId: verse.id,
+                arabic: cachedArabic || null,
+                transliteration: cachedTranslit || null,
+                translation: cachedTrans || null,
+              });
+              setLocalDataError(null);
             });
-            setLocalDataError(null);
           }
           loadingStartedRef.current = false;
           return;
@@ -528,44 +490,52 @@ const VerseItem = ({
 
         const row = await getVerseFromLocalDB(surahId, verse.verseNumber);
 
-        if (!isMountedRef.current || controller.signal.aborted) return;
+        if (controller.signal.aborted) return;
 
         if (!row) {
-          setLocalDataError('Verse not found in local DB');
-          setLocalData({
-            arabic: null,
-            transliteration: null,
-            translation: null,
+          unstable_batchedUpdates(() => {
+            setLocalDataError('Verse not found in local DB');
+            setLocalData({
+              verseId: verse.id,
+              arabic: null,
+              transliteration: null,
+              translation: null,
+            });
           });
           loadingStartedRef.current = false;
           return;
         }
 
-        setLocalData({
-          arabic: row.ayah || null,
-          transliteration: row.transliteration || null,
-          translation: row.translation || null,
+        unstable_batchedUpdates(() => {
+          setLocalData({
+            verseId: verse.id,
+            arabic: row.ayah || null,
+            transliteration: row.transliteration || null,
+            translation: row.translation || null,
+          });
+          setLocalDataError(null);
         });
-        setLocalDataError(null);
 
         if (row.ayah) cacheSet(surahId, verse.verseNumber, 'local_ar', row.ayah);
         if (row.transliteration) cacheSet(surahId, verse.verseNumber, 'local_tr', row.transliteration);
         if (row.translation) cacheSet(surahId, verse.verseNumber, 'local_en', row.translation);
       } catch (error) {
-        if (!controller.signal.aborted && isMountedRef.current) {
+        if (!controller.signal.aborted) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           console.warn('[VerseItem] Local DB load failed:', errorMsg);
           setLocalDataError(errorMsg);
         }
       } finally {
-        loadingStartedRef.current = false;
+        if (!controller.signal.aborted) {
+          loadingStartedRef.current = false;
+        }
       }
     }, 100); // 100ms debounce - critical for smooth scrolling
 
     return () => {
       clearTimeout(timeoutId);
-      isMountedRef.current = false;
       controller.abort();
+      loadingStartedRef.current = false;
     };
   }, [surahId, verse.verseNumber]);  // Load remote transliteration
   useEffect(() => {
@@ -574,17 +544,16 @@ const VerseItem = ({
       return;
     }
 
-    isMountedRef.current = true;
     const controller = new AbortController();
     transliterationAbortRef.current = controller;
 
     // CRITICAL FIX: Debounce remote API calls
     const timeoutId = setTimeout(async () => {
-      if (!isMountedRef.current || controller.signal.aborted) return;
+      if (controller.signal.aborted) return;
 
       try {
         const text = await fetchTransliterationText(surahId, verse.verseNumber, 'en');
-        if (isMountedRef.current && !controller.signal.aborted) {
+        if (!controller.signal.aborted) {
           setRemoteTransliteration(text || null);
         }
       } catch (error) {
@@ -597,7 +566,6 @@ const VerseItem = ({
 
     return () => {
       clearTimeout(timeoutId);
-      isMountedRef.current = false;
       controller.abort();
     };
   }, [surahId, verse.verseNumber, showTransliteration, translationLanguage]);
@@ -615,25 +583,24 @@ const VerseItem = ({
       return;
     }
 
-    isMountedRef.current = true;
     const controller = new AbortController();
     translationAbortRef.current = controller;
 
     // CRITICAL FIX: Debounce remote API calls
     const timeoutId = setTimeout(async () => {
-      if (!isMountedRef.current || controller.signal.aborted) return;
+      if (controller.signal.aborted) return;
 
       try {
         const cached = cacheGet<string>(surahId, verse.verseNumber, translationLanguage);
         if (cached) {
-          if (isMountedRef.current && !controller.signal.aborted) {
+          if (!controller.signal.aborted) {
             setRemoteTranslation(cached);
           }
           return;
         }
 
         const remote = await getTranslationRemote(surahId, verse.verseNumber, translationLanguage);
-        if (isMountedRef.current && !controller.signal.aborted && remote) {
+        if (!controller.signal.aborted && remote) {
           setRemoteTranslation(remote);
           cacheSet(surahId, verse.verseNumber, translationLanguage, remote);
         }
@@ -647,7 +614,6 @@ const VerseItem = ({
 
     return () => {
       clearTimeout(timeoutId);
-      isMountedRef.current = false;
       controller.abort();
     };
   }, [surahId, verse.verseNumber, translationLanguage]);
@@ -655,7 +621,6 @@ const VerseItem = ({
   // Cleanup all abort controllers on unmount
   useEffect(() => {
     return () => {
-      isMountedRef.current = false;
       transliterationAbortRef.current?.abort();
       translationAbortRef.current?.abort();
       localDbAbortRef.current?.abort();
@@ -665,15 +630,8 @@ const VerseItem = ({
   // DB connection management has been moved to the parent component (read.tsx)
   // to avoid multiple listeners and improve performance
 
-  // Sync repeatCount with repeatMode from store
-  useEffect(() => {
-    if (repeatMode && repeatMode !== repeatCount) {
-      setRepeatCount(repeatMode);
-    }
-  }, [repeatMode, repeatCount]);
-
   // Get Surah name for Juz mode
-  const getSurahName = () => {
+  const surahNameStr = useMemo(() => {
     if (source === 'juzList') {
       // For Juz mode, use Arabic name in English (e.g., "Al-Fatihah" not "The Opening")
       const chapterId = (verse as any).chapter_id || verse.surahId;
@@ -689,22 +647,28 @@ const VerseItem = ({
       return surahInfo;
     }
 
-    // For Surah mode, show Juz and page number instead of redundant surah info
-    const juz = verse.juzNumber;
-    const page = verse.pageNumber;
+    // For Read mode (surahList), show Juz and page number
+    if (source === 'surahList' || source === 'mushaf') {
+      const juz = verse.juzNumber;
+      const page = verse.pageNumber;
 
-    if (juz && page) {
-      return `Juz:${juz} pg:${page}`;
-    } else if (juz) {
-      return `Juz:${juz}`;
-    } else if (page) {
-      return `pg:${page}`;
+      if (juz && page) {
+        return `Juz:${juz} pg:${page}`;
+      } else if (juz) {
+        return `Juz:${juz}`;
+      } else if (page) {
+        return `pg:${page}`;
+      }
     }
 
     // Fallback to surah name if juz/page not available
-    const surahName = (verse as any).surahName || verse.surah?.englishName || `Surah ${surahId || ''}`;
-    return surahName;
-  };
+    const surah = surahsData.find(s => s.id === surahId);
+    let englishName = surah?.englishName || (verse as any).surahName || verse.surah?.englishName || `Surah ${surahId || ''}`;
+    if (surahId && !englishName.startsWith(String(surahId))) {
+      englishName = `${surahId}. ${englishName}`;
+    }
+    return englishName;
+  }, [source, verse, juzSequenceNumber, totalJuzVerses, surahId]);
 
   // Compute number string info for responsive sizing (prevents wrapping for 3-digit numbers)
   const verseNumberStr = String(verse.verseNumber ?? '');
@@ -741,7 +705,7 @@ const VerseItem = ({
             adjustsFontSizeToFit={true}
             minimumFontScale={0.75}
           >
-            {getSurahName()}
+            {surahNameStr}
           </Text>
         </View>
 
@@ -759,9 +723,8 @@ const VerseItem = ({
           <Pressable
             style={({ pressed }) => [
               styles.bookmarkButton,
-              bookmarked && { backgroundColor: '#333333' },
-              pressed && { opacity: 0.6 },
-              { marginLeft: 4 }
+              bookmarked && styles.bookmarkButtonActive,
+              pressed && { opacity: 0.6 }
             ]}
             onPress={handleToggleBookmark}
             accessibilityRole="button"
@@ -773,11 +736,8 @@ const VerseItem = ({
           <Pressable
             style={({ pressed }) => [
               styles.audioButton,
-              {
-                backgroundColor: isCurrentlyPlaying ? '#666666' : primary,
-                marginLeft: 4,
-                opacity: pressed ? 0.7 : 1,
-              }
+              isCurrentlyPlaying ? styles.audioButtonPlaying : { backgroundColor: primary },
+              pressed && { opacity: 0.7 }
             ]}
             onPress={handlePlayAudio}
             accessibilityRole="button"
@@ -790,14 +750,8 @@ const VerseItem = ({
           {/* Repeat Mode Button */}
           <Pressable
             style={({ pressed }) => [
-              styles.repeatButton,
-              {
-                backgroundColor: 'rgba(255, 215, 0, 0.15)',
-                borderColor: 'rgba(255, 215, 0, 0.3)',
-                borderWidth: 1,
-                marginLeft: 4,
-                opacity: pressed ? 0.7 : 1,
-              }
+              styles.repeatButtonBase,
+              pressed && { opacity: 0.7 }
             ]}
             onPress={() => setShowPlaybackModal(true)}
             accessibilityRole="button"
@@ -827,7 +781,7 @@ const VerseItem = ({
       {/* Inline container so we can place an inline sajdah icon at the end of the verse */}
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: isBasmalah ? 'center' : 'flex-end' }}>
         <View style={{ flex: isBasmalah ? 0 : 1 }}>
-          {arabicFont === 'tajweed' ? (
+          {arabicFont === 'tajweed' && !isBasmalah ? (
             <TajweedText
               text={displayedArabic}
               surahNumber={surahId || undefined}
@@ -858,6 +812,9 @@ const VerseItem = ({
               }]}
             >
               {displayedArabic}
+              {isBasmalah && Platform.OS !== 'android' && (
+                <Text style={{ color: '#ffffff', fontSize: fontSizeArabic * 0.9 }}>{'\u00A0\u0661'}</Text>
+              )}
             </Text>
           )}
         </View>
@@ -929,26 +886,12 @@ const VerseItem = ({
       {!isBasmalah && (
         <View style={styles.actionsContainer}>
           <Pressable
-            style={({ pressed }) => ({
-              flex: 1,
-              marginHorizontal: 4,
-              paddingVertical: 9,
-              borderRadius: 12,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: memorized ? '#4CAF50' : '#1a1a1a',
-              borderColor: memorized ? '#4CAF50' : '#444444',
-              borderWidth: memorized ? 2 : 1,
-              opacity: pressed ? 0.7 : 1,
-              shadowColor: memorized ? '#4CAF50' : 'transparent',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.3,
-              shadowRadius: 4,
-              elevation: memorized ? 3 : 0,
-            })}
+            style={({ pressed }) => [
+              styles.actionButtonBase,
+              memorized ? styles.actionMemorized : styles.actionDefault,
+              pressed && { opacity: 0.7 }
+            ]}
             onPress={handleMarkMemorized}
-            android_ripple={{ color: 'transparent' }}
             accessibilityRole="button"
             accessibilityLabel={memorized ? 'Unmark as memorized' : 'Mark as memorized'}
           >
@@ -973,26 +916,12 @@ const VerseItem = ({
           </Pressable>
 
           <Pressable
-            style={({ pressed }) => ({
-              flex: 1,
-              marginHorizontal: 4,
-              paddingVertical: 9,
-              borderRadius: 12,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: revised ? '#FF9800' : '#1a1a1a',
-              borderColor: revised ? '#FF9800' : '#444444',
-              borderWidth: revised ? 2 : 1,
-              opacity: pressed ? 0.7 : 1,
-              shadowColor: revised ? '#FF9800' : 'transparent',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.3,
-              shadowRadius: 4,
-              elevation: revised ? 3 : 0,
-            })}
+            style={({ pressed }) => [
+              styles.actionButtonBase,
+              revised ? styles.actionRevised : styles.actionDefault,
+              pressed && { opacity: 0.7 }
+            ]}
             onPress={handleMarkRevised}
-            android_ripple={{ color: 'transparent' }}
             accessibilityRole="button"
             accessibilityLabel={revised ? 'Unmark as revised' : 'Mark as revised'}
           >
@@ -1229,14 +1158,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginLeft: 8,
   },
-  repeatButton: {
+  audioButtonPlaying: {
+    backgroundColor: '#666666',
+  },
+  repeatButtonBase: {
     minWidth: 32,
     height: 32,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,
-    marginLeft: 4,
+    marginLeft: 8,
+    backgroundColor: 'rgba(255, 215, 0, 0.15)',
+    borderColor: 'rgba(255, 215, 0, 0.3)',
+    borderWidth: 1,
   },
   bookmarkButton: {
     width: 32,
@@ -1244,8 +1179,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 8,
+    marginLeft: 12,
     backgroundColor: 'transparent',
+  },
+  bookmarkButtonActive: {
+    backgroundColor: '#333333',
   },
   controlButton: {
     padding: 6,
@@ -1292,6 +1230,40 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 12,
+  },
+  actionButtonBase: {
+    flex: 1,
+    marginHorizontal: 4,
+    paddingVertical: 9,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  actionMemorized: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+    borderWidth: 2,
+    shadowColor: '#4CAF50',
+    elevation: 3,
+  },
+
+  actionRevised: {
+    backgroundColor: '#FF9800',
+    borderColor: '#FF9800',
+    borderWidth: 2,
+    shadowColor: '#FF9800',
+    elevation: 3,
+  },
+  actionDefault: {
+    backgroundColor: '#1a1a1a',
+    borderColor: '#444444',
+    borderWidth: 1,
+    shadowColor: 'transparent',
+    elevation: 0,
   },
   modalOverlay: {
     flex: 1,

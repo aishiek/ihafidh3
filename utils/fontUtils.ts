@@ -114,3 +114,17 @@ export function fontRequiresDiacriticSpace(fontOption?: ArabicFontOption): boole
   const font = fontOption || 'default';
   return font === 'tajweed' || font === 'amiri-quran';
 }
+
+/**
+ * Normalizes Arabic text for rendering by removing dotted circle placeholders
+ * and redundant carrier characters (like tatweel used for dagger alif).
+ * Matches the logic in TajweedText.tsx.
+ */
+export function normalizeArabicForRendering(text: string | null | undefined): string {
+  if (!text) return '';
+  // Strip U+0640 (Arabic Tatweel) when followed by a combining mark
+  let cleaned = text.replace(/\u0640(?=[\u0300-\u036F\u0610-\u061A\u064B-\u065F\u0670\u0653\u06D6-\u06ED\u08D3-\u08FF])/g, '');
+  // Strip U+25CC (dotted-circle placeholder)
+  cleaned = cleaned.replace(/\u25CC/g, '');
+  return cleaned;
+}

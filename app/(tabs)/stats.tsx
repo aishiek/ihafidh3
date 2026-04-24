@@ -3,7 +3,7 @@ import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import type { QuranicDua } from '@/types/duas';
-import { getCommonParams, logAnalyticsEvent } from '@/utils/analyticsHelper';
+import {logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { calculateDuaStats } from '@/utils/duaHelpers';
 import { calculateJuzProgress, calculateOverallJuzStats } from '@/utils/juzCalculator';
 import { useCustomColors } from '@/utils/themeUtils';
@@ -166,18 +166,20 @@ export default function StatsScreen() {
 
     const loadActivityData = async () => {
       try {
-        console.log('[stats] Loading activity data from database...');
+        if (__DEV__) console.log('[stats] Loading activity data from database...');
         const data = await getActivityData();
 
         if (mounted) {
-          console.log('[stats] Activity Data loaded:', {
-            memorizedCount: data.memorizedVerses.length,
-            revisedCount: data.revisedVerses.length,
-            memorizedSample: data.memorizedVerses.slice(0, 3),
-            revisedSample: data.revisedVerses.slice(0, 3),
-            totalMemorized: data.memorizedVerses.reduce((sum, d) => sum + d.count, 0),
-            totalRevised: data.revisedVerses.reduce((sum, d) => sum + d.count, 0),
-          });
+          if (__DEV__) {
+            console.log('[stats] Activity Data loaded:', {
+              memorizedCount: data.memorizedVerses.length,
+              revisedCount: data.revisedVerses.length,
+              memorizedSample: data.memorizedVerses.slice(0, 3),
+              revisedSample: data.revisedVerses.slice(0, 3),
+              totalMemorized: data.memorizedVerses.reduce((sum, d) => sum + d.count, 0),
+              totalRevised: data.revisedVerses.reduce((sum, d) => sum + d.count, 0),
+            });
+          }
           setActivityData(data);
 
           const pageData = getPageActivityData();
@@ -199,9 +201,7 @@ export default function StatsScreen() {
   useEffect(() => {
     logAnalyticsEvent('stats_tab_viewed', {
       memorized_verses_count: memorizedVerses.length,
-      revised_verses_count: revisedVerses.length,
-      ...getCommonParams(),
-    });
+      revised_verses_count: revisedVerses.length,});
   }, []);
 
   // Initialize progress tracker with current memorized verses

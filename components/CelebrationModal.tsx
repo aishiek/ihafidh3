@@ -1,8 +1,9 @@
 import { useSettingsStore } from '@/store/settingsStore';
 import { getArabicTypographySizing } from '@/utils/fontUtils';
 import React, { useEffect, useRef } from 'react';
-import { Animated, Dimensions, StyleSheet, Text, View } from 'react-native';
+import { Animated, Dimensions, StyleSheet, Text, View, Modal, TouchableOpacity } from 'react-native';
 import ConfettiCannon from 'react-native-confetti-cannon';
+import { router } from 'expo-router';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -324,10 +325,10 @@ const CONFETTI_CONFIG: Record<CelebrationType, {
   colors: string[];
 }> = {
   quiz: { 
-    count: 30, 
-    duration: 3000, 
-    useLibrary: false, // Custom confetti for quiz (lighter)
-    colors: ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8']
+    count: 250, 
+    duration: 5000, 
+    useLibrary: true, // Now using library for more punchy celebration
+    colors: ['#FFD700', '#FFA500', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#FF1493', '#00CED1']
   },
   'surah-memorized': { 
     count: 150, 
@@ -478,17 +479,21 @@ export default function CelebrationModal({
   if (__DEV__) console.log(`✅ [CelebrationModal] RENDERING MODAL - type: ${type}, badge: ${badgeName || 'none'}`);
 
   return (
-    <View 
-      style={[
-        styles.modalOverlay, 
-        { 
-          display: visible ? 'flex' : 'none',
-          zIndex: 999999,
-          elevation: 999999,
-        }
-      ]}
-      pointerEvents={visible ? 'auto' : 'none'}
+    <Modal
+      transparent={true}
+      visible={visible}
+      animationType="none"
     >
+      <View 
+        style={[
+          styles.modalOverlay, 
+          { 
+            zIndex: 999999,
+            elevation: 999999,
+          }
+        ]}
+        pointerEvents="auto"
+      >
       <View style={styles.overlay}>
         <View style={[styles.confettiContainer, { zIndex: 99999 }]}>
           {confettiConfig.useLibrary && !confettiError ? (
@@ -496,11 +501,11 @@ export default function CelebrationModal({
             <ConfettiCannon
               key={`confetti-${type}-${visible ? Date.now() : 0}`}
               count={confettiConfig.count}
-              origin={{ x: SCREEN_WIDTH / 2, y: 0 }}
+              origin={{ x: SCREEN_WIDTH / 2, y: -50 }}
               autoStart={true}
               autoStartDelay={100}
-              fadeOut={true}
-              fallSpeed={3000}
+              fadeOut={false}
+              fallSpeed={4000}
               colors={confettiConfig.colors}
               explosionSpeed={500}
               onAnimationEnd={() => __DEV__ && console.log('✅ [Confetti] Animation completed')}
@@ -544,9 +549,31 @@ export default function CelebrationModal({
             ...arabicTypography
           }]}>{message.arabic}</Text>
           <Text style={styles.english}>{message.english}</Text>
+          
+          {(type === 'badge-unlocked' || type === 'hafidh-badge') && (
+            <TouchableOpacity 
+              style={styles.viewBadgesBtn}
+              onPress={() => {
+                if (onComplete) onComplete();
+                router.push('/(tabs)/badges');
+              }}
+            >
+              <Text style={styles.viewBadgesText}>View your badges</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity 
+            style={styles.continueBtn}
+            onPress={() => {
+              if (onComplete) onComplete();
+            }}
+          >
+            <Text style={styles.continueText}>Continue</Text>
+          </TouchableOpacity>
         </Animated.View>
       </View>
-    </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -579,9 +606,9 @@ const styles = StyleSheet.create({
   },
   confettiPiece: {
     position: 'absolute',
-    width: 16,
-    height: 16,
-    borderRadius: 4,
+    width: 24,
+    height: 24,
+    borderRadius: 6,
     zIndex: 2,
   },
   messageBox: {
@@ -639,5 +666,31 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#FFD700',
     fontWeight: '600',
+  },
+  viewBadgesBtn: {
+    marginTop: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: '#FFD700',
+    borderRadius: 20,
+  },
+  viewBadgesText: {
+    color: '#000',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  continueBtn: {
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    backgroundColor: 'transparent',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  continueText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
   },
 });

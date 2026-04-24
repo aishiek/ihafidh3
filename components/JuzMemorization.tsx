@@ -9,6 +9,7 @@ import { useThemeColor } from '@/utils/useThemeColor';
 import { ArrowLeft, Check, RefreshCw } from 'lucide-react-native';
 import React, { useCallback, useMemo } from 'react';
 import { FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {logAnalyticsEvent } from '@/utils/analyticsHelper';
 
 function getSurahIdByName(name: string): number | null {
   const surah = surahsData.find(s => s.name === name || s.englishName === name || s.arabicName === name);
@@ -17,9 +18,10 @@ function getSurahIdByName(name: string): number | null {
 
 type Props = {
   onOpenJuz: (juz: number) => void;
+  searchQuery?: string;
 };
 
-export default function JuzMemorization({ onOpenJuz }: Props) {
+export default function JuzMemorization({ onOpenJuz, searchQuery }: Props) {
   const { primary } = useThemeColor();
   const colors = useCustomColors();
   const { memorizedVerses, revisedVerses, bulkMarkVersesMemorized, bulkMarkVersesRevised, updateBadges } = useProgressStore();
@@ -40,6 +42,11 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
   const revisedSet = useMemo(() => new Set((revisedVerses || []).map(r => r.verseId)), [revisedVerses]);
 
   const data = useMemo(() => Array.from({ length: 30 }, (_, i) => i + 1), []);
+
+  const filteredData = useMemo(() => {
+    if (!searchQuery) return data;
+    return data.filter(d => String(d).includes(searchQuery.trim()));
+  }, [data, searchQuery]);
 
   // Precompute progress for all 30 Juz once per memorized/revised change
   const juzProgressData = useMemo(() => {
@@ -94,6 +101,14 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
       updateBadges();
       await new Promise(resolve => setTimeout(resolve, 400));
       closeModal();
+
+      // ANALYTICS: Juz-level memorization toggle (not juz_completed — that fires from progressStore at 100%)
+      logAnalyticsEvent('juz_memorization_toggled', {
+        action: enable ? 'mark_memorized' : 'unmark_memorized',
+        juz_number: juz,
+        juz_name: `Juz ${juz}`,
+        verses_count: range.totalVerses || idsToApply.length,
+        completion_type: 'manual_bulk',});
     } catch (e) {
       console.error('Error toggling Juz:', e);
       if (progressTimerRef.current) { clearInterval(progressTimerRef.current); progressTimerRef.current = null; }
@@ -143,6 +158,14 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
       animateProgress(idsToApply.length, idsToApply.length);
       await new Promise(resolve => setTimeout(resolve, 400));
       closeModal();
+
+      // ANALYTICS: Juz-level revision toggle
+      logAnalyticsEvent('juz_revision_toggled', {
+        action: enable ? 'mark_revised' : 'unmark_revised',
+        juz_number: juz,
+        juz_name: `Juz ${juz}`,
+        verses_count: range.totalVerses || idsToApply.length,
+        completion_type: 'manual_bulk',});
     } catch (e) {
       console.error('Error toggling Juz revision:', e);
       if (progressTimerRef.current) { clearInterval(progressTimerRef.current); progressTimerRef.current = null; }
@@ -265,7 +288,7 @@ export default function JuzMemorization({ onOpenJuz }: Props) {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Juz verses are handled by parent via onOpenJuz */}
       <FlatList
-        data={data}
+        data={filteredData}
         keyExtractor={(n) => String(n)}
         renderItem={renderItem}
         contentContainerStyle={styles.content}
