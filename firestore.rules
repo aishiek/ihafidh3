@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Community Stats — readable by all, writable only by increments
+    match /community_stats/global {
+      allow read: if true;
+      allow update: if
+        // Only allow incrementing specific numeric counter fields
+        request.resource.data.keys().hasOnly([
+          'total_surahs_completed', 'total_juz_completed',
+          'total_favourites', 'total_bookmarks',
+          'total_hafidh_completions', 'total_quizzes_ai', 'total_quizzes_manual',
+          'total_audio_played', 'updated_at'
+        ]) &&
+        // Each counter must be >= 0 (floor guard)
+        request.resource.data.total_surahs_completed >= 0 &&
+        request.resource.data.total_juz_completed >= 0 &&
+        request.resource.data.total_favourites >= 0 &&
+        request.resource.data.total_bookmarks >= 0 &&
+        (!request.resource.data.keys().hasAll(['total_audio_played']) || request.resource.data.total_audio_played >= 0);
+      allow create: if false; // Document is pre-created by dev, not by clients
+    }
+
+    // Surah Stats — readable by all, constrained writes
+    match /surah_stats/{surahId} {
+      allow read: if true;
+      allow update: if
+        int(surahId) >= 1 && int(surahId) <= 114 &&
+        request.resource.data.keys().hasOnly([
+          'surah_number', 'surah_name', 'memorized_count', 'revised_count',
+          'completed_count', 'favourite_count', 'bookmark_count',
+          'verse_favourites', 'verse_bookmarks', 'audio_played_count', 'updated_at'
+        ]) &&
+        request.resource.data.memorized_count >= 0 &&
+        request.resource.data.revised_count >= 0 &&
+        request.resource.data.completed_count >= 0 &&
+        request.resource.data.favourite_count >= 0 &&
+        request.resource.data.bookmark_count >= 0 &&
+        (!request.resource.data.keys().hasAll(['audio_played_count']) || request.resource.data.audio_played_count >= 0);
+      allow create: if false;
+    }
+
+    // Juz Stats — readable by all, constrained writes
+    match /juz_stats/{juzId} {
+      allow read: if true;
+      allow update: if
+        int(juzId) >= 1 && int(juzId) <= 30 &&
+        request.resource.data.keys().hasOnly([
+          'juz_number', 'completed_count', 'revised_count', 'updated_at'
+        ]) &&
+        request.resource.data.completed_count >= 0;
+      allow create: if false;
+    }
+  }
+}

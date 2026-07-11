@@ -7,12 +7,12 @@ import { useBookmarkStore } from '@/store/bookmarkStore';
 import { useProgressStore } from '@/store/progressStore';
 import { PLAYBACK_SPEED_OPTIONS, useSettingsStore, type PlaybackSpeed } from '@/store/settingsStore';
 import { Verse } from '@/types';
-import {logAnalyticsEvent, logAudioPlayback } from '@/utils/analyticsHelper';
+import { logAnalyticsEvent, logAudioPlayback , logScreenView } from '@/utils/analyticsHelper';
 import { setPlaybackSpeed as setAudioPlaybackSpeed } from '@/utils/audioUtils';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
 import * as Haptics from 'expo-haptics';
-import { ArrowLeft, Bookmark as BookmarkIcon, BookOpen, Check, Infinity as InfinityIcon, Play, RefreshCw } from 'lucide-react-native';
+import { ArrowLeft, Bookmark as BookmarkIcon, BookOpen, Check, Infinity as InfinityIcon, Pause, Play, RefreshCw } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, unstable_batchedUpdates } from 'react-native';
 import TafsirModal from './TafsirModal';
@@ -55,7 +55,7 @@ interface VerseItemProps {
   pageRepeatInfo?: string | undefined;
   juzSequenceNumber?: number;
   totalJuzVerses?: number;
-  source?: 'surahList' | 'juzList' | 'mustahabbah';
+  source?: 'surahList' | 'juzList' | 'mustahabbah' | 'mushaf';
   highlighted?: boolean;
 }
 
@@ -79,6 +79,8 @@ const getSurahId = (verse: Verse): number | null => {
   return surahId || null;
 };
 
+const DEFAULT_TRANSLATION = '';
+
 const VerseItem = ({
   verse,
   onPlayAudio,
@@ -101,18 +103,16 @@ const VerseItem = ({
   const { primary } = useThemeColor();
 
   // ============ SETTINGS STORE ============
-  const {
-    fontSizeArabic,
-    fontSizeTransliteration,
-    fontSizeTranslation,
-    arabicFont,
-    showTranslation,
-    showTransliteration,
-    repeatMode,
-    playbackSpeed,
-    infiniteLoop,
-    translationLanguage
-  } = useSettingsStore();
+  const fontSizeArabic = useSettingsStore(s => s.fontSizeArabic);
+  const fontSizeTransliteration = useSettingsStore(s => s.fontSizeTransliteration);
+  const fontSizeTranslation = useSettingsStore(s => s.fontSizeTranslation);
+  const arabicFont = useSettingsStore(s => s.arabicFont);
+  const showTranslation = useSettingsStore(s => s.showTranslation);
+  const showTransliteration = useSettingsStore(s => s.showTransliteration);
+  const repeatMode = useSettingsStore(s => s.repeatMode);
+  const playbackSpeed = useSettingsStore(s => s.playbackSpeed);
+  const infiniteLoop = useSettingsStore(s => s.infiniteLoop);
+  const translationLanguage = useSettingsStore(s => s.translationLanguage);
 
   // ============ PROGRESS STORE ============
   const memorizedVerseDates = useProgressStore(state => state.memorizedVerseDates);
@@ -124,15 +124,18 @@ const VerseItem = ({
 
   // ============ LOCAL STATE ============
   const [repeatCount, setRepeatCount] = useState<number>(() => repeatMode || 1);
-  const [showPlaybackModal, setShowPlaybackModal] = useState(false);
-  const [showTafsirModal, setShowTafsirModal] = useState(false);
   // per-verse Go modal (small, opens to jump to a verse via moveToVerse prop)
-  const [showGoModal, setShowGoModal] = useState(false);
-  const [goInput, setGoInput] = useState('');
-  const [goInputError, setGoInputError] = useState<string | null>(null);
-  const [goSubmitting, setGoSubmitting] = useState(false);
-  const [remoteTransliteration, setRemoteTransliteration] = useState<string | null>(null);
-  const [remoteTranslation, setRemoteTranslation] = useState<string | null>(null);
+  const [uiState, setUiState] = useState({
+    showPlaybackModal: false,
+    showTafsirModal: false,
+    showGoModal: false,
+    goInput: '',
+    goInputError: null as string | null,
+    goSubmitting: false,
+  });
+  const { showPlaybackModal, showTafsirModal, showGoModal, goInput, goInputError, goSubmitting } = uiState;
+  const [remoteTransliteration, setRemoteTransliteration] = useState<{ verseId: number; text: string } | null>(null);
+  const [remoteTranslation, setRemoteTranslation] = useState<{ verseId: number; text: string } | null>(null);
   const [localData, setLocalData] = useState({
     verseId: verse.id,
     arabic: null as string | null,
@@ -153,21 +156,25 @@ const VerseItem = ({
   useEffect(() => {
     // When the verse ID changes (component recycled to show different verse),
     // reset ALL local state to prevent showing old verse's content
-    setShowPlaybackModal(false);
-    setShowTafsirModal(false);
-    setShowGoModal(false);
-    setGoInput('');
-    setGoInputError(null);
-    setGoSubmitting(false);
-    setRemoteTransliteration(null);
-    setRemoteTranslation(null);
-    setLocalData({
-      verseId: verse.id,
-      arabic: null,
-      transliteration: null,
-      translation: null,
+    unstable_batchedUpdates(() => {
+      setUiState({
+        showPlaybackModal: false,
+        showTafsirModal: false,
+        showGoModal: false,
+        goInput: '',
+        goInputError: null,
+        goSubmitting: false,
+      });
+      setRemoteTransliteration(null);
+      setRemoteTranslation(null);
+      setLocalData({
+        verseId: verse.id,
+        arabic: null,
+        transliteration: null,
+        translation: null,
+      });
+      setLocalDataError(null);
     });
-    setLocalDataError(null);
 
     // Reset loading flags to allow fresh data load
     loadingStartedRef.current = false;
@@ -225,7 +232,6 @@ const VerseItem = ({
   }, [verse.arabicText, (verse as any).verseNumber, (verse as any).id]);
   // No fallback translation for missing Arabic to avoid showing Bismillah text
   // incorrectly for other verses when data is missing.
-  const defaultTranslation = '';
 
   // ============ DISPLAY VALUES ============
   // Prefer explicitly loaded local data; otherwise use computed arabicText.
@@ -262,18 +268,34 @@ const VerseItem = ({
 
     // console.log('[VerseItem] Final text length:', text.length);
     return text;
-  }, [arabicFont, (verse as any).tajweedText, localData.arabic, arabicText, isBasmalah]);
+  }, [arabicFont, (verse as any).tajweedText, localData.verseId, localData.arabic, arabicText, isBasmalah, verse.id]);
 
   // Simplified: prefer remote (English) transliteration when available, then local cache, then prop.
   const displayedTransliteration = useMemo(() => {
-    if (remoteTransliteration != null) return remoteTransliteration;
+    if (remoteTransliteration?.verseId === verse.id) return remoteTransliteration.text;
+    
+    if (surahId) {
+      const cached = cacheGet<string>(surahId, verse.verseNumber, 'local_tr');
+      if (cached) return cached;
+    }
+
     if (localData.verseId === verse.id && localData.transliteration) return localData.transliteration;
     return verse.transliteration || null;
-  }, [remoteTransliteration, localData.verseId, localData.transliteration, verse.transliteration, verse.id]);
+  }, [remoteTransliteration, localData.verseId, localData.transliteration, verse.transliteration, verse.id, surahId, verse.verseNumber]);
 
   const displayedTranslation = useMemo(() => {
-    return remoteTranslation || (localData.verseId === verse.id ? localData.translation : null) || verse.translation || defaultTranslation;
-  }, [remoteTranslation, localData.verseId, localData.translation, verse.translation, defaultTranslation, verse.id]);
+    if (remoteTranslation?.verseId === verse.id) return remoteTranslation.text;
+
+    if (surahId && translationLanguage) {
+      const isEnglish = translationLanguage.split('.')[0].toLowerCase() === 'en';
+      const cacheKey = isEnglish ? 'local_en' : translationLanguage;
+      const cached = cacheGet<string>(surahId, verse.verseNumber, cacheKey);
+      if (cached) return cached;
+    }
+
+    if (localData.verseId === verse.id && localData.translation) return localData.translation;
+    return verse.translation || DEFAULT_TRANSLATION;
+  }, [remoteTranslation, localData.verseId, localData.translation, verse.translation, verse.id, surahId, verse.verseNumber, translationLanguage]);
 
   // ============ CONTAINER STYLE ============
   const containerStyle = useMemo(() => {
@@ -328,7 +350,9 @@ const VerseItem = ({
       try {
         logAnalyticsEvent('verse_bookmark_toggled', {
           surah_number: surahId ?? 0,
+          surah_name: verse.surahName || undefined,
           verse_number: verse.verseNumber ?? 0,
+          action: action,
           state: action === 'add' ? 'bookmarked' : 'unbookmarked',
         });
       } catch { /* analytics must never crash */ }
@@ -397,11 +421,12 @@ const VerseItem = ({
       const lang = ss.getState().translationLanguage || 'unknown';
       logAnalyticsEvent('tafsir_opened', {
         surah_number: surahId ?? 0,
+        surah_name: verse.surahName || undefined,
         verse_number: verse.verseNumber ?? 0,
         tafsir_source: lang.toLowerCase().replace(/\./g, '_').substring(0, 50),
       });
     } catch { /* analytics must never crash */ }
-    setShowTafsirModal(true);
+    setUiState(s => ({ ...s, showTafsirModal: true }));
   }, [verse.id, surahId, verse.verseNumber]);
 
   const handleRepeatCountChange = useCallback((count: number) => {
@@ -444,50 +469,47 @@ const VerseItem = ({
 
   // ============ EFFECTS ============
 
-  // Load verse data from local DB
-  useEffect(() => {
-    if (!surahId || loadingStartedRef.current) return;
-
-    // CRITICAL FIX: Skip local DB loading if we already have the primary required texts
-    // This stops redundant state updates and Double-Render flickering on Android
+  const needsLocalDB = useMemo(() => {
     const hasArabic = typeof verse.arabicText === 'string' && verse.arabicText.length > 0;
     const hasTranslation = typeof verse.translation === 'string' && verse.translation.length > 0;
-    const hasTajweed = arabicFont === 'tajweed' ? typeof (verse as any).tajweedText === 'string' : true;
-    
-    if (hasArabic && hasTranslation && hasTajweed) {
-      return; // Skip fetch entirely
-    }
+    const hasTajweed = arabicFont === 'tajweed' 
+      ? typeof (verse as any).tajweedText === 'string' && (verse as any).tajweedText.length > 0
+      : true;
+    return !(hasArabic && hasTranslation && hasTajweed);
+  }, [verse.arabicText, verse.translation, (verse as any).tajweedText, arabicFont]);
+
+  // Load verse data from local DB
+  useEffect(() => {
+    if (!surahId || loadingStartedRef.current || !needsLocalDB) return;
 
     loadingStartedRef.current = true;
-
     const controller = new AbortController();
     localDbAbortRef.current = controller;
 
-    // CRITICAL FIX: Debounce to avoid rapid loading during fast scrolls
+    // Synchronous cache check — no debounce, no blank frame
+    const cachedArabic = cacheGet<string>(surahId, verse.verseNumber, 'local_ar');
+    const cachedTranslit = cacheGet<string>(surahId, verse.verseNumber, 'local_tr');
+    const cachedTrans = cacheGet<string>(surahId, verse.verseNumber, 'local_en');
+
+    if (cachedArabic || cachedTranslit || cachedTrans) {
+      unstable_batchedUpdates(() => {
+        setLocalData({
+          verseId: verse.id,
+          arabic: cachedArabic || null,
+          transliteration: cachedTranslit || null,
+          translation: cachedTrans || null,
+        });
+        setLocalDataError(null);
+      });
+      loadingStartedRef.current = false;
+      return; // done, no debounce needed
+    }
+
+    // Only debounce the actual DB read (for fast-scroll perf)
     const timeoutId = setTimeout(async () => {
       if (controller.signal.aborted) return;
 
       try {
-        const cachedArabic = cacheGet<string>(surahId, verse.verseNumber, 'local_ar');
-        const cachedTranslit = cacheGet<string>(surahId, verse.verseNumber, 'local_tr');
-        const cachedTrans = cacheGet<string>(surahId, verse.verseNumber, 'local_en');
-
-        if (cachedArabic || cachedTranslit || cachedTrans) {
-          if (!controller.signal.aborted) {
-            unstable_batchedUpdates(() => {
-              setLocalData({
-                verseId: verse.id,
-                arabic: cachedArabic || null,
-                transliteration: cachedTranslit || null,
-                translation: cachedTrans || null,
-              });
-              setLocalDataError(null);
-            });
-          }
-          loadingStartedRef.current = false;
-          return;
-        }
-
         const row = await getVerseFromLocalDB(surahId, verse.verseNumber);
 
         if (controller.signal.aborted) return;
@@ -502,23 +524,21 @@ const VerseItem = ({
               translation: null,
             });
           });
-          loadingStartedRef.current = false;
-          return;
-        }
-
-        unstable_batchedUpdates(() => {
-          setLocalData({
-            verseId: verse.id,
-            arabic: row.ayah || null,
-            transliteration: row.transliteration || null,
-            translation: row.translation || null,
+        } else {
+          unstable_batchedUpdates(() => {
+            setLocalData({
+              verseId: verse.id,
+              arabic: row.ayah || null,
+              transliteration: row.transliteration || null,
+              translation: row.translation || null,
+            });
+            setLocalDataError(null);
           });
-          setLocalDataError(null);
-        });
 
-        if (row.ayah) cacheSet(surahId, verse.verseNumber, 'local_ar', row.ayah);
-        if (row.transliteration) cacheSet(surahId, verse.verseNumber, 'local_tr', row.transliteration);
-        if (row.translation) cacheSet(surahId, verse.verseNumber, 'local_en', row.translation);
+          if (row.ayah) cacheSet(surahId, verse.verseNumber, 'local_ar', row.ayah);
+          if (row.transliteration) cacheSet(surahId, verse.verseNumber, 'local_tr', row.transliteration);
+          if (row.translation) cacheSet(surahId, verse.verseNumber, 'local_en', row.translation);
+        }
       } catch (error) {
         if (!controller.signal.aborted) {
           const errorMsg = error instanceof Error ? error.message : String(error);
@@ -530,7 +550,7 @@ const VerseItem = ({
           loadingStartedRef.current = false;
         }
       }
-    }, 100); // 100ms debounce - critical for smooth scrolling
+    }, 100);
 
     return () => {
       clearTimeout(timeoutId);
@@ -552,9 +572,14 @@ const VerseItem = ({
       if (controller.signal.aborted) return;
 
       try {
+        // Synchronous cache hit check to avoid network call
+        const cached = cacheGet<string>(surahId, verse.verseNumber, 'local_tr');
+        if (cached) return;
+
         const text = await fetchTransliterationText(surahId, verse.verseNumber, 'en');
-        if (!controller.signal.aborted) {
-          setRemoteTransliteration(text || null);
+        if (!controller.signal.aborted && text) {
+          setRemoteTransliteration({ verseId: verse.id, text });
+          cacheSet(surahId, verse.verseNumber, 'local_tr', text);
         }
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -586,22 +611,28 @@ const VerseItem = ({
     const controller = new AbortController();
     translationAbortRef.current = controller;
 
-    // CRITICAL FIX: Debounce remote API calls
+    // Abort network request if already in cache (useMemo will display it synchronously)
+    if (cacheGet<string>(surahId, verse.verseNumber, translationLanguage)) {
+      return;
+    }
+
+    // Debounce remote API calls
     const timeoutId = setTimeout(async () => {
       if (controller.signal.aborted) return;
 
       try {
+        // Double check cache in case it populated during debounce
         const cached = cacheGet<string>(surahId, verse.verseNumber, translationLanguage);
         if (cached) {
           if (!controller.signal.aborted) {
-            setRemoteTranslation(cached);
+            setRemoteTranslation({ verseId: verse.id, text: cached });
           }
           return;
         }
 
         const remote = await getTranslationRemote(surahId, verse.verseNumber, translationLanguage);
         if (!controller.signal.aborted && remote) {
-          setRemoteTranslation(remote);
+          setRemoteTranslation({ verseId: verse.id, text: remote });
           cacheSet(surahId, verse.verseNumber, translationLanguage, remote);
         }
       } catch (error) {
@@ -610,7 +641,7 @@ const VerseItem = ({
           setRemoteTranslation(null);
         }
       }
-    }, 150); // Debounce remote API calls
+    }, 150);
 
     return () => {
       clearTimeout(timeoutId);
@@ -736,15 +767,19 @@ const VerseItem = ({
           <Pressable
             style={({ pressed }) => [
               styles.audioButton,
-              isCurrentlyPlaying ? styles.audioButtonPlaying : { backgroundColor: primary },
+              isCurrentlyPlaying
+                ? styles.audioButtonPlaying
+                : { backgroundColor: primary },
               pressed && { opacity: 0.7 }
             ]}
             onPress={handlePlayAudio}
             accessibilityRole="button"
-            accessibilityLabel={isCurrentlyPlaying ? 'Playing verse audio' : 'Play verse audio'}
-            disabled={isCurrentlyPlaying}
+            accessibilityLabel={isCurrentlyPlaying ? 'Pause verse audio' : 'Play verse audio'}
           >
-            <Play size={16} color="#ffffff" fill={isCurrentlyPlaying ? '#ffffff' : 'transparent'} />
+            {isCurrentlyPlaying
+              ? <Pause size={16} color="#ffffff" fill="#ffffff" />
+              : <Play size={16} color="#ffffff" fill="transparent" />
+            }
           </Pressable>
 
           {/* Repeat Mode Button */}
@@ -753,7 +788,7 @@ const VerseItem = ({
               styles.repeatButtonBase,
               pressed && { opacity: 0.7 }
             ]}
-            onPress={() => setShowPlaybackModal(true)}
+            onPress={() => setUiState(s => ({ ...s, showPlaybackModal: true }))}
             accessibilityRole="button"
             accessibilityLabel="Playback settings"
           >
@@ -952,12 +987,12 @@ const VerseItem = ({
         visible={showPlaybackModal}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowPlaybackModal(false)}
+        onRequestClose={() => setUiState(s => ({ ...s, showPlaybackModal: false }))}
         supportedOrientations={['portrait']}
       >
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => setShowPlaybackModal(false)}
+          onPress={() => setUiState(s => ({ ...s, showPlaybackModal: false }))}
         >
           <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
             <Text style={styles.modalTitle}>Playback Settings</Text>
@@ -1027,7 +1062,7 @@ const VerseItem = ({
 
             <TouchableOpacity
               style={styles.modalCloseButton}
-              onPress={() => setShowPlaybackModal(false)}
+              onPress={() => setUiState(s => ({ ...s, showPlaybackModal: false }))}
               accessibilityRole="button"
               accessibilityLabel="Close playback settings"
             >
@@ -1042,18 +1077,18 @@ const VerseItem = ({
         visible={showGoModal}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowGoModal(false)}
+        onRequestClose={() => setUiState(s => ({ ...s, showGoModal: false }))}
       >
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => setShowGoModal(false)}
+          onPress={() => setUiState(s => ({ ...s, showGoModal: false }))}
         >
           <View style={[styles.modalContent, { maxWidth: 320 }]} onStartShouldSetResponder={() => true}>
             <Text style={styles.modalTitle}>Go to verse</Text>
             <Text style={{ color: '#ccc', fontSize: 13, marginBottom: 8, textAlign: 'center' }}>Enter verse number</Text>
             <TextInput
               value={goInput}
-              onChangeText={(t) => { setGoInput(t); setGoInputError(null); }}
+              onChangeText={(t) => { setUiState(s => ({ ...s, goInput: t, goInputError: null })); }}
               keyboardType="number-pad"
               placeholder="Verse number"
               placeholderTextColor="#666"
@@ -1062,36 +1097,35 @@ const VerseItem = ({
             {goInputError ? <Text style={{ color: '#ff6b6b', marginBottom: 8, textAlign: 'center' }}>{goInputError}</Text> : null}
 
             <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 }}>
-              <TouchableOpacity onPress={() => { setShowGoModal(false); setGoInput(''); setGoInputError(null); }} style={{ paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, backgroundColor: '#374151', marginRight: 8 }}>
+              <TouchableOpacity onPress={() => { setUiState(s => ({ ...s, showGoModal: false, goInput: '', goInputError: null })); }} style={{ paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, backgroundColor: '#374151', marginRight: 8 }}>
                 <Text style={{ color: '#fff', fontWeight: '600' }}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={async () => {
-                  setGoInputError(null);
+                  setUiState(s => ({ ...s, goInputError: null }));
                   const n = parseInt(goInput.trim(), 10);
                   const maxVerse = (verse as any).surah?.versesCount || (verse as any).surah?.verses?.length || 9999;
                   if (!n || n < 1 || n > maxVerse) {
-                    setGoInputError(`Enter a number between 1 and ${maxVerse}`);
+                    setUiState(s => ({ ...s, goInputError: `Enter a number between 1 and ${maxVerse}` }));
                     return;
                   }
                   if (!moveToVerse) {
-                    setGoInputError('Navigation handler not available');
+                    setUiState(s => ({ ...s, goInputError: 'Navigation handler not available' }));
                     return;
                   }
                   try {
-                    setGoSubmitting(true);
+                    setUiState(s => ({ ...s, goSubmitting: true }));
                     const res = await moveToVerse(n as number);
                     if (res === false) {
                       // allow moveToVerse implementer to fallback. show a simple message
                       Alert.alert('Jump failed', `Could not jump to verse ${n}.`);
                     }
-                    setShowGoModal(false);
-                    setGoInput('');
+                    setUiState(s => ({ ...s, showGoModal: false, goInput: '' }));
                   } catch (err) {
                     console.warn('[VerseItem] moveToVerse failed:', err);
-                    setGoInputError('Failed to jump.');
+                    setUiState(s => ({ ...s, goInputError: 'Failed to jump.' }));
                   } finally {
-                    setGoSubmitting(false);
+                    setUiState(s => ({ ...s, goSubmitting: false }));
                   }
                 }}
                 disabled={goSubmitting}
@@ -1108,7 +1142,7 @@ const VerseItem = ({
 
       <TafsirModal
         visible={showTafsirModal}
-        onClose={() => setShowTafsirModal(false)}
+        onClose={() => setUiState(s => ({ ...s, showTafsirModal: false }))}
         surahId={surahId || 1}
         verseNumber={verse.verseNumber}
       />
@@ -1346,6 +1380,16 @@ const styles = StyleSheet.create({
   },
 });
 
-// Export without memo - FlashList handles optimization via cell recycling
-// Memo was blocking juzSequenceNumber and totalJuzVerses props from updating
-export default VerseItem;
+export default React.memo(VerseItem, (prev, next) => {
+  if (prev.verse.id !== next.verse.id) return false;
+  if (prev.isCurrentlyPlaying !== next.isCurrentlyPlaying) return false;
+  if (prev.pageIsPlaying !== next.pageIsPlaying) return false;
+  if (prev.pageIsCompleted !== next.pageIsCompleted) return false;
+  if (prev.pageRepeatInfo !== next.pageRepeatInfo) return false;
+  if (prev.highlighted !== next.highlighted) return false;
+  if (prev.juzSequenceNumber !== next.juzSequenceNumber) return false;
+  if (prev.totalJuzVerses !== next.totalJuzVerses) return false;
+  if (prev.surahMemorizedGlobally !== next.surahMemorizedGlobally) return false;
+  if (prev.surahRevisedGlobally !== next.surahRevisedGlobally) return false;
+  return true; // no change detected, skip render
+});

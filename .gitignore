@@ -51,3 +51,6 @@ app-example
 
 # Firebase service account
 firebaseServiceAccountKey.json
+# Seeding tools (sensitive credentials - never commit)
+firebase-seed/serviceAccountKey.json
+firebase-seed/node_modules/

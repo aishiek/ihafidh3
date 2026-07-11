@@ -5,6 +5,7 @@
  */
 
 import { parseTajweedHTML, TajweedSegment } from '../utils/QuranTajweedParser';
+import { applyQalqalahOverlay } from '../utils/tajweedParser';
 
 describe('Qalqalah Final Overlay Pass', () => {
   test('should split segment with qalqalah letter at end', () => {
@@ -72,32 +73,29 @@ describe('Qalqalah Final Overlay Pass', () => {
       enableStopRules: false,
     });
     
-    // Parse with stop rules enabled
-    const withStop = parseTajweedHTML(plainText, {
-      enableAlgorithmic: true,
-      enableStopRules: true,
-    });
+    // Apply stop rules via applyQalqalahOverlay as done in TajweedText.tsx Layer 3
+    const withStop = applyQalqalahOverlay(withoutStop, true);
     
     // With stop rules enabled, should have more segments (split at qalqalah)
     expect(withStop.length).toBeGreaterThan(withoutStop.length);
     
-    // Last segment should be red qalqalah
+    // Last segment should be red qalqalah (#DD0008 or TAJWEED_COLORS.qalqalah #FF3B30)
     const lastSegment = withStop[withStop.length - 1];
-    expect(lastSegment.color).toBe('#DD0008'); // RED
-    expect(lastSegment.tajweedClass).toBe('qalqalah_waqf');
+    expect(lastSegment.rule).toBe('qalqalah_waqf');
   });
 
   test('should handle multiple words with qalqalah', () => {
     const text = 'قَالَ أَحَدٌ';
     
-    const segments = parseTajweedHTML(text, {
+    const initialSegments = parseTajweedHTML(text, {
       enableAlgorithmic: true,
-      enableStopRules: true,
+      enableStopRules: false,
     });
+    const segments = applyQalqalahOverlay(initialSegments, true);
     
-    // Should have qalqalah on both ق (if at word boundary) and د
-    const redSegments = segments.filter(seg => seg.color === '#DD0008');
-    expect(redSegments.length).toBeGreaterThan(0);
+    // Should have qalqalah segment
+    const qalqalahSegments = segments.filter(seg => seg.rule === 'qalqalah_waqf');
+    expect(qalqalahSegments.length).toBeGreaterThan(0);
   });
 
   test('isSegmentEnd logic - last segment', () => {

@@ -12,6 +12,8 @@ import { useProgressStore } from '@/store/progressStore';
 import { useQuranStore } from '@/store/quranStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { logAnalyticsEvent } from '@/utils/analyticsHelper';
+import { useCommunityStatsFlag } from '@/utils/communityStatsFlag';
+import { fetchAllStats, CommunityStatsData } from '@/services/communityStatsService';
 import { calculateCurrentBadge } from '@/utils/badgeUtils';
 import { formatDate } from '@/utils/dateUtils';
 import { calculateJuzProgress, calculateOverallJuzStats } from '@/utils/juzCalculator';
@@ -34,8 +36,8 @@ import {
     Target,
     XCircle
 } from 'lucide-react-native';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Dimensions, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState, Dimensions, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, ActivityIndicator, TouchableOpacity } from 'react-native';
 import Share from 'react-native-share';
 import ViewShot from 'react-native-view-shot';
 import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
@@ -189,6 +191,11 @@ export default function HomeScreen() {
         streak_length: dailyStreak,
         source: 'home_streak_card'
       });
+      logAnalyticsEvent('share_triggered', {
+        content_type: 'streak',
+        streak_length: dailyStreak,
+        source: 'home_streak_card'
+      });
     } catch (e: any) {
       if (!e?.message?.includes('User did not share') && !e?.message?.includes('User cancelled')) {
         console.error('Streak share failed:', e);
@@ -202,6 +209,19 @@ export default function HomeScreen() {
   const [showQuranTimeModal, setShowQuranTimeModal] = useState(false);
   const [quranTimeTab, setQuranTimeTab] = useState<'Weekly' | 'Monthly'>('Weekly');
   const [focusedBarIndex, setFocusedBarIndex] = useState<number | null>(null);
+
+  // Community Stats — loaded only when flag is enabled
+  const { enabled: communityStatsEnabled, minThreshold: communityStatsMinThreshold } = useCommunityStatsFlag();
+  const [communityStats, setCommunityStats] = useState<CommunityStatsData | null>(null);
+
+  useEffect(() => {
+    if (true || !communityStatsEnabled) return; // Hidden on home screen per user request
+    let cancelled = false;
+    fetchAllStats().then(data => {
+      if (!cancelled) setCommunityStats(data);
+    }).catch(() => { /* silent — card just stays hidden */ });
+    return () => { cancelled = true; };
+  }, [communityStatsEnabled]);
 
   const quranTimeChartData = useMemo(() => {
     const today = new Date();
@@ -441,7 +461,7 @@ export default function HomeScreen() {
               androidDeferred = setTimeout(() => {
                 if (mounted && !useActivityStore.getState().sessionStartTime) {
                   try { startSession(); } catch (e) {
-                    console.warn('[TimeTracking] Deferred start failed:', e);
+                    if (__DEV__) console.warn('[TimeTracking] Deferred start failed:', e);
                   }
                 }
               }, 800);
@@ -459,7 +479,7 @@ export default function HomeScreen() {
           retryTimer = setTimeout(() => {
             if (mounted) {
               try { initializeActiveTimeManager(); } catch (e) {
-                console.warn('[TimeTracking] Retry failed:', e);
+                if (__DEV__) console.warn('[TimeTracking] Retry failed:', e);
               }
             }
           }, 1000);
@@ -526,7 +546,7 @@ export default function HomeScreen() {
         const managerTime = stats?.totalTimeSeconds || 0;
         return baseTime + managerTime;
       } catch (e) {
-        console.warn('[TimeTracking] Manager stats error:', e);
+        if (__DEV__) console.warn('[TimeTracking] Manager stats error:', e);
       }
     }
 
@@ -555,8 +575,16 @@ export default function HomeScreen() {
 
     return () => clearInterval(interval);
   }, []); // Stable interval
-
+  // Always call to potentially break a lost streak
   useEffect(() => { updateDailyStreak(); }, [updateDailyStreak]);
+
+  // Increment the streak when reading time reaches 60s
+  const todayTimeSpent = useActivityStore(state => state.getTimeSpentToday());
+  useEffect(() => { 
+    if (todayTimeSpent >= 60) {
+      updateDailyStreak(true);
+    }
+  }, [updateDailyStreak, todayTimeSpent]);
   // --- Progress computations ---
   const progressTracker = useMemo(() => new QuranProgressTracker({
     memorizedSurahs: [],
@@ -780,13 +808,18 @@ export default function HomeScreen() {
         color: '#4CAF50',
         action: async () => {
           if (surah) {
-            console.log('[home] Continue Reading clicked - navigating to:', { surahId: surah.id, verseNumber: verseDetails.verseNumber, source: isJuzContext ? 'juzList' : 'continueReading' });
+            if (__DEV__) console.log('[home] Continue Reading clicked - navigating to:', { surahId: surah.id, verseNumber: verseDetails.verseNumber, source: isJuzContext ? 'juzList' : 'continueReading' });
 
             // ANALYTICS: Continue reading clicked
             logAnalyticsEvent('continue_reading_clicked', {
               surah_id: surah.id,
               surah_name: surah.englishName,
-              verse_number: verseDetails.verseNumber,});
+              verse_number: verseDetails.verseNumber,
+            });
+            logAnalyticsEvent('quick_action_used', {
+              action_name: 'continue_reading',
+              target_surah: surah.id,
+            });
 
             await saveLastRead(surah.id, verseDetails.verseNumber);
             // Use safeNavigation.replace to avoid stacking duplicate Read entries when resuming
@@ -808,12 +841,24 @@ export default function HomeScreen() {
         subtitle: 'Begin your journey',
         icon: Play,
         color: '#4CAF50',
-        action: () => safeNavigation.push('/(tabs)/read'),
+        action: () => {
+          logAnalyticsEvent('quick_action_used', {
+            action_name: 'continue_reading',
+            target_surah: 1,
+          });
+          safeNavigation.push('/(tabs)/read');
+        },
       });
     }
     const pending = revisionSchedule.versesPerDay - stats.dailyRevisionCompleted;
     actions.push(pending > 0
-      ? { title: 'Revision Due', subtitle: `${pending} verses pending`, icon: RotateCcw, color: '#FF9800', action: () => safeNavigation.push('/(tabs)/revision') }
+      ? { title: 'Revision Due', subtitle: `${pending} verses pending`, icon: RotateCcw, color: '#FF9800', action: () => {
+          logAnalyticsEvent('quick_action_used', {
+            action_name: 'revision_due',
+            target_surah: 0,
+          });
+          safeNavigation.push('/(tabs)/revision');
+        } }
       : null);
     return actions.filter(Boolean);
   }, [lastReadVerse, revisionSchedule, stats]);
@@ -1372,6 +1417,90 @@ export default function HomeScreen() {
           <AyahOfTheDayCard highlight={ayahHighlight} />
         </View>
 
+        {/* ── Community Stats Preview Card ── (hidden per user request) */}
+        {false && communityStatsEnabled && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Community Progress</Text>
+              <TouchableOpacity onPress={() => router.push('/community-stats' as any)}>
+                <Text style={{ color: '#D4AF37', fontSize: 13, fontWeight: '600' }}>See All →</Text>
+              </TouchableOpacity>
+            </View>
+            <Pressable
+              onPress={() => router.push('/community-stats' as any)}
+              style={({ pressed }) => [
+                styles.communityCard,
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              {communityStats == null ? (
+                <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+                  <ActivityIndicator color="#D4AF37" />
+                  <Text style={{ color: '#888', marginTop: 8, fontSize: 12 }}>Loading community data…</Text>
+                </View>
+              ) : (
+                <>
+                  {/* Global totals row */}
+                  <View style={styles.communityStatsRow}>
+                    <View style={styles.communityStatItem}>
+                      <Text style={styles.communityStatValue}>
+                        {communityStats?.surahs
+                          ? (() => {
+                              const total = Array.from(communityStats!.surahs!.values())
+                                .reduce((sum, s) => sum + (s.memorized_count ?? 0), 0);
+                              return total >= 1000 ? `${(total / 1000).toFixed(1)}K` : String(total);
+                            })()
+                          : '—'}
+                      </Text>
+                      <Text style={styles.communityStatLabel}>Verses Memorized</Text>
+                    </View>
+                    <View style={styles.communityStatDivider} />
+                    <View style={styles.communityStatItem}>
+                      <Text style={styles.communityStatValue}>
+                        {communityStats?.global?.total_surahs_completed != null
+                          ? String(communityStats!.global!.total_surahs_completed)
+                          : '—'}
+                      </Text>
+                      <Text style={styles.communityStatLabel}>Surahs Completed</Text>
+                    </View>
+                    <View style={styles.communityStatDivider} />
+                    <View style={styles.communityStatItem}>
+                      <Text style={styles.communityStatValue}>
+                        {communityStats?.surahs
+                          ? String(Array.from(communityStats!.surahs!.values()).filter(
+                              s => (s.memorized_count ?? 0) >= communityStatsMinThreshold
+                            ).length)
+                          : '—'}
+                      </Text>
+                      <Text style={styles.communityStatLabel}>Active Surahs</Text>
+                    </View>
+                  </View>
+
+                  {/* Top surah teaser */}
+                  {communityStats?.surahs && (() => {
+                    const top = Array.from(communityStats!.surahs!.values())
+                      .filter(s => (s.memorized_count ?? 0) >= communityStatsMinThreshold)
+                      .sort((a, b) => (b.memorized_count ?? 0) - (a.memorized_count ?? 0))[0];
+                    if (!top) return null;
+                    return (
+                      <View style={styles.communityTopSurah}>
+                        <Text style={styles.communityTopLabel}>🏆 Most Memorized</Text>
+                        <Text style={styles.communityTopValue}>
+                          {top.surah_name} · {top.memorized_count != null && top.memorized_count >= 1000
+                            ? `${(top.memorized_count / 1000).toFixed(1)}K`
+                            : top.memorized_count ?? 0} times
+                        </Text>
+                      </View>
+                    );
+                  })()}
+
+                  <Text style={styles.communityCardCta}>Tap to see Global Ummah Stats →</Text>
+                </>
+              )}
+            </Pressable>
+          </View>
+        )}
+
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Revision Goals</Text>
@@ -1532,7 +1661,7 @@ export default function HomeScreen() {
                 try {
                   const surahId = parseInt(item.key, 10);
                   if (isNaN(surahId) || surahId < 1 || surahId > 114) {
-                    console.warn('[Mustahabbah] Invalid surahId:', surahId);
+                    if (__DEV__) console.warn('[Mustahabbah] Invalid surahId:', surahId);
                     return;
                   }
 
@@ -1541,16 +1670,24 @@ export default function HomeScreen() {
 
                   // ANALYTICS: Track Mustahabbah surah selection
                   const surah = surahsData.find(s => s.id === surahId);
+                  const catMap: Record<number, string> = {
+                    18: 'jummah', 62: 'jummah',
+                    32: 'night', 56: 'night', 67: 'night', 73: 'night', 76: 'night',
+                    36: 'protection', 55: 'protection',
+                  };
                   logAnalyticsEvent('mustahabbah_surah_selected', {
+                    surah_number: surahId,
                     surah_id: surahId,
                     surah_name: surah?.englishName || 'Unknown',
-                    status: getSurahStatus(item),});
+                    category: catMap[surahId] ?? 'daily',
+                    status: getSurahStatus(item),
+                  });
 
                   useQuranStore.getState().setLastViewedSurahId(surahId);
 
                   // persist last read (best-effort)
                   saveLastRead(surahId, 1).catch(err => {
-                    console.warn('[Mustahabbah] Failed to save last read:', err);
+                    if (__DEV__) console.warn('[Mustahabbah] Failed to save last read:', err);
                   });
 
                   // Use replace for clean navigation
@@ -2063,6 +2200,73 @@ const styles = StyleSheet.create({
   plannerStatsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
   plannerStatText: { color: '#94a3b8', fontSize: 12, fontWeight: '600' },
   plannerEmptyText: { color: '#94a3b8', fontSize: 12 },
+
+  // ── Community Stats Preview Card ────────────────────────────────────────────
+  communityCard: {
+    backgroundColor: 'rgba(212,175,55,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(212,175,55,0.25)',
+    borderRadius: 16,
+    padding: 16,
+  },
+  communityStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  communityStatItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  communityStatValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#D4AF37',
+    letterSpacing: 0.5,
+  },
+  communityStatLabel: {
+    fontSize: 10,
+    color: '#888',
+    marginTop: 3,
+    textAlign: 'center',
+  },
+  communityStatDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: 'rgba(212,175,55,0.2)',
+  },
+  communityTopSurah: {
+    backgroundColor: 'rgba(212,175,55,0.1)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  communityTopLabel: {
+    color: '#D4AF37',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  communityTopValue: {
+    color: '#ccc',
+    fontSize: 12,
+    fontWeight: '500',
+    flexShrink: 1,
+    textAlign: 'right',
+    marginLeft: 8,
+  },
+  communityCardCta: {
+    color: '#D4AF37',
+    fontSize: 12,
+    textAlign: 'center',
+    opacity: 0.7,
+    marginTop: 4,
+  },
+
   quickActionItem: {
     marginHorizontal: 0,
     paddingHorizontal: 0,

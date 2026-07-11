@@ -3,7 +3,8 @@ import { usePlannerStore } from '@/store/plannerStore';
 import { useProgressStore } from '@/store/progressStore';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Copy, FileText, X } from 'lucide-react-native';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { logAnalyticsEvent, logScreenView } from '@/utils/analyticsHelper';
 import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import NotePopup from './NotePopup';
 import SurahRangePicker from './SurahRangePicker';
@@ -22,7 +23,13 @@ type Props = {
   onClose: () => void;
 };
 
-export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
+export default function DayPlannerModal({
+  visible, dateISO, onClose }: Props) {
+  React.useEffect(() => {
+    if (visible) {
+      logScreenView('modal_dayplannermodal').catch(() => {});
+    }
+  }, [visible]);
   const [pickerVisible, setPickerVisible] = useState(false);
   const plansByDate = usePlannerStore(s => s.plansByDate);
   const addPlan = usePlannerStore(s => s.addPlan);
@@ -79,6 +86,17 @@ export default function DayPlannerModal({ visible, dateISO, onClose }: Props) {
     const state = percent === 100 ? 'completed' : percent > 0 ? 'in-progress' : isPast ? 'overdue' : 'pending';
     return { percent, state };
   }, [dateISO, entries, memorized, revised, todayStart, uniqueVerses]);
+
+  // ANALYTICS: Track revision session started via Daily Planner
+  useEffect(() => {
+    if (visible && dateISO && uniqueVerses.size > 0) {
+      logAnalyticsEvent('revision_session_started', {
+        session_mode: 'daily_planner',
+        scheduled_verses_count: uniqueVerses.size,
+        revised_verses_count: revised.length,
+      });
+    }
+  }, [visible, dateISO, uniqueVerses.size]);
 
   const lastReviewed = useMemo(() => {
     if (!dateISO) return '—';

@@ -3,7 +3,12 @@ import { OCCASION_NAMES } from '@/utils/occasionUtils';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Pressable, StyleSheet, Text, View, PixelRatio, Platform, ActivityIndicator } from 'react-native';
+import ViewShot from 'react-native-view-shot';
+import Share from 'react-native-share';
+import { Share2 } from 'lucide-react-native';
+import { logAnalyticsEvent } from '@/utils/analyticsHelper';
+import { BrandedFooter } from '@/components/AyahOfTheDayCard';
 
 /**
  * Dynamic header icon showing current Islamic occasion
@@ -17,6 +22,8 @@ import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native
 export default function OccasionHeaderIcon() {
   const [occasionData, setOccasionData] = useState<OccasionData | null>(null);
   const [showTooltip, setShowTooltip] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const viewShotRef = useRef<ViewShot>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
@@ -68,6 +75,44 @@ export default function OccasionHeaderIcon() {
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
     setShowTooltip(true);
+  };
+
+  const handleShare = async () => {
+    if (!viewShotRef.current?.capture) return;
+    
+    setIsSharing(true);
+    try {
+      // Capture High-Res Image
+      const uri = await viewShotRef.current.capture();
+      if (!uri) throw new Error('Capture failed');
+      
+      const storeUrl = Platform.OS === 'ios' 
+        ? 'https://apps.apple.com/sg/app/ihafidh/id6752505055'
+        : 'https://play.google.com/store/apps/details?id=com.ihafidh';
+      
+      await Share.open({
+        url: uri.startsWith('file://') ? uri : `file://${uri}`,
+        title: `Share ${displayName}`,
+        message: `${displayName} • iHafidh\n\nDownload iHafidh: ${storeUrl}`,
+        subject: `${displayName} from iHafidh`,
+      });
+
+      logAnalyticsEvent('social_share', {
+        content_type: 'occasion',
+        occasion_id: occasionData.id,
+      });
+      logAnalyticsEvent('share_triggered', {
+        content_type: 'occasion',
+        occasion_id: occasionData.id,
+      });
+    } catch (error: any) {
+      const msg = error?.message || '';
+      if (!msg.includes('User did not share') && !msg.includes('User cancelled')) {
+        console.error('Share error:', error);
+      }
+    } finally {
+      setIsSharing(false);
+    }
   };
 
   const getGradientColors = (): readonly [string, string] => {
@@ -148,33 +193,55 @@ export default function OccasionHeaderIcon() {
             style={styles.tooltipContainer}
             onPress={(e) => e.stopPropagation()}
           >
-            <LinearGradient
-              colors={getGradientColors()}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.tooltipGradient}
-            >
-              {/* Header with single emoji */}
-              <View style={styles.tooltipHeader}>
-                <View style={styles.tooltipIconContainer}>
-                  <Text style={styles.tooltipMainEmoji}>{getEmoji()}</Text>
+            <ViewShot ref={viewShotRef} options={{ format: 'png', quality: 1.0 }}>
+              <LinearGradient
+                colors={getGradientColors()}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.tooltipGradient}
+              >
+                {/* Header with single emoji */}
+                <View style={styles.tooltipHeader}>
+                  <View style={styles.tooltipIconContainer}>
+                    <Text style={styles.tooltipMainEmoji}>{getEmoji()}</Text>
+                  </View>
                 </View>
+
+                {/* Title from remote */}
+                <Text style={styles.tooltipTitle}>{displayName}</Text>
+
+                {/* Decorative line */}
+                <View style={styles.decorativeLine} />
+
+                {/* Message from remote */}
+                <Text style={styles.tooltipMessage}>
+                  {occasionData.description || `Blessed ${shortName}! May Allah accept your worship and good deeds during this special time.`}
+                </Text>
+
+                {isSharing && <BrandedFooter colors={{ primary: '#1e1e1e', accent: '#fbbf24' }} />}
+              </LinearGradient>
+            </ViewShot>
+
+            {!isSharing && (
+              <View style={styles.actionsContainer}>
+                <Pressable
+                  style={styles.shareButton}
+                  onPress={handleShare}
+                  disabled={isSharing}
+                >
+                  {isSharing ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Share2 size={18} color="#fff" />
+                      <Text style={styles.shareButtonText}>Share</Text>
+                    </>
+                  )}
+                </Pressable>
+                
+                <Text style={styles.tooltipHint}>Tap anywhere to close</Text>
               </View>
-
-              {/* Title from remote */}
-              <Text style={styles.tooltipTitle}>{displayName}</Text>
-
-              {/* Decorative line */}
-              <View style={styles.decorativeLine} />
-
-              {/* Message from remote */}
-              <Text style={styles.tooltipMessage}>
-                {occasionData.description || `Blessed ${shortName}! May Allah accept your worship and good deeds during this special time.`}
-              </Text>
-
-              {/* Close hint */}
-              <Text style={styles.tooltipHint}>Tap anywhere to close</Text>
-            </LinearGradient>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
@@ -265,8 +332,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   tooltipHint: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.5)',
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 13,
     textAlign: 'center',
+    marginTop: 8,
   },
+  actionsContainer: {
+    padding: 16,
+    paddingTop: 0,
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+  },
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 24,
+    gap: 8,
+    marginBottom: 8,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  shareButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  }
 });

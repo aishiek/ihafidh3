@@ -88,11 +88,9 @@ function splitOffTrailingCluster(text: string): { head: string; cluster: string 
     i--;
   }
 
-  /* FIX: Defined 'head' variable (was missing) and updated 'cluster'
-     to use slice(i) instead of slice(i, end+1) to ensure we don't accidentally
-     delete trailing whitespace if the segment had it. */
-  const head = codepoints.slice(0, i).join('');
-  const cluster = codepoints.slice(i).join('');
+  const trailingWhitespace = codepoints.slice(end + 1).join('');
+  const cluster = codepoints.slice(i, end + 1).join('');
+  const head = codepoints.slice(0, i).join('') + trailingWhitespace;
   return { head, cluster };
 }
 
@@ -100,13 +98,14 @@ function normalizeForMushaf(text: string): string {
   // Pass through Quranic marks (Madd, Dagger Alif, Small waw/ya, annotation marks)
   // and let the font render them natively.
 
-  // Strip U+0640 (Arabic Tatweel/Kashida) when used as a carrier for combining marks.
-  // Quran.com uses U+0640 + U+0670 (ـٰ) which renders as a "sun" glyph in some fonts.
-  // We want just the combining mark (U+0670) without the carrier.
-  let normalized = text.replace(/\u0640(?=[\u0300-\u036F\u0610-\u061A\u064B-\u065F\u0670\u0653\u06D6-\u06ED\u08D3-\u08FF])/g, '');
+  // We NO LONGER strip U+0640 (Arabic Tatweel) used as a carrier.
+  // Stripping it causes the Dagger Alif to fall back onto the preceding letter,
+  // which may already have a vowel, causing invalid shaping and rendering a `+` missing-glyph.
+  // Instead, we keep the Tatweel and use ZWJ (Zero-Width Joiner) injection across Skia runs
+  // to ensure the Tatweel connects properly and doesn't render as an isolated placeholder.
 
   // Strip U+25CC (dotted-circle placeholder)
-  normalized = normalized.replace(/\u25CC/g, '');
+  let normalized = text.replace(/\u25CC/g, '');
 
   return normalized;
 }
@@ -284,8 +283,48 @@ export function sanitizeRunsForSkia<T extends TextRun>(
     }
   }
 
-  // Step 4: Final safety assertion (dev-only)
-  if (__DEV__) {
+  // Step 4: Inject ZWJ (U+200D) between adjacent runs that should connect cursively.
+  // Skia's ParagraphBuilder shapes each run independently, which breaks Arabic
+  // cursive joining at run boundaries (e.g., Noon+Alif looking like Daaa).
+  // We explicitly check that the current run ends with a left-joining Arabic character
+  // and only append ZWJ to the current run. Putting ZWJ on both runs forms a double-ZWJ
+  // ligature straddling the pushStyle boundary, which causes Skia to collapse/merge
+  // adjacent run colors.
+  const LEFT_JOINING_ARABIC = new Set([
+    'ب', 'ت', 'ث', 'ج', 'ح', 'خ', 'س', 'ش', 'ص', 'ض', 'ط', 'ظ',
+    'ع', 'غ', 'ف', 'ق', 'ك', 'ل', 'م', 'ن', 'ه', 'ي', 'ـ', 'ئ'
+  ]);
+  const COMBINING_MARKS_AND_PAUSES = /[\u0300-\u036F\u0610-\u061A\u064B-\u065F\u0670\u0653\u08D3-\u08FF]/g;
+
+  for (let i = 0; i < result.length - 1; i++) {
+    const cur = result[i];
+    const next = result[i + 1];
+    if (!cur.text || !next.text) continue;
+
+    // Must not have whitespace, ZWNJ, or Quranic pause/stop marks at the boundary
+    if (/[\s\u00A0\u200B\u200C\u06D6-\u06ED\u06DD]$/.test(cur.text)) continue;
+    if (/^[\s\u00A0\u200B\u200C\u06D6-\u06ED\u06DD]/.test(next.text)) continue;
+
+    // Check if current run ends with an explicitly left-joining Arabic character
+    const bases = cur.text.replace(COMBINING_MARKS_AND_PAUSES, '');
+    if (bases.length === 0) continue;
+    const lastChar = bases[bases.length - 1];
+
+    if (!LEFT_JOINING_ARABIC.has(lastChar)) continue;
+
+    // Check if next run starts with an Arabic letter
+    const nextBases = next.text.replace(COMBINING_MARKS_AND_PAUSES, '');
+    if (nextBases.length === 0) continue;
+    const firstNextChar = nextBases[0];
+    if (!/[\u0621-\u064A\u0671]/.test(firstNextChar)) continue;
+
+    // Append ZWJ only to cur to open medial/initial connecting form without
+    // causing HarfBuzz/Skia to merge run styles across the boundary
+    result[i] = { ...cur, text: cur.text + '\u200D' };
+  }
+
+  // Step 5: Final safety assertion (dev-only)
+  if (typeof __DEV__ !== 'undefined' && __DEV__) {
     for (const run of result) {
       if (startsWithCombiningMarkIgnoringLeading(run.text)) {
         throw new Error(
@@ -492,6 +531,7 @@ function parseMarkup(text: string): ColoredSegment[] {
 // These render as decorative "sun" glyphs if standalone. Merge into previous segment.
 const STRUCTURAL_COMBINING_MARKS = new Set([
   '\u0670', // Arabic Letter Superscript Alef (Dagger Alif / Madd Alif)
+  '\u0653', // Maddah Above — must stay with base letter for shaping
   '\u06E5', // Arabic Small Waw
   '\u06E6', // Arabic Small Yeh
   '\u06E0', // Arabic Small High Upright Rectangular Zero (Silent) - Keeps ligature attached
@@ -713,16 +753,6 @@ const TajweedText: React.FC<TajweedTextProps> = ({
           const dBuilder = Skia.ParagraphBuilder.Make({ 
             textAlign: TextAlign.Center,
             maxLines: 1,
-            // Android needs strutStyle to force single line height and prevent vertical stacking
-            ...(Platform.OS === 'android' ? {
-              ellipsis: '',        // prevent visual artifacts if it decides to overflow
-              strutStyle: {
-                strutEnabled: true,
-                forceStrutHeight: true,
-                fontSize: digitFontSize,
-                heightMultiplier: 1.0, // tight single line
-              }
-            } : {})
           }, fontMgr);
 
           dBuilder.pushStyle({

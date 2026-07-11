@@ -86,6 +86,15 @@ export function getAllJuzRanges(): JuzVerseRange[] {
   return cachedJuzRanges;
 }
 
+export function getJuzForSurah(surahId: number): number {
+  const surah = surahsData.find(s => s.id === surahId);
+  if (!surah) return 1;
+  const firstVerseGlobalId = getGlobalVerseId(surah.name, 1);
+  const ranges = getAllJuzRanges();
+  const found = ranges.find(r => firstVerseGlobalId >= r.startVerseId && firstVerseGlobalId <= r.endVerseId);
+  return found ? found.juzNumber : 1;
+}
+
 // Calculate Juz progress from memorized and revised verses
 export function calculateJuzProgress(juzNumber: number, memorizedVerses: number[], revisedVerses?: number[]): {
   memorized: number;

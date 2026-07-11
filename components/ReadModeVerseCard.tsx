@@ -20,6 +20,7 @@ import { BookOpen, Bookmark, Heart } from 'lucide-react-native';
 import { getWBWForVerse, WBWWord } from '../services/wbwDbService';
 import { getTranslationRemote } from '../services/remoteTranslation';
 import { cacheGet, cacheSet } from '../services/verseCache';
+import { getCachedSurahStats } from '../services/communityStatsService';
 
 /** True if token contains a Quranic base letter (excludes waqf ۚ, comma, tatweel-only, etc.). */
 function tokenHasQuranicBaseLetter(token: string): boolean {
@@ -98,6 +99,10 @@ export function ReadModeVerseCard({
     const [remoteTranslation, setRemoteTranslation] = useState<string | null>(null);
     const translationAbortRef = useRef<AbortController | null>(null);
     const isMountedRef = useRef(true);
+
+    const cachedSurahStats = getCachedSurahStats();
+    const verseFavCount = cachedSurahStats?.get(surahId)?.verse_favourites?.[verseNumber] ?? 0;
+    const displayFavCount = Math.max(verseFavCount, isFavorited && verseFavCount === 0 ? 1 : 0);
 
     // 1. Load WBW data from DB
     useEffect(() => {
@@ -245,8 +250,16 @@ export function ReadModeVerseCard({
                     <TouchableOpacity onPress={() => onBookmark(surahId, verseNumber)} style={styles.actionButton}>
                         <Bookmark size={20} color={isBookmarked ? themeIconColor : (isParchmentLight ? '#A1887F' : '#666')} fill={isBookmarked ? themeIconColor : 'transparent'} />
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => onFavorite(surahId, verseNumber)} style={styles.actionButton}>
+                    <TouchableOpacity
+                        onPress={() => onFavorite(surahId, verseNumber)}
+                        style={[styles.actionButton, displayFavCount > 0 && { flexDirection: 'row', alignItems: 'center', gap: 4 }]}
+                    >
                         <Heart size={20} color={isFavorited ? '#E91E63' : themeIconColor} fill={isFavorited ? '#E91E63' : 'transparent'} />
+                        {displayFavCount > 0 && (
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: isFavorited ? '#E91E63' : themeIconColor }}>
+                                {displayFavCount > 999 ? `${(displayFavCount / 1000).toFixed(1)}k` : displayFavCount}
+                            </Text>
+                        )}
                     </TouchableOpacity>
                 </View>
             </View>
@@ -376,10 +389,12 @@ const styles = StyleSheet.create({
     },
     actions: {
         flexDirection: 'row',
-        gap: 16,
+        alignItems: 'center',
+        gap: 18,
     },
     actionButton: {
-        padding: 4,
+        paddingHorizontal: 6,
+        paddingVertical: 4,
     },
     verseBody: {
         alignItems: 'center',

@@ -1,3 +1,4 @@
+import { logScreenView } from '@/utils/analyticsHelper';
 import AnnouncementService from '@/services/AnnouncementService';
 import { sanitizeHtml } from '@/utils/sanitizer';
 import * as Haptics from 'expo-haptics';
@@ -30,7 +31,14 @@ export type AnnouncementModalProps = {
   onAction?: () => void;
 };
 
-export default function AnnouncementModal({ visible, announcement, onClose, onAction }: AnnouncementModalProps) {
+export default function AnnouncementModal({
+  visible, announcement, onClose, onAction
+}: AnnouncementModalProps) {
+  React.useEffect(() => {
+    if (visible) {
+      logScreenView('modal_announcementmodal').catch(() => {});
+    }
+  }, [visible]);
   const { width } = useWindowDimensions();
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);

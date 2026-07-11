@@ -92,6 +92,7 @@ export default function MushafViewerScreen() {
   // Keep a ref for the current page so DB-change callbacks can use latest value
   const currentPageRef = React.useRef<number>(currentPage);
   React.useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
+  const hasLoggedOpenRef = React.useRef(false);
 
   // Theme support
   const { themeMode } = useThemeStore();
@@ -184,6 +185,16 @@ export default function MushafViewerScreen() {
         if (mounted) {
           setPageMetadata(metadata);
           setPageVerses(verses);
+          if (!hasLoggedOpenRef.current) {
+            hasLoggedOpenRef.current = true;
+            try {
+              logAnalyticsEvent('mushaf_viewer_opened', {
+                surah_number: metadata?.surahNumber ?? 0,
+                page_number: currentPage ?? 0,
+                source: 'direct',
+              });
+            } catch { /* analytics must never crash */ }
+          }
         }
       } catch (error) {
         console.error('[MushafViewerScreen] Error fetching metadata:', error);
@@ -321,7 +332,7 @@ export default function MushafViewerScreen() {
     try {
       logAnalyticsEvent('mushaf_page_changed', {
         page_number: pageNum ?? 0,
-        surah_number: 0, // P3-TODO: resolve from pageMetadata.surahId when metadata is available at this scope
+        surah_number: pageMetadata?.surahNumber ?? 0,
         navigation_type: direction === 'next' || direction === 'prev' ? 'tap' : 'jump',
       });
     } catch { /* analytics must never crash */ }

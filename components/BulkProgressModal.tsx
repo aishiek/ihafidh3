@@ -1,3 +1,4 @@
+import { logScreenView } from '@/utils/analyticsHelper';
 import { useThemeColor } from '@/utils/useThemeColor';
 import React, { useMemo } from 'react';
 import { ActivityIndicator, Modal, StyleSheet, Text, View } from 'react-native';
@@ -10,7 +11,14 @@ interface BulkProgressModalProps {
   onClose?: () => void;
 }
 
-export default function BulkProgressModal({ visible, text, progress, total, onClose }: BulkProgressModalProps) {
+export default function BulkProgressModal({
+  visible, text, progress, total, onClose }: BulkProgressModalProps) {
+React.useEffect(() => {
+    if (visible) {
+      logScreenView('modal_bulkprogressmodal').catch(() => {});
+    }
+  }, [visible]);
+ 
   const { primary } = useThemeColor();
   const percent = useMemo(() => (total > 0 ? Math.round((progress / total) * 100) : 0), [progress, total]);
 

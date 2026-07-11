@@ -22,7 +22,8 @@
       "autoIncrement": true,
       "env": {
         "METRO_ENV": "production",
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "EXPO_PUBLIC_HF_TOKEN": "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"
       },
       "ios": {
         "buildConfiguration": "Release",
@@ -35,7 +36,8 @@
     "production-simulator": {
       "env": {
         "METRO_ENV": "production",
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "EXPO_PUBLIC_HF_TOKEN": "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"
       },
       "ios": {
         "buildConfiguration": "Release",

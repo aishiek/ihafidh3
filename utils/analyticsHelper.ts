@@ -37,6 +37,13 @@ export async function logAnalyticsEvent(
         Object.entries(params).filter(([_, v]) => v !== null && v !== undefined)
       ) : {};
 
+      if (eventName === 'setting_changed' && cleanParams) {
+        if (cleanParams.setting_key && !cleanParams.setting_name) cleanParams.setting_name = cleanParams.setting_key;
+        if (cleanParams.setting_name && !cleanParams.setting_key) cleanParams.setting_key = cleanParams.setting_name;
+        if (cleanParams.previous_value !== undefined && cleanParams.old_value === undefined) cleanParams.old_value = cleanParams.previous_value;
+        if (cleanParams.old_value !== undefined && cleanParams.previous_value === undefined) cleanParams.previous_value = cleanParams.old_value;
+      }
+
       try {
         await a.logEvent(eventName, cleanParams);
         if (__DEV__) console.debug(`[Analytics] ${eventName}:`, cleanParams);
@@ -74,13 +81,12 @@ export async function logScreenView(
       return;
     }
 
-    // We use logEvent('screen_view', ...) instead of logScreenView(...) so we can
-    // attach the app_version parameter (requested by the user).
-    // Native automatic screen tracking is disabled in app.json via meta-data/infoPlist.
-    await a.logEvent('screen_view', {
+    // We use the official logScreenView API to ensure the native Firebase SDK
+    // updates its internal "current screen" state. This prevents the native
+    // automatic reporter from falling back to Activity/ViewController names.
+    await a.logScreenView({
       screen_name: screenName,
       screen_class: resolvedClass,
-      app_version: Constants.expoConfig?.version || 'unknown',
     });
 
     if (__DEV__) console.debug(`[Analytics] ✅ screen_view logged: ${screenName}`);
@@ -118,15 +124,66 @@ export async function logAudioPlayback(params: {
       try {
         // Null strip happens inside logAnalyticsEvent, using it directly logic
         const cleanParams = Object.fromEntries(
-          Object.entries(params).filter(([_, v]) => v !== null && v !== undefined)
+          Object.entries({
+            ...params,
+            playback_type: (params as any).playback_type || params.action,
+            reciter_name: (params as any).reciter_name || params.reciter || 'unknown',
+          }).filter(([_, v]) => v !== null && v !== undefined)
         );
         await a.logEvent('audio_playback', cleanParams);
         if (__DEV__) console.debug('[Analytics] audio_playback:', cleanParams);
+        
+        if (params.action === 'play') {
+          try {
+            const { incrementAudioPlayed } = require('@/services/communityStatsService');
+            incrementAudioPlayed(params.surah_number);
+          } catch (e) {
+            if (__DEV__) console.debug('[Analytics] Failed to increment community audio played:', e);
+          }
+        }
       } catch (e) { analyticsAvailable = false; if (__DEV__) console.debug('[Analytics] native logEvent failed (audio_playback)', e); }
     } catch (error) {
       if (__DEV__) console.debug('[Analytics] unexpected error in logAudioPlayback', error);
     }
   });
+}
+
+/**
+ * Standardize memorization analytics payload across the app
+ */
+export function buildMemorizationAnalyticsPayload(params: {
+  event_scope: 'verse' | 'surah' | 'juz';
+  action: 'mark_memorized' | 'unmark_memorized' | 'complete';
+  state: 'memorized' | 'unmemorized';
+  trigger_source: 'verse_screen' | 'surah_bulk_action' | 'juz_bulk_action' | 'auto_completion';
+  surah_id?: number | null;
+  surah_name?: string | null;
+  verse_number?: number;
+  juz_number?: number;
+  juz_name?: string;
+  total_verses_memorized?: number;
+  verses_count?: number;
+  pages_count?: number;
+  total_juz_completed?: number;
+  days_to_complete?: number;
+}) {
+  return {
+    content_type: 'quran_memorization',
+    event_scope: params.event_scope,
+    action: params.action,
+    state: params.state,
+    trigger_source: params.trigger_source,
+    ...(params.surah_id != null && { surah_id: params.surah_id, surah_number: params.surah_id }),
+    ...(params.surah_name != null && { surah_name: params.surah_name }),
+    ...(params.verse_number != null && { verse_number: params.verse_number }),
+    ...(params.juz_number != null && { juz_number: params.juz_number }),
+    ...(params.juz_name != null && { juz_name: params.juz_name }),
+    ...(params.total_verses_memorized != null && { total_verses_memorized: params.total_verses_memorized }),
+    ...(params.verses_count != null && { verses_count: params.verses_count }),
+    ...(params.pages_count != null && { pages_count: params.pages_count }),
+    ...(params.total_juz_completed != null && { total_juz_completed: params.total_juz_completed }),
+    ...(params.days_to_complete != null && { days_to_complete: params.days_to_complete }),
+  };
 }
 
 /**
@@ -141,6 +198,9 @@ export async function setUserProperties(properties: Record<string, string>): Pro
       for (const [key, value] of Object.entries(properties)) {
         try {
           // Rename keys if too long (Firebase limit 24 chars)
+          if (key.length > 24 && __DEV__) {
+            console.warn(`[Analytics] User property key "${key}" exceeds 24 chars and will be truncated.`);
+          }
           const cleanKey = key.substring(0, 24);
           if (typeof (a as any).setUserProperty === 'function') {
             await (a as any).setUserProperty(cleanKey, value as any);
@@ -260,14 +320,12 @@ export async function syncFirebaseUserProperties(): Promise<void> {
         total_bookmarks: String(bookmarkState.bookmarks?.length || 0),
         total_favourites: String(favouriteState.favourites?.length || 0),
         total_badges: String(badgeState.unlockedBadges?.length || 0),
-        language: settingsState.translationLanguage || 'en.asad',
         mustahabbah_done: String(mustahabbahCompleted),
         app_version: Constants.expoConfig?.version || 'unknown',
         mem_level: getMemorizationLevel(memorizedVerseIds.length),
         pref_font: settingsState.arabicFont || 'Uthmanic',
         pref_lang: settingsState.translationLanguage || 'en.asad',
-        user_type: memorizedVerseIds.length > 0 ? 'active_learner' : 'new_user',
-        os: Platform.OS
+        user_type: memorizedVerseIds.length > 0 ? 'active_learner' : 'new_user'
       };
 
       await setUserProperties(properties);
@@ -312,7 +370,7 @@ const SCREEN_NAME_MAP: Record<string, string> = {
   'help':          'help',
 
   // ── Top-level screens ───────────────────────────────────────────────────
-  'read-mode':     'read-mode',
+  'read-mode':     'read_mode',
   'about':         'about',
   'bookmarks':     'bookmarks',
   'favourites':    'favourites',
@@ -320,6 +378,7 @@ const SCREEN_NAME_MAP: Record<string, string> = {
   'qibla':         'qibla',
   'push-debug':    'push_debug',
   'tajweed-test':  'tajweed_test',
+  'community-stats': 'community_stats',
 
   // ── Nested mushaf screens ────────────────────────────────────────────────
   'mushaf':          'mushaf_viewer',
@@ -352,6 +411,9 @@ const SCREEN_NAME_MAP: Record<string, string> = {
  *   /qibla         → 'qibla'
  */
 export function getScreenNameFromPath(pathname: string): string {
+  // 0. Strip query string — paths like /read?surahId=3 must resolve by path alone
+  pathname = pathname.split('?')[0];
+
   // 1. Strip leading/trailing slashes
   let cleaned = pathname.replace(/^\/+/, '').replace(/\/+$/, '');
 

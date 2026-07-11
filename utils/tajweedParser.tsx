@@ -3,6 +3,13 @@
  * Detects and applies Tajweed rules for proper color coding
  * Based on standard Tajweed rules used by Quranly and iQuran apps
  * 
+ * TODO [ARCH-CLEANUP]: This file (`utils/tajweedParser.tsx`, 21KB) is currently shadowed
+ * by `utils/tajweedParser.ts` (7KB) because Metro and TypeScript resolve `.ts` before `.tsx`.
+ * Both files define overlapping `TajweedParser` class implementations.
+ * We bridged `applyQalqalahOverlay` into `tajweedParser.ts` so stop rules work cleanly.
+ * In a future cleanup, `tajweedParser.tsx` and `tajweedParser.ts` must be consolidated
+ * into a single unified module to eliminate code duplication.
+ * 
  * Uses grapheme-aware parsing to handle diacritics correctly
  * 
  * IMPORTANT: For Tanween and Noon/Meem Sakinah rules:
@@ -548,9 +555,10 @@ export function applyQalqalahOverlay(
 
     const [, before, letter, marks] = match;
 
-    // only apply if this letter is at word end
-    const nextText = segments[idx + 1]?.text ?? '';
-    const isWordEnd = /^[\s\u00A0\u200B\u06D6-\u06ED]*$/.test(nextText);
+    // only apply if this letter is at word/verse end
+    const isWordEnd =
+      idx === segments.length - 1 ||
+      /^[\s\u00A0\u200B\u200C\u06D6-\u06ED]/.test(segments[idx + 1]?.text ?? '');
 
     if (!isWordEnd) return [seg];
 
@@ -562,7 +570,7 @@ export function applyQalqalahOverlay(
         color: TAJWEED_COLORS.qalqalah, // override color only
         rule: 'qalqalah_waqf',
       },
-    ].filter(Boolean);
+    ].filter(Boolean) as TajweedSegment[];
   });
 }
 

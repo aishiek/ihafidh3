@@ -1,7 +1,9 @@
 import { EnhancedHamburgerMenu } from '@/components/EnhancedHamburgerMenu';
 import OccasionHeaderIcon from '@/components/OccasionHeaderIcon';
+import StreakHeaderIcon from '@/components/StreakHeaderIcon';
 import { useThemeColor } from "@/utils/useThemeColor";
 import { logAnalyticsEvent } from '@/utils/analyticsHelper';
+import { useReadModeStore } from '@/store/readModeStore';
 import { Tabs, router } from "expo-router";
 import { BarChart, BookOpen, Brain, HelpCircle, Home, RefreshCw, Settings as SettingsIcon, Mic } from "lucide-react-native";
 import React from "react";
@@ -38,8 +40,10 @@ export default function TabLayout() {
           headerTintColor: "#ffffff",
           headerRight: () => (
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingRight: 8 }}>
-              {/* Dynamic occasion icon placed between title and hamburger; centered vertically */}
+              {/* Dynamic occasion icon (Islamic seasons) placed to the left */}
               <OccasionHeaderIcon />
+              {/* Streak icon taking its place */}
+              <StreakHeaderIcon />
               <TouchableOpacity
                 onPress={() => {
                   logAnalyticsEvent('help_viewed');
@@ -84,6 +88,9 @@ export default function TabLayout() {
                 if (params?.fromDuas === 'true') {
                   e.preventDefault();
                   router.replace('/read');
+                } else {
+                  // Trigger reset for double-tap behavior (go back to Surah/Juz list)
+                  useReadModeStore.getState().triggerReadTabReset();
                 }
               }
             },

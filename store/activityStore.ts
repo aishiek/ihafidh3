@@ -1,7 +1,9 @@
 import { QuranActiveTimeManager } from '@/utils/activeTimeTracker';
+import { logAnalyticsEvent } from '@/utils/analyticsHelper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { formatDate } from '../utils/dateUtils';
 
 interface TimeSpent {
   daily: number; // seconds
@@ -18,6 +20,8 @@ interface DailyActivity {
   versesRead: number;
   timeSpent: number; // seconds
   hadActivity: boolean;
+  readVerseKeys?: string[]; // "surahId:verseNumber"
+  readSurahIds?: number[];
 }
 
 interface ActivityState {
@@ -48,6 +52,7 @@ interface ActivityState {
   forceClearSession: () => void;
   updateStreak: () => void;
   recordActivity: (versesRead: number) => void;
+  recordVerseRead: (surahId: number, verseNumber: number) => void;
   setDailyRevisionTarget: (target: number) => void;
   setWeeklyRevisionTarget: (target: number) => void;
   markVerseRevised: () => void;
@@ -59,7 +64,7 @@ interface ActivityState {
   resetWeeklyProgress: () => void;
 }
 
-const getTodayDate = () => new Date().toISOString().split('T')[0];
+const getTodayDate = () => formatDate(new Date());
 
 const getWeekStart = () => {
   const now = new Date();
@@ -77,8 +82,8 @@ export const useActivityStore = create<ActivityState>()(
   persist(
     (set, get) => ({
       // Initial state
-      currentStreak: 0,
-      longestStreak: 0,
+      currentStreak: 1,
+      longestStreak: 1,
       lastActivityDate: null,
       sessionStartTime: null,
       activeTimeManager: null, // Not persisted, will be initialized
@@ -209,45 +214,72 @@ export const useActivityStore = create<ActivityState>()(
       updateStreak: () => {
         const { lastActivityDate, currentStreak, longestStreak } = get();
         const today = getTodayDate();
+        const hasReadEnough = get().getTimeSpentToday() >= 60;
         
+        if (!lastActivityDate) {
+          if (hasReadEnough) {
+            const newLongest = Math.max(1, longestStreak);
+            set({
+              currentStreak: 1,
+              longestStreak: newLongest,
+              lastActivityDate: today,
+            });
+            logAnalyticsEvent('streak_achieved', {
+              streak_days: 1,
+              longest_streak: newLongest,
+              is_milestone: false,
+            });
+          }
+          return;
+        }
+
         if (lastActivityDate === today) {
           return; // Already updated today
         }
         
-        // Calculate yesterday's date properly
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().split('T')[0];
+        const parseDate = (dStr: string) => {
+          const [y, m, d] = dStr.split('-').map(Number);
+          return Date.UTC(y, m - 1, d);
+        };
         
-        let newStreak = currentStreak;
+        const lastTime = parseDate(lastActivityDate);
+        const curTime = parseDate(today);
+        const diffDays = Math.floor((curTime - lastTime) / (1000 * 60 * 60 * 24));
         
-        if (!lastActivityDate) {
-          // First time - start streak at 1
-          newStreak = 1;
-        } else if (lastActivityDate === yesterdayStr) {
-          // Continue streak - consecutive day
-          newStreak = currentStreak + 1;
-        } else {
-          // Calculate days difference for streak break detection
-          const lastDate = new Date(lastActivityDate + 'T00:00:00');
-          const currentDate = new Date(today + 'T00:00:00');
-          const diffTime = currentDate.getTime() - lastDate.getTime();
-          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-          
-          if (diffDays === 1) {
-            // Consecutive day (shouldn't reach here due to yesterday check, but for safety)
-            newStreak = currentStreak + 1;
+        if (diffDays > 1) {
+          // Streak broken
+          if (hasReadEnough) {
+            const newLongest = Math.max(1, longestStreak);
+            set({
+              currentStreak: 1,
+              longestStreak: newLongest,
+              lastActivityDate: today,
+            });
+            logAnalyticsEvent('streak_achieved', {
+              streak_days: 1,
+              longest_streak: newLongest,
+              is_milestone: false,
+            });
           } else {
-            // Streak broken - reset to 1 (today is new start)
-            newStreak = 1;
+            set({ currentStreak: 1 }); // reset to 1 — minimum streak is always 1
+          }
+        } else if (diffDays === 1) {
+          // Consecutive day
+          if (hasReadEnough) {
+            const newStreak = currentStreak + 1;
+            const newLongest = Math.max(newStreak, longestStreak);
+            set({
+              currentStreak: newStreak,
+              longestStreak: newLongest,
+              lastActivityDate: today,
+            });
+            logAnalyticsEvent('streak_achieved', {
+              streak_days: newStreak,
+              longest_streak: newLongest,
+              is_milestone: [3, 7, 14, 30, 60, 100, 365].includes(newStreak),
+            });
           }
         }
-        
-        set({
-          currentStreak: newStreak,
-          longestStreak: Math.max(newStreak, longestStreak),
-          lastActivityDate: today,
-        });
       },
       
       recordActivity: (versesRead: number) => {
@@ -279,6 +311,69 @@ export const useActivityStore = create<ActivityState>()(
                 versesRead,
                 timeSpent: get().getTimeSpentToday(),
                 hadActivity: true,
+              },
+            ].slice(-365), // Keep last 365 days
+          });
+        }
+        
+        get().updateStreak();
+      },
+      
+      recordVerseRead: (surahId: number, verseNumber: number) => {
+        const { dailyActivities } = get();
+        const today = getTodayDate();
+        const verseKey = `${surahId}:${verseNumber}`;
+        
+        const existingActivity = dailyActivities.find(a => a.date === today);
+        
+        if (existingActivity) {
+          const readVerseKeys = existingActivity.readVerseKeys || [];
+          const readSurahIds = existingActivity.readSurahIds || [];
+          
+          const hasVerse = readVerseKeys.includes(verseKey);
+          const hasSurah = readSurahIds.includes(surahId);
+          
+          if (!hasVerse || !hasSurah) {
+            const nextVerseKeys = hasVerse ? readVerseKeys : [...readVerseKeys, verseKey];
+            const nextSurahIds = hasSurah ? readSurahIds : [...readSurahIds, surahId];
+            
+            const updated = dailyActivities.map(a => 
+              a.date === today 
+                ? { 
+                    ...a, 
+                    versesRead: nextVerseKeys.length, 
+                    timeSpent: get().getTimeSpentToday(),
+                    readVerseKeys: nextVerseKeys,
+                    readSurahIds: nextSurahIds,
+                    hadActivity: true 
+                  }
+                : a
+            );
+            set({ dailyActivities: updated });
+          } else {
+            // Even if already recorded, update timeSpent just in case
+            const updated = dailyActivities.map(a => 
+              a.date === today 
+                ? { 
+                    ...a, 
+                    timeSpent: get().getTimeSpentToday(),
+                  }
+                : a
+            );
+            set({ dailyActivities: updated });
+          }
+        } else {
+          // Create new activity
+          set({
+            dailyActivities: [
+              ...dailyActivities,
+              {
+                date: today,
+                versesRead: 1,
+                timeSpent: get().getTimeSpentToday(),
+                hadActivity: true,
+                readVerseKeys: [verseKey],
+                readSurahIds: [surahId],
               },
             ].slice(-365), // Keep last 365 days
           });

@@ -219,6 +219,10 @@ export default function RevisionScreen() {
       surahName: details.surahName,
       verseNumber: details.verseNumber
     });
+    logAnalyticsEvent('revision_session_started', {
+      session_mode: 'random_verse',
+      memorized_pool_count: memorizedVerses.length,
+    });
   };
 
   // Mark current verse as revised
@@ -636,6 +640,17 @@ export default function RevisionScreen() {
             </View>
           </View>
         ) : null}
+
+        {/* Practice Random Verse Button */}
+        {!currentRevisionVerse && memorizedVerses.length > 0 && (
+          <TouchableOpacity
+            style={[styles.practiceButton, { backgroundColor: primary }]}
+            onPress={generateRandomRevisionVerse}
+          >
+            <BookOpen size={20} color="#ffffff" />
+            <Text style={styles.practiceButtonText}>Practice Random Revision Verse</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Current Revision Verse */}
         {currentRevisionVerse && (
@@ -1097,6 +1112,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
+    color: '#ffffff',
+  },
+  practiceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: 14,
+    borderRadius: 12,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  practiceButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
     color: '#ffffff',
   },
   customGoalSubmit: {

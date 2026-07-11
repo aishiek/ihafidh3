@@ -1,3 +1,4 @@
+import { logScreenView } from '@/utils/analyticsHelper';
 import { openStorePage } from '@/utils/versionUtils';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Check, Download, Star, X } from 'lucide-react-native';
@@ -18,7 +19,14 @@ export type UpdateModalProps = {
   mode?: UpdateModalMode;
 };
 
-export default function UpdateModal({ visible, forced = false, currentVersion, latestVersion, onClose, releaseNotes, iosAppIdOverride, androidPackageIdOverride, mode = 'whats_new' }: UpdateModalProps) {
+export default function UpdateModal({
+  visible, forced = false, currentVersion, latestVersion, onClose, releaseNotes, iosAppIdOverride, androidPackageIdOverride, mode = 'whats_new' }: UpdateModalProps) {
+React.useEffect(() => {
+    if (visible) {
+      logScreenView('modal_updatemodal').catch(() => {});
+    }
+  }, [visible]);
+ 
   const canDismiss = !forced;
 
   const openStore = async () => {

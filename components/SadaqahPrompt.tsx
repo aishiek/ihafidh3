@@ -1,8 +1,9 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
+import { logScreenView } from '@/utils/analyticsHelper';
 import { Modal, Platform, Pressable, Text, View, StyleSheet } from 'react-native';
 
-export type ReviewTrigger = 'first_quiz' | 'tenth_quiz' | 'juz_completed' | 'badge_unlocked';
+export type ReviewTrigger = 'first_quiz' | 'fifth_quiz' | 'tenth_quiz' | 'twentieth_quiz' | 'juz_completed' | 'badge_unlocked';
 
 export interface SadaqahPromptProps {
   visible: boolean;
@@ -10,7 +11,17 @@ export interface SadaqahPromptProps {
   onClose: (didRate: boolean, neverAskAgain?: boolean) => void;
 }
 
-export default function SadaqahPrompt({ visible, trigger, onClose }: SadaqahPromptProps) {
+export default function SadaqahPrompt({
+  visible, trigger, onClose }: SadaqahPromptProps) {
+  const hasLoggedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (visible && !hasLoggedRef.current) {
+      hasLoggedRef.current = true;
+      logScreenView('modal_sadaqahprompt').catch(() => {});
+    }
+  }, [visible]);
+ 
   const getCopy = () => {
     switch (trigger) {
       case 'first_quiz':
@@ -18,10 +29,20 @@ export default function SadaqahPrompt({ visible, trigger, onClose }: SadaqahProm
           headline: "Masha'Allah!",
           body: "You've just completed your first quiz. If iHafidh is helping your hifdh journey, earning Sadaqah Jariyah is just a tap away — leave a review and help others find this app."
         };
+      case 'fifth_quiz':
+        return {
+          headline: "5 quizzes — Masha'Allah!",
+          body: "Great progress! Help other Muslims discover iHafidh by sharing a quick review. Every word is Sadaqah Jariyah."
+        };
       case 'tenth_quiz':
         return {
           headline: "10 quizzes — SubhanAllah!",
           body: "Your dedication is inspiring. Help other Muslims discover iHafidh by sharing a quick review. Every word is Sadaqah Jariyah."
+        };
+      case 'twentieth_quiz':
+        return {
+          headline: "20 quizzes — Alhamdulillah!",
+          body: "Consistency is key to Hifdh! Help others on the same path by leaving a review — a small act with lasting reward."
         };
       case 'juz_completed':
         return {

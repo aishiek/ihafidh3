@@ -42,12 +42,19 @@ interface ReadModeState {
      */
     pendingPortraitHandoff: boolean;
 
+    /**
+     * Incremented when the user taps the Recite tab while already on it.
+     * read.tsx listens to this to reset back to the Surah/Juz list.
+     */
+    readTabResetTrigger: number;
+
     // Actions
     setLastVisibleVerse: (surahId: number, verseNumber: number) => void;
     setLastVisibleJuz: (juzNumber: number) => void;
     setIsOrientationFree: (isOrientationFree: boolean) => void;
     setPendingPortraitHandoff: (pending: boolean) => void;
     clearHandoff: () => void;
+    triggerReadTabReset: () => void;
 }
 
 export const useReadModeStore = create<ReadModeState>((set) => ({
@@ -55,6 +62,7 @@ export const useReadModeStore = create<ReadModeState>((set) => ({
     lastVisibleJuz: null,
     isOrientationFree: false,
     pendingPortraitHandoff: false,
+    readTabResetTrigger: 0,
 
     setLastVisibleVerse: (surahId, verseNumber) =>
         set({ lastVisibleVerse: { surahId, verseNumber } }),
@@ -74,4 +82,7 @@ export const useReadModeStore = create<ReadModeState>((set) => ({
      */
     clearHandoff: () =>
         set({ lastVisibleVerse: null, lastVisibleJuz: null }),
+
+    triggerReadTabReset: () =>
+        set((state) => ({ readTabResetTrigger: state.readTabResetTrigger + 1 })),
 }));

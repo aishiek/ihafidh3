@@ -1,9 +1,62 @@
 /**
  * Tajweed Parser for Arabic Quranic Text
  * Detects and applies Tajweed rules for proper color coding
+ * 
+ * TODO [ARCH-CLEANUP]: This file (`utils/tajweedParser.ts`, 7KB) currently shadows
+ * `utils/tajweedParser.tsx` (21KB) because Metro and TypeScript module resolution check `.ts`
+ * extensions before `.tsx` (`defaults.sourceExts`).
+ * Both files define overlapping `TajweedParser` class implementations.
+ * We bridge `applyQalqalahOverlay` from `.tsx` below so `TajweedText.tsx` stop rules
+ * do not crash at runtime when `enableStopRules` is true.
+ * In a future cleanup, `tajweedParser.tsx` should be fully consolidated into `tajweedParser.ts`
+ * (or vice versa) and duplicate code removed.
  */
 
 import { TAJWEED_COLORS } from './tajweedColors';
+
+/**
+ * Applies stop-rule qalqalah coloring as a final overlay pass.
+ * Bridged directly here so that consumers requiring `@/utils/tajweedParser`
+ * (`TajweedText.tsx`) do not crash if module resolution picks `tajweedParser.ts`.
+ */
+export function applyQalqalahOverlay(
+  segments: TajweedSegment[],
+  enable: boolean
+): TajweedSegment[] {
+  if (!enable) return segments;
+
+  const ARABIC_MARKS = /[\u064B-\u0652\u0670\u06D6-\u06ED]*/; // diacritics
+
+  return segments.flatMap((seg, idx) => {
+    if (!seg.text) return [seg];
+
+    // match last Arabic letter of the segment plus any marks
+    const match = seg.text.match(
+      new RegExp(`^(.*?)([قطبجد])(${ARABIC_MARKS.source})$`)
+    );
+
+    if (!match) return [seg];
+
+    const [, before, letter, marks] = match;
+
+    // only apply if this letter is at word/verse end
+    const isWordEnd =
+      idx === segments.length - 1 ||
+      /^[\s\u00A0\u200B\u200C\u06D6-\u06ED]/.test(segments[idx + 1]?.text ?? '');
+
+    if (!isWordEnd) return [seg];
+
+    return [
+      before && { ...seg, text: before }, // keep preceding text
+      {
+        ...seg,
+        text: letter + marks,
+        color: TAJWEED_COLORS.qalqalah, // override color only
+        rule: 'qalqalah_waqf',
+      },
+    ].filter(Boolean) as TajweedSegment[];
+  });
+}
 
 export interface TajweedSegment {
   text: string;
@@ -38,6 +91,7 @@ export class TajweedParser {
   
   // Madd indicators
   private static MADD_ALIF = '\u0670';    // Small alif above (ٰ)
+  private static SMALL_HIGH_MADDA = '\u0653'; // Maddah above (ٓ)
   private static ALIF = 'ا';
   private static WAW = 'و';
   private static YA = 'ي';
@@ -80,12 +134,12 @@ export class TajweedParser {
         length = 2;
       }
       // 2. Check for Madd (elongation indicator)
-      else if (char === this.MADD_ALIF) {
+      else if (char === this.MADD_ALIF || char === this.SMALL_HIGH_MADDA) {
         if (segments.length > 0) {
           const prevSeg = segments[segments.length - 1];
           // Append dagger alif to previous segment so it stays with its base letter
           prevSeg.text += char;
-          if (prevSeg.text.match(/[اوي\u0670]/)) {
+          if (prevSeg.text.match(/[اوي\u0670\u0653]/)) {
             prevSeg.color = TAJWEED_COLORS.madd;
             prevSeg.rule = 'madd';
           }

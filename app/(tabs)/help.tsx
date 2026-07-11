@@ -27,6 +27,7 @@ import {
   Sun,
   Target,
   Type,
+  Users,
 } from 'lucide-react-native';
 import { WBWIcon } from '@/components/icons/WBWIcon';
 import React, { useMemo, useState } from 'react';
@@ -79,7 +80,7 @@ const FEATURES: FeatureItem[] = [
       'The Recite tab opens to a full list of all 114 Surahs. Each card shows ' +
       'your memorization percentage and last-read date at a glance.',
     where: 'Recite tab → Surah tab',
-    tip: 'Use the 🔍 search bar to jump to any Surah by name, number, or English meaning.',
+    tip: 'If you are reading a Surah and want to quickly return to this list, simply tap the "Recite" tab icon at the bottom again!',
     iconDemo: {
       icons: [
         { component: SearchIcon, color: '#D4AF37', label: 'Search' },
@@ -98,7 +99,7 @@ const FEATURES: FeatureItem[] = [
       'Switch to the "Juz" tab to navigate all 30 traditional divisions of the Quran. ' +
       'Each Juz card shows combined progress across all its Surahs.',
     where: 'Recite tab → Juz tab',
-    tip: 'Juz mode is ideal for tracking Hifdh. Use the search bar to instantly jump to any Juz by just typing a number from 1 to 30.',
+    tip: 'Double-tap the Recite tab from anywhere in the app to instantly reset back to the Surah/Juz selection screen.',
     iconDemo: {
       icons: [
         { component: BookOpen, color: '#888', label: 'Surah' },
@@ -393,13 +394,31 @@ const FEATURES: FeatureItem[] = [
     title: 'Daily Streak & Sharing',
     description:
       'Track how many consecutive days you have been active with the "Fire" streak card on the Home screen. ' +
-      'Staying consistent is the most important part of Hifdh progress.\n\n' +
-      'Tap the streak card to open the "Share My Streak" card. You can then save or share a beautiful performance summary to inspire your friends and community!',
-    where: 'Home tab → Tap the Fire/Streak card',
-    tip: 'Unlock higher "Fire" levels as your streak grows longer!',
+      'Your daily streak builds automatically as you engage with the Quran—whether you open the app daily, read verses in Golden Read Mode or read for at least 60 seconds, recite with AI Mode, or mark verses as memorized and revised.\n\n' +
+      'Tap the streak card to open the "Share My Streak" modal. You can view your current milestone level (from "🌱 Journey Begins" all the way to "👑 Half-Year Hafidh" and "🕋 Year of Devotion") and save or share a beautiful performance card to inspire your community!',
+    where: 'Home tab → Fire/Streak card',
+    tip: 'Unlock higher milestone badges and flame animations as your daily streak grows longer!',
     iconDemo: {
       icons: [
         { component: RefreshCw, color: '#FF9800', label: 'Consistency' },
+      ],
+    },
+  },
+  {
+    id: 'community_stats',
+    icon: Users,
+    iconColor: '#9C27B0',
+    category: 'Progress & Review',
+    title: 'Community Stats',
+    description:
+      'See how your Hifdh journey connects with learners worldwide. ' +
+      'When enabled, anonymous global insights show collective progress across the community—including total verses memorized by all iHafidh users and global milestones.\n\n' +
+      'You can check quick community highlights on the Home and Stats screens, or tap through to view the full community progress breakdown.',
+    where: 'Home tab → Community Progress card · or Stats tab → Global Stats',
+    tip: 'All community data is aggregated and 100% anonymous, helping motivate and inspire learners across the globe without compromising privacy.',
+    iconDemo: {
+      icons: [
+        { component: Users, color: '#9C27B0', label: 'Global Insights' },
       ],
     },
   },

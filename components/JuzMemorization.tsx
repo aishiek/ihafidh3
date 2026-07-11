@@ -9,7 +9,8 @@ import { useThemeColor } from '@/utils/useThemeColor';
 import { ArrowLeft, Check, RefreshCw } from 'lucide-react-native';
 import React, { useCallback, useMemo } from 'react';
 import { FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import {logAnalyticsEvent } from '@/utils/analyticsHelper';
+import { logAnalyticsEvent, buildMemorizationAnalyticsPayload } from '@/utils/analyticsHelper';
+import { incrementJuzCompletion, incrementJuzRevision } from '@/services/communityStatsService';
 
 function getSurahIdByName(name: string): number | null {
   const surah = surahsData.find(s => s.name === name || s.englishName === name || s.arabicName === name);
@@ -102,13 +103,19 @@ export default function JuzMemorization({ onOpenJuz, searchQuery }: Props) {
       await new Promise(resolve => setTimeout(resolve, 400));
       closeModal();
 
+      // Trigger global stat update (assuming 100% completion)
+      if (enable) incrementJuzCompletion(juz);
+
       // ANALYTICS: Juz-level memorization toggle (not juz_completed — that fires from progressStore at 100%)
-      logAnalyticsEvent('juz_memorization_toggled', {
+      logAnalyticsEvent('juz_memorization_toggled', buildMemorizationAnalyticsPayload({
+        event_scope: 'juz',
         action: enable ? 'mark_memorized' : 'unmark_memorized',
+        state: enable ? 'memorized' : 'unmemorized',
+        trigger_source: 'juz_bulk_action',
         juz_number: juz,
         juz_name: `Juz ${juz}`,
         verses_count: range.totalVerses || idsToApply.length,
-        completion_type: 'manual_bulk',});
+      }));
     } catch (e) {
       console.error('Error toggling Juz:', e);
       if (progressTimerRef.current) { clearInterval(progressTimerRef.current); progressTimerRef.current = null; }
@@ -158,6 +165,9 @@ export default function JuzMemorization({ onOpenJuz, searchQuery }: Props) {
       animateProgress(idsToApply.length, idsToApply.length);
       await new Promise(resolve => setTimeout(resolve, 400));
       closeModal();
+
+      // Trigger global stat update
+      incrementJuzRevision(juz, enable);
 
       // ANALYTICS: Juz-level revision toggle
       logAnalyticsEvent('juz_revision_toggled', {

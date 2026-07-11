@@ -306,9 +306,15 @@ export default function QuizScreen() {
       setQuizState({ results: newResults, stats: { totalQuizzes, perfectQuizzes, averageScore } });
       await AsyncStorage.setItem('quizResults', JSON.stringify(newResults));
       
-      if (totalQuizzes === 1 || totalQuizzes === 10) {
+      if ([1, 5, 10, 20].includes(totalQuizzes)) {
         if (shouldShowReviewPrompt(reviewPromptState, reviewPromptSessionShown)) {
-          triggerSadaqahPrompt(totalQuizzes === 1 ? 'first_quiz' : 'tenth_quiz');
+          let trigger: any = 'first_quiz';
+          if (totalQuizzes === 5) trigger = 'fifth_quiz';
+          if (totalQuizzes === 10) trigger = 'tenth_quiz';
+          if (totalQuizzes === 20) trigger = 'twentieth_quiz';
+          
+          const { useSettingsStore } = require('@/store/settingsStore');
+          useSettingsStore.getState().queueSadaqahPrompt(trigger);
         }
       }
     } catch (error) {

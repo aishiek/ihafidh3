@@ -13,6 +13,7 @@ import { router } from 'expo-router';
 import {
   Bookmark as BookmarkIcon,
   Calendar,
+  Globe,
   Heart,
   MapPin,
   Menu,
@@ -31,6 +32,7 @@ import {
   View
 } from 'react-native';
 import { useMushafBookmarks } from '../app/mushaf/hooks/useMushafBookmarks';
+import { useCommunityStatsFlag } from '@/utils/communityStatsFlag';
 
 interface MenuItem {
   id: string;
@@ -59,10 +61,13 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
   const { bookmarks: mushafBookmarks } = useMushafBookmarks();
   const mushafBookmarksCount = mushafBookmarks ? (mushafBookmarks.size || 0) : 0;
   const bookmarksCount = appBookmarksCount + mushafBookmarksCount;
-  
+
   // Favourites count
   const favourites = useFavouriteStore(state => state.favourites);
   const favouritesCount = favourites ? favourites.length : 0;
+
+  // Community Stats feature flag
+  const { enabled: communityStatsEnabled } = useCommunityStatsFlag();
 
   // Use unified theme with automatic detection
   const { theme, isDark, setTheme, setColorScheme, raw } = useUnifiedTheme('auto', fastingContext);
@@ -140,6 +145,21 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
         router.push('/favourites');
       }
     },
+    // Community Stats — gated by remote config flag (second-to-last)
+    ...(communityStatsEnabled ? [{
+      id: 'community-stats',
+      title: 'Community Stats',
+      subtitle: 'Global memorization insights',
+      icon: Globe,
+      color: '#D4AF37',
+      feature: 'quran' as const,
+      onPress: () => {
+        setSelectedFeature('quran');
+        setIsMenuVisible(false);
+        router.push('/community-stats');
+      }
+    }] : []),
+    // Moon Phases — always last
     {
       id: 'moon-phases',
       title: 'Moon Phases',
@@ -152,8 +172,7 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
         setIsMenuVisible(false);
         router.push('/moon-phases');
       }
-    }
-    ,
+    },
     // diagnostics menu intentionally removed
   ];
 
@@ -205,9 +224,9 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
       zIndex: 1000,
     },
     inlineButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
+      width: 28,
+      height: 28,
+      borderRadius: 14,
       backgroundColor: theme.surface,
       justifyContent: 'center',
       alignItems: 'center',
@@ -353,7 +372,7 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
         onPress={() => setIsMenuVisible(true)}
         activeOpacity={0.8}
       >
-        <Menu size={24} color={theme.text} />
+        <Menu size={inline ? 16 : 24} color={theme.text} />
       </TouchableOpacity>
 
       {/* Menu Modal */}

@@ -3,15 +3,17 @@ import { surahsData } from '@/data/surahs';
 import { useProgressStore } from '@/store/progressStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import type { QuranicDua } from '@/types/duas';
-import {logAnalyticsEvent } from '@/utils/analyticsHelper';
+import { logAnalyticsEvent } from '@/utils/analyticsHelper';
+import { useCommunityStatsFlag } from '@/utils/communityStatsFlag';
+import { fetchAllStats, CommunityStatsData } from '@/services/communityStatsService';
 import { calculateDuaStats } from '@/utils/duaHelpers';
 import { calculateJuzProgress, calculateOverallJuzStats } from '@/utils/juzCalculator';
 import { useCustomColors } from '@/utils/themeUtils';
 import { useThemeColor } from '@/utils/useThemeColor';
 import { useRouter } from 'expo-router';
-import { Sparkles, X } from 'lucide-react-native';
+import { BookOpen, Globe, Sparkles, TrendingUp, X } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 // Remove unused import - now using calculateJuzProgress from juzCalculator
 import CircularProgress from '@/components/CircularProgress';
 import ActivityBarChart from '@/components/stats/ActivityBarChart';
@@ -152,6 +154,21 @@ export default function StatsScreen() {
     memorizedVerses: Array<{ date: string; count: number }>;
     revisedVerses: Array<{ date: string; count: number }>;
   }>({ memorizedVerses: [], revisedVerses: [] });
+
+  // Community Stats
+  const { enabled: communityStatsEnabled, minThreshold } = useCommunityStatsFlag();
+  const [communityStats, setCommunityStats] = useState<CommunityStatsData | null>(null);
+  const [communityStatsLoading, setCommunityStatsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!communityStatsEnabled) return;
+    let cancelled = false;
+    setCommunityStatsLoading(true);
+    fetchAllStats().then(data => {
+      if (!cancelled) { setCommunityStats(data); setCommunityStatsLoading(false); }
+    }).catch(() => { if (!cancelled) setCommunityStatsLoading(false); });
+    return () => { cancelled = true; };
+  }, [communityStatsEnabled]);
 
   const [pageActivityData, setPageActivityData] = useState<{
     memorizedPages: Array<{ date: string; count: number }>;
@@ -367,11 +384,120 @@ export default function StatsScreen() {
         </Text>
       </View>
 
+      {/* ── Global Ummah Stats (Community) ── shown when Remote Config flag is enabled */}
+      {communityStatsEnabled && (
+        <View style={[styles.progressCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+            <Globe size={20} color="#D4AF37" style={{ marginRight: 8 }} />
+            <Text style={[styles.title, { color: colors.text, fontSize: 18, marginBottom: 0 }]}>Global Ummah Stats</Text>
+          </View>
+
+          {communityStatsLoading ? (
+            <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+              <ActivityIndicator color="#D4AF37" />
+              <Text style={{ color: '#888', marginTop: 8, fontSize: 12 }}>Fetching community data…</Text>
+            </View>
+          ) : communityStats == null ? (
+            <Text style={{ color: '#888', fontSize: 13, textAlign: 'center', paddingVertical: 12 }}>
+              Community data unavailable. Check your connection.
+            </Text>
+          ) : (
+            <>
+              {/* 3 global number tiles */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 14 }}>
+                {[
+                  {
+                    label: 'Verses\nMemorized',
+                    value: (() => {
+                      if (!communityStats.surahs) return '—';
+                      const t = Array.from(communityStats.surahs.values()).reduce((s, r) => s + (r.memorized_count ?? 0), 0);
+                      return t >= 1000 ? `${(t / 1000).toFixed(1)}K` : String(t);
+                    })(),
+                    color: '#4CAF50',
+                  },
+                  {
+                    label: 'Surahs\nCompleted',
+                    value: communityStats.global?.total_surahs_completed != null
+                      ? String(communityStats.global.total_surahs_completed) : '—',
+                    color: '#D4AF37',
+                  },
+                  {
+                    label: 'Juz\nCompleted',
+                    value: communityStats.global?.total_juz_completed != null
+                      ? String(communityStats.global.total_juz_completed) : '—',
+                    color: '#2196F3',
+                  },
+                  {
+                    label: 'Favourites\nAdded',
+                    value: communityStats.global?.total_favourites != null
+                      ? communityStats.global.total_favourites >= 1000
+                        ? `${(communityStats.global.total_favourites / 1000).toFixed(1)}K`
+                        : String(communityStats.global.total_favourites)
+                      : '—',
+                    color: '#E91E63',
+                  },
+                ].map(tile => (
+                  <View key={tile.label} style={{ alignItems: 'center', flex: 1 }}>
+                    <Text style={{ fontSize: 22, fontWeight: '700', color: tile.color, letterSpacing: 0.5 }}>{tile.value}</Text>
+                    <Text style={{ fontSize: 9, color: '#888', marginTop: 3, textAlign: 'center', lineHeight: 13 }}>{tile.label}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Divider */}
+              <View style={{ height: 1, backgroundColor: 'rgba(212,175,55,0.15)', marginBottom: 12 }} />
+
+              {/* Top 3 most-memorized surahs */}
+              {communityStats.surahs && (() => {
+                const top3 = Array.from(communityStats.surahs.values())
+                  .filter(s => (s.memorized_count ?? 0) >= minThreshold)
+                  .sort((a, b) => (b.memorized_count ?? 0) - (a.memorized_count ?? 0))
+                  .slice(0, 3);
+                if (top3.length === 0) return null;
+                const medals = ['🥇', '🥈', '🥉'];
+                return (
+                  <View>
+                    <Text style={{ color: '#888', fontSize: 11, marginBottom: 8, fontWeight: '600', letterSpacing: 0.5 }}>TOP MEMORIZED SURAHS</Text>
+                    {top3.map((s, i) => (
+                      <View key={s.surah_number} style={{
+                        flexDirection: 'row', alignItems: 'center',
+                        paddingVertical: 6, borderBottomWidth: i < 2 ? 1 : 0,
+                        borderBottomColor: 'rgba(255,255,255,0.06)',
+                      }}>
+                        <Text style={{ fontSize: 16, marginRight: 10 }}>{medals[i]}</Text>
+                        <Text style={{ color: '#ddd', fontSize: 13, flex: 1, fontWeight: '500' }}>{s.surah_name}</Text>
+                        <Text style={{ color: '#D4AF37', fontSize: 13, fontWeight: '700' }}>
+                          {(s.memorized_count ?? 0) >= 1000
+                            ? `${((s.memorized_count ?? 0) / 1000).toFixed(1)}K`
+                            : s.memorized_count ?? 0}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })()}
+
+              <TouchableOpacity
+                onPress={() => router.push('/community-stats' as any)}
+                style={{ marginTop: 14, paddingVertical: 8, alignItems: 'center',
+                  borderRadius: 10, borderWidth: 1, borderColor: 'rgba(212,175,55,0.3)',
+                  backgroundColor: 'rgba(212,175,55,0.06)' }}
+              >
+                <Text style={{ color: '#D4AF37', fontSize: 13, fontWeight: '600' }}>View Global Ummah Stats</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      )}
+
       {/* Progress Overview with Division Indicators */}
       <View style={[styles.progressCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.title, { color: colors.text, fontSize: 18, marginBottom: 8 }]}>
-          Memorization Summary
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+          <BookOpen size={20} color="#D4AF37" style={{ marginRight: 8 }} />
+          <Text style={[styles.title, { color: colors.text, fontSize: 18, marginBottom: 0 }]}>
+            Memorization Summary
+          </Text>
+        </View>
 
         <View style={styles.circularProgressContainer}>
           {divisionStats.map((div, index) => {
@@ -501,9 +627,12 @@ export default function StatsScreen() {
 
       {/* 114 Surahs and 30 Juz Grid */}
       <View style={[styles.progressCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.title, { color: colors.text }]}>
-          Overall Progress
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+          <TrendingUp size={20} color="#D4AF37" style={{ marginRight: 8 }} />
+          <Text style={[styles.title, { color: colors.text, marginBottom: 0 }]}>
+            Overall Progress
+          </Text>
+        </View>
 
         <View style={styles.toggleContainer}>
           <View style={styles.toggleRow}>

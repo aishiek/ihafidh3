@@ -62,3 +62,55 @@ export function getCurrentWeekKey(): string {
 export function getCurrentMonthKey(): string {
   return format(new Date(), 'yyyy-MM');
 }
+
+export interface OfflineHijriDate {
+  day: number;
+  month: number;
+  monthName: string;
+  year: number;
+  formatted: string;
+}
+
+const HIJRI_MONTH_NAMES = [
+  'Muharram', 'Safar', "Rabi' al-Awwal", "Rabi' ath-Thani",
+  'Jumada al-Ula', 'Jumada al-Akhirah', 'Rajab', "Sha'ban",
+  'Ramadan', 'Shawwal', "Dhu al-Qi'dah", 'Dhu al-Hijjah'
+];
+
+export function getHijriDateOffline(date: Date): OfflineHijriDate {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', {
+      day: 'numeric',
+      month: 'numeric',
+      year: 'numeric'
+    });
+    
+    const parts = formatter.formatToParts(date);
+    let day = 1;
+    let month = 1;
+    let year = 1447;
+    
+    for (const part of parts) {
+      if (part.type === 'day') day = parseInt(part.value, 10);
+      if (part.type === 'month') month = parseInt(part.value, 10);
+      if (part.type === 'year') year = parseInt(part.value, 10);
+    }
+    
+    const monthName = HIJRI_MONTH_NAMES[month - 1] || 'Unknown';
+    return {
+      day,
+      month,
+      monthName,
+      year,
+      formatted: `${day} ${monthName} ${year}`
+    };
+  } catch (e) {
+    return {
+      day: date.getDate(),
+      month: 1,
+      monthName: 'Muharram',
+      year: 1447,
+      formatted: `${date.getDate()} Muharram 1447`
+    };
+  }
+}

@@ -1,3 +1,4 @@
+import { logScreenView } from '@/utils/analyticsHelper';
 import { useThemeColor } from '@/utils/useThemeColor';
 import React from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -9,7 +10,13 @@ interface Props {
   onClose: () => void;
 }
 
-export default function PageModeScopeSelector({ visible, value, onSelect, onClose }: Props) {
+export default function PageModeScopeSelector({
+  visible, value, onSelect, onClose }: Props) {
+  React.useEffect(() => {
+    if (visible) {
+      logScreenView('modal_pagemodescopeselector').catch(() => {});
+    }
+  }, [visible]);
   const { primary } = useThemeColor();
 
   return (

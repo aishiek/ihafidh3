@@ -112,12 +112,31 @@ export class FastingNotificationService {
           }
 
           // Calculate notification time
-          const fastingDate = new Date(day.date);
-          const notificationDate = new Date(fastingDate);
-          notificationDate.setDate(notificationDate.getDate() - (typeSettings.beforeDays || notificationSettings.defaultBeforeDays));
+          // Parse YYYY-MM-DD reliably in local time
+          const [year, month, dateStr] = day.date.split('-').map(Number);
+          const fastingDate = new Date(year, month - 1, dateStr, 0, 0, 0, 0);
 
-          const [hours, minutes] = (typeSettings.time || notificationSettings.defaultTime).split(':').map(Number);
+          let beforeDays = typeSettings.beforeDays !== undefined ? typeSettings.beforeDays : notificationSettings.defaultBeforeDays;
+          const timeString = typeSettings.time || notificationSettings.defaultTime;
+          const [hours, minutes] = timeString.split(':').map(Number);
+
+          const notificationDate = new Date(fastingDate);
+          notificationDate.setDate(notificationDate.getDate() - beforeDays);
           notificationDate.setHours(hours, minutes, 0, 0);
+
+          // Enforce at least 12 hours prior rule (user requested)
+          // Fasting day starts at 00:00. 12 hours prior is 12:00 PM (noon) on the previous day.
+          const twelveHoursBefore = new Date(fastingDate.getTime() - 12 * 60 * 60 * 1000);
+          
+          if (notificationDate.getTime() > twelveHoursBefore.getTime()) {
+            console.log(`⚠️ Adjusting notification for ${fastingType} on ${day.date} to meet 12-hour minimum requirement.`);
+            notificationDate.setTime(twelveHoursBefore.getTime());
+            
+            // Adjust the beforeDays for the message display if it was 0
+            if (beforeDays === 0) {
+              beforeDays = 1;
+            }
+          }
 
           // Skip past notifications
           if (notificationDate <= now) {
@@ -129,8 +148,8 @@ export class FastingNotificationService {
           const notificationId = await this.scheduleNotificationForDay(
             day,
             fastingType,
-            typeSettings.time || notificationSettings.defaultTime,
-            typeSettings.beforeDays || notificationSettings.defaultBeforeDays,
+            timeString,
+            beforeDays,
             notificationDate
           );
 

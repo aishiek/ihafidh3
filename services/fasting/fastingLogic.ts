@@ -29,7 +29,7 @@ export class FastingLogic {
     }
 
     // First 10 days of Dhul Hijjah (1-10)
-    if (hijriMonth === 12 && hijriDay >= 1 && hijriDay <= 10) {
+    if (hijriMonth === 12 && hijriDay >= 1 && hijriDay <= 9) {
       fastingTypes.push(FastingType.DHUL_HIJJAH_FIRST_TEN);
     }
 

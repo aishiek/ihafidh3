@@ -69,6 +69,8 @@ export async function initializeAudio() {
 
 /* ---------- URL HELPERS ---------- */
 function calculateGlobalAyahId(surah: number, ayah: number) {
+  if (ayah === 0) return 1; // Bismillah (Ayah 0) maps to Al-Fatiha Ayah 1 (Global ID 1)
+
   const counts = [
     7, 286, 200, 176, 120, 165, 206, 75, 129, 109,
     123, 111, 43, 52, 99, 128, 111, 110, 98, 135,

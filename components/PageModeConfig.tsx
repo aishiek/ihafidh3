@@ -1,3 +1,4 @@
+import { logScreenView } from '@/utils/analyticsHelper';
 import { useThemeColor } from '@/utils/useThemeColor';
 import React from 'react';
 import { Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -12,7 +13,13 @@ interface Props {
 
 const PRESETS = [3, 5, 10, 15];
 
-export default function PageModeConfig({ visible, initialScope, initialVersesPerPage, onCancel, onStart }: Props) {
+export default function PageModeConfig({
+  visible, initialScope, initialVersesPerPage, onCancel, onStart }: Props) {
+  React.useEffect(() => {
+    if (visible) {
+      logScreenView('modal_pagemodeconfig').catch(() => {});
+    }
+  }, [visible]);
   const { primary } = useThemeColor();
   const [scope, setScope] = React.useState<'surah' | 'juz'>(initialScope);
   const [vpp, setVpp] = React.useState<string>('');

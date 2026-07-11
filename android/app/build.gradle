@@ -92,8 +92,8 @@ android {
         applicationId 'com.ihafidh'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 40
-        versionName "2.1.2"
+        versionCode 46
+        versionName "2.2.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
@@ -104,26 +104,6 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
-        release {
-            def uploadStoreFileProp = findProperty('MYAPP_UPLOAD_STORE_FILE')
-            def uploadStoreFile
-            if (uploadStoreFileProp) {
-                def f = file(uploadStoreFileProp)
-                if (f.exists()) {
-                    uploadStoreFile = uploadStoreFileProp
-                } else {
-                    def candidate = file("${projectRoot}/${uploadStoreFileProp.replaceAll('^\\.\\./','')}")
-                    if (candidate.exists()) {
-                        uploadStoreFile = candidate.absolutePath
-                    }
-                }
-            }
-            if (!uploadStoreFile) uploadStoreFile = "${projectRoot}/my-upload-key.keystore"
-            storeFile file(uploadStoreFile)
-            storePassword findProperty('MYAPP_UPLOAD_STORE_PASSWORD') ?: 'iHafidhapp@2025'
-            keyAlias findProperty('MYAPP_UPLOAD_KEY_ALIAS') ?: 'my-key-alias'
-            keyPassword findProperty('MYAPP_UPLOAD_KEY_PASSWORD') ?: 'iHafidhapp@2025'
-        }
     }
     buildTypes {
         debug {
@@ -132,37 +112,13 @@ android {
         release {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.release
+            signingConfig signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
             def enablePngCrunchInRelease = findProperty('android.enablePngCrunchInReleaseBuilds') ?: 'true'
             crunchPngs enablePngCrunchInRelease.toBoolean()
-        }
-    }
-
-    /**
-     * Product Flavors
-     * - production: normal release build (AAB for Play Store) → com.ihafidh
-     * - staging:    sideload APK for testing alongside production → com.ihafidh.staging
-     *
-     * Build commands:
-     *   Production AAB:  ./gradlew bundleProductionRelease
-     *   Production APK:  ./gradlew assembleProductionRelease   (or just assembleRelease for default)
-     *   Staging APK:     ./gradlew assembleStagingRelease
-     */
-    flavorDimensions "env"
-    productFlavors {
-        production {
-            dimension "env"
-            // keeps everything from defaultConfig — no overrides needed
-        }
-        staging {
-            dimension "env"
-            applicationIdSuffix ".staging"
-            versionNameSuffix "-staging"
-            // App name override is in: android/app/src/staging/res/values/strings.xml
         }
     }
     packagingOptions {

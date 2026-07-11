@@ -388,9 +388,12 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style, highl
     // ANALYTICS: ayah_of_day_read (P3)
     // Required: surah_number, verse_number
     try {
+      const { useBookmarkStore: bs } = require('@/store/bookmarkStore');
       logAnalyticsEvent('ayah_of_day_read', {
         surah_number: ayah.surahId ?? 0,
+        surah_name: ayah.surahName || undefined,
         verse_number: ayah.verseNumber ?? 0,
+        is_bookmarked: typeof bs?.getState?.()?.isBookmarked === 'function' ? bs.getState().isBookmarked(ayah.verseId) : true,
       });
     } catch { /* analytics must never crash */ }
     
@@ -449,6 +452,13 @@ export const AyahOfTheDayCard: React.FC<AyahOfTheDayCardProps> = ({ style, highl
 
       // ANALYTICS: Track social share
       logAnalyticsEvent('social_share', {
+        content_type: 'ayah_of_day',
+        surah_id: ayah.surahId,
+        surah_name: ayah.surahName,
+        verse_number: ayah.verseNumber,
+        source: 'home_card',
+      });
+      logAnalyticsEvent('share_triggered', {
         content_type: 'ayah_of_day',
         surah_id: ayah.surahId,
         surah_name: ayah.surahName,

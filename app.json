@@ -2,7 +2,7 @@
   "expo": {
     "name": "iHafidh",
     "slug": "ihafidh2",
-    "version": "2.1.2",
+    "version": "2.2.0",
     "orientation": "default",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
@@ -38,6 +38,7 @@
             "kotlinVersion": "2.1.20"
           },
           "ios": {
+            "useFrameworks": "static",
             "hermesEnabled": true,
             "deploymentTarget": "16.0"
           }
@@ -52,7 +53,7 @@
       "entitlements": {
         "aps-environment": "development"
       },
-      "buildNumber": "29",
+      "buildNumber": "31",
       "googleServicesFile": "./assets/firebase/GoogleService-Info.plist",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app needs access to your location to determine Qibla direction and to enhance fasting calendar accuracy.",
@@ -104,7 +105,7 @@
     },
     "android": {
       "package": "com.ihafidh",
-      "versionCode": 40,
+      "versionCode": 46,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",

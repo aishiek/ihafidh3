@@ -15,8 +15,9 @@ import { Audio } from 'expo-av';
 import { router, Stack } from 'expo-router';
 import { Bell, Calendar, Globe, HelpCircle, Info, MessageSquare, Music, Play, PlayCircle, Square, Star, User } from 'lucide-react-native';
 import { useAppWalkthrough } from '@/hooks/useAppWalkthrough';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useFocusEffect as useEFocusEffect } from 'expo-router';
 
 const USER_NAME_KEY = 'user_name';
 
@@ -99,38 +100,19 @@ export default function SettingsScreen() {
       try {
         const { logAnalyticsEvent: logAE } = require('@/utils/analyticsHelper');
         if (selectedTranslation !== translationLanguage) {
-          logAE('setting_changed', { setting_name: 'translation_language', new_value: String(selectedTranslation).substring(0, 50) });
+          logAE('setting_changed', { setting_name: 'translation_language', old_value: String(translationLanguage).substring(0, 50), new_value: String(selectedTranslation).substring(0, 50) });
         }
         if (selectedReciter !== reciterIdentifier) {
-          logAE('setting_changed', { setting_name: 'reciter', new_value: String(selectedReciter).substring(0, 50) });
+          logAE('setting_changed', { setting_name: 'reciter', old_value: String(reciterIdentifier).substring(0, 50), new_value: String(selectedReciter).substring(0, 50) });
         }
         if (localArabicFont !== arabicFont) {
-          logAE('setting_changed', { setting_name: 'arabic_font', new_value: String(localArabicFont).substring(0, 50) });
+          logAE('setting_changed', { setting_name: 'arabic_font', old_value: String(arabicFont).substring(0, 50), new_value: String(localArabicFont).substring(0, 50) });
         }
         if (localShowTranslation !== showTranslation) {
-          logAE('setting_changed', { setting_name: 'show_translation', new_value: String(localShowTranslation) });
+          logAE('setting_changed', { setting_name: 'show_translation', old_value: String(showTranslation), new_value: String(localShowTranslation) });
         }
         if (localShowTransliteration !== showTransliteration) {
-          logAE('setting_changed', { setting_name: 'show_transliteration', new_value: String(localShowTransliteration) });
-        }
-        
-        // ANALYTICS: onboarding_completed (P1)
-        // Prompt 7 — fire when user completes the initial setup (first name save)
-        if (!userName && trimmedName) {
-          try {
-            const { useProgressStore: _ps } = require('@/store/progressStore');
-            const revSchedule = _ps.getState()?.revisionSchedule;
-            logAE('onboarding_completed', {
-              memorization_goal: revSchedule?.versesPerDay ?? null,   // daily verse goal
-              selected_surah: revSchedule?.surahsPerWeek?.[0] ?? null, // first chosen surah (if set)
-              timestamp: new Date().toISOString(),
-            });
-          } catch {
-            // Fallback: log with only what is guaranteed to be in scope
-            logAE('onboarding_completed', {
-              timestamp: new Date().toISOString(),
-            });
-          }
+          logAE('setting_changed', { setting_name: 'show_transliteration', old_value: String(showTransliteration), new_value: String(localShowTransliteration) });
         }
       } catch { /* analytics must never crash */ }
 
@@ -786,36 +768,36 @@ export default function SettingsScreen() {
                   <Text style={{ color: theme.text, fontSize: 12 }}>Ghunnah</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
-                  <View style={{ width: 12, height: 12, backgroundColor: '#FF3B30', borderRadius: 2, marginRight: 6 }} />
-                  <Text style={{ color: theme.text, fontSize: 12 }}>Qalqalah</Text>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
-                  <View style={{ width: 12, height: 12, backgroundColor: '#FFD700', borderRadius: 2, marginRight: 6 }} />
-                  <Text style={{ color: theme.text, fontSize: 12 }}>Noon/Meem Mushaddad</Text>
+                  <View style={{ width: 12, height: 12, backgroundColor: '#FFB6C1', borderRadius: 2, marginRight: 6 }} />
+                  <Text style={{ color: theme.text, fontSize: 12 }}>Ikhfa</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
                   <View style={{ width: 12, height: 12, backgroundColor: '#00C853', borderRadius: 2, marginRight: 6 }} />
-                  <Text style={{ color: theme.text, fontSize: 12 }}>Idgham</Text>
+                  <Text style={{ color: theme.text, fontSize: 12 }}>Idgham (with Ghunnah)</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
-                  <View style={{ width: 12, height: 12, backgroundColor: '#FFA500', borderRadius: 2, marginRight: 6 }} />
-                  <Text style={{ color: theme.text, fontSize: 12 }}>Madd</Text>
+                  <View style={{ width: 12, height: 12, backgroundColor: '#4DD0E1', borderRadius: 2, marginRight: 6 }} />
+                  <Text style={{ color: theme.text, fontSize: 12 }}>Idgham (no Ghunnah)</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
                   <View style={{ width: 12, height: 12, backgroundColor: '#007AFF', borderRadius: 2, marginRight: 6 }} />
                   <Text style={{ color: theme.text, fontSize: 12 }}>Iqlab</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
-                  <View style={{ width: 12, height: 12, backgroundColor: '#FFB6C1', borderRadius: 2, marginRight: 6 }} />
-                  <Text style={{ color: theme.text, fontSize: 12 }}>Ikhfa</Text>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
-                  <View style={{ width: 12, height: 12, backgroundColor: '#00C853', borderRadius: 2, marginRight: 6 }} />
-                  <Text style={{ color: theme.text, fontSize: 12 }}>Idgham with Ghunnah</Text>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
                   <View style={{ width: 12, height: 12, backgroundColor: '#DDA0DD', borderRadius: 2, marginRight: 6 }} />
                   <Text style={{ color: theme.text, fontSize: 12 }}>Ikhfa Shafawi</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
+                  <View style={{ width: 12, height: 12, backgroundColor: '#96CEB4', borderRadius: 2, marginRight: 6 }} />
+                  <Text style={{ color: theme.text, fontSize: 12 }}>Idgham Shafawi</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
+                  <View style={{ width: 12, height: 12, backgroundColor: '#FF3B30', borderRadius: 2, marginRight: 6 }} />
+                  <Text style={{ color: theme.text, fontSize: 12 }}>Qalqalah</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
+                  <View style={{ width: 12, height: 12, backgroundColor: '#FFA500', borderRadius: 2, marginRight: 6 }} />
+                  <Text style={{ color: theme.text, fontSize: 12 }}>Madd</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 4 }}>
                   <View style={{ width: 12, height: 12, backgroundColor: '#AAAAAA', borderRadius: 2, marginRight: 6 }} />
@@ -1047,7 +1029,7 @@ export default function SettingsScreen() {
           <Pressable 
             style={[styles.feedbackButton, { marginTop: 8 }]} 
             onPress={() => {
-              setForceShowUpdateModalMode('update');
+              setForceShowUpdateModalMode('whats_new');
               setForceShowUpdateModal(true);
             }}
           >
@@ -1107,7 +1089,7 @@ export default function SettingsScreen() {
             setTimeout(() => setDebugTapCount(0), 2000);
           }}
         >
-          <Text style={styles.versionText}>Ver-2.1.2</Text>
+          <Text style={styles.versionText}>Ver-2.2.0</Text>
         </Pressable>
       </ScrollView>
 

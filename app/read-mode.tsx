@@ -13,6 +13,7 @@ import { WBWIcon } from '../components/icons/WBWIcon';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+    Animated,
     BackHandler,
     Platform,
     StatusBar,
@@ -27,12 +28,15 @@ import { ReadingProgressBar } from '../components/ReadModeScrollProgress';
 import TafsirModal from '../components/TafsirModal';
 import { fetchVersesForJuz } from '../services/juzDbService';
 import { getVersesBySurah } from '../data/verses';
+import { getSurahById } from '../data/surahs';
 import { useBookmarkStore } from '../store/bookmarkStore';
 import { useFavouriteStore } from '../store/favouriteStore';
 import { useReadModeStore } from '../store/readModeStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { useActivityStore } from '../store/activityStore';
 import { Verse } from '../types/verse';
 import { pauseSurahAudio, playSurahAudioWithFallback } from '../utils/audioUtils';
+import { logScreenView } from '../utils/analyticsHelper';
 
 // Helper to parse navigation params
 const parseSnapshot = (params: any) => ({
@@ -63,28 +67,52 @@ export default function ReadModeScreen() {
     } = useSettingsStore();
     const isParchmentLight = readModeLightTheme;
 
-    const [isWbwActive, setIsWbwActive] = useState(false);
+    const [isWbwActive, setIsWbwActive] = useState(true);
 
     const snapshot = useRef(parseSnapshot(params)).current;
     const isJuzMode = snapshot.source === 'juzList' && !!snapshot.juzNumber;
 
     const [verses, setVerses] = useState<Verse[]>([]);
+    const [visibleSurahId, setVisibleSurahId] = useState(snapshot.surahId);
     const [visibleVerseNumber, setVisibleVerseNumber] = useState(snapshot.verseNumber);
+    const [visibleVerseIndex, setVisibleVerseIndex] = useState(0);
     const [showTafsirModal, setShowTafsirModal] = useState(false);
     const [tafsirVerse, setTafsirVerse] = useState<{ surahId: number; verseNumber: number } | null>(null);
     const [isPlayingSurah, setIsPlayingSurah] = useState(false);
     const [isSurahPaused, setIsSurahPaused] = useState(false);
-    const [scrollProgress, setScrollProgress] = useState(0);
+    
+    // Reading progress bar: updated by handleScroll
+    const scrollProgressAnim = useRef(new Animated.Value(0)).current;
+    const lastProgressRef = useRef(0);
+    const lastOffsetYRef = useRef(0);
+    const isTransitioningRef = useRef(false);
+
+    // Reset progress when screen mounts and track session
+    useEffect(() => {
+        useActivityStore.getState().startSession();
+        isTransitioningRef.current = true;
+        lastProgressRef.current = 0;
+        lastOffsetYRef.current = 0;
+        scrollProgressAnim.setValue(0);
+        const t = setTimeout(() => {
+            isTransitioningRef.current = false;
+        }, 400);
+        return () => {
+            clearTimeout(t);
+            useActivityStore.getState().endSession();
+        };
+    }, []);
 
     const flashListRef = useRef<FlashListRef<Verse>>(null);
     const hasScrolled = useRef(false);
+    const initialScrollDoneRef = useRef(false);
     const scrollTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
     const bookmarkBusyRef = useRef(false);
     const isExiting = useRef(false);
 
     const lastVisibleVerseNumberRef = useRef(snapshot.verseNumber);
     const lastVisibleSurahIdRef = useRef(snapshot.surahId);
-    const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
+    const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 40, minimumViewTime: 100 }).current;
 
     const [showWbwTooltip, setShowWbwTooltip] = useState(false);
     const [selectedWbwTranslation, setSelectedWbwTranslation] = useState<string | null>(null);
@@ -92,6 +120,9 @@ export default function ReadModeScreen() {
     const activeWbwCardKeyRef = useRef<string | null>(null);
     const bookmarksSet = useBookmarkStore((state) => state.bookmarksSet);
     const { isFavourited, addFavourite, removeFavourite } = useFavouriteStore();
+
+    const routerRef = useRef(router);
+    routerRef.current = router;
 
     const handlePortraitReturn = useCallback(() => {
         if (isExiting.current) return;
@@ -112,15 +143,17 @@ export default function ReadModeScreen() {
         useReadModeStore.getState().setPendingPortraitHandoff(true);
 
         // 2. Perform simple back navigation
-        // Pushing to the tab again can trigger a reset/flicker. 
-        // back() is more stable as it keeps the existing Tab instance alive.
-        if (router.canGoBack()) {
-            router.back();
+        if (routerRef.current.canGoBack()) {
+            routerRef.current.back();
         } else {
-            // Fallback for edge cases
-            router.replace('/(tabs)/read');
+            routerRef.current.replace('/(tabs)/read');
         }
-    }, [isJuzMode, snapshot.juzNumber, router, snapshot.source]);
+    }, [isJuzMode, snapshot.juzNumber, snapshot.source]);
+
+    // Analytics: Track read_mode screen view on mount (outside Expo Router nav tree)
+    useEffect(() => {
+        logScreenView('read_mode').catch(() => {});
+    }, []);
 
     useEffect(() => {
         isExiting.current = false;
@@ -128,11 +161,6 @@ export default function ReadModeScreen() {
         // Suppress portrait-return events briefly during any lock/unlock cycle
         let isInitialLockCycle = true;
 
-        // ANDROID DOUBLE-ROTATION FIX: Check actual orientation before locking.
-        // The user rotated to landscape to get here — locking to LANDSCAPE_LEFT when
-        // the device is in LANDSCAPE_RIGHT causes Android to visually rotate twice
-        // (RIGHT → LEFT → unlock → settle). Instead, only lock if we're not already
-        // in a landscape orientation (handles edge case of programmatic navigation).
         const initOrientation = async () => {
             try {
                 const current = await ScreenOrientation.getOrientationAsync();
@@ -141,17 +169,13 @@ export default function ReadModeScreen() {
                     current === ScreenOrientation.Orientation.LANDSCAPE_RIGHT;
 
                 if (!alreadyLandscape) {
-                    // Coming from portrait (programmatic open) — lock to landscape
                     await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_LEFT).catch(() => {
                         return ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
                     });
-                    // Short delay before unlock so the lock settles
                     await new Promise(resolve => setTimeout(resolve, 600));
                     await ScreenOrientation.unlockAsync().catch(() => {});
                 }
-                // If already in landscape: no lock needed — just open to interaction
             } catch {
-                // Fallback: unlock only, don't lock
                 ScreenOrientation.unlockAsync().catch(() => {});
             } finally {
                 isInitialLockCycle = false;
@@ -161,7 +185,6 @@ export default function ReadModeScreen() {
         initOrientation();
 
         const subscription = ScreenOrientation.addOrientationChangeListener((evt) => {
-            // Ignore events during the initial lock/unlock cycle
             if (isInitialLockCycle) return;
             const orientation = evt.orientationInfo.orientation;
             if (
@@ -172,21 +195,17 @@ export default function ReadModeScreen() {
             }
         });
 
-        // Hide stale WBW pill on mount
         setSelectedWbwTranslation(null);
 
         return () => {
             subscription.remove();
             if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-            // FIX 2: Pause any playing audio when leaving Read Mode
             pauseSurahAudio().catch(() => {});
-            // Restore portrait lock then release
-            // Delay portrait lock until after navigation animation completes
             setTimeout(() => {
                 ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP)
                     .then(() => setTimeout(() => ScreenOrientation.unlockAsync().catch(() => {}), 500))
                     .catch(() => {});
-            }, 350); // matches fade animation duration
+            }, 350);
             StatusBar.setHidden(false);
         };
     }, [handlePortraitReturn]);
@@ -202,6 +221,7 @@ export default function ReadModeScreen() {
     }, [handlePortraitReturn]);
 
     useEffect(() => {
+        let isMounted = true;
         const load = async () => {
             try {
                 let processedVerses: Verse[];
@@ -220,13 +240,32 @@ export default function ReadModeScreen() {
                 } else {
                     processedVerses = await getVersesBySurah(snapshot.surahId, 1, 1000);
                 }
+                if (!isMounted) return;
                 setVerses(processedVerses);
+                // Trigger scroll immediately once data is set
+                if (!initialScrollDoneRef.current && processedVerses.length > 0) {
+                    const targetIndex = processedVerses.findIndex((v) => v.verseNumber === snapshot.verseNumber);
+                    if (targetIndex > 0) {
+                        setTimeout(() => {
+                            if (!isMounted) return;
+                            try {
+                                flashListRef.current?.scrollToIndex({ index: targetIndex, animated: false, viewPosition: 0 });
+                                initialScrollDoneRef.current = true;
+                                hasScrolled.current = true;
+                            } catch (e) {}
+                        }, 50);
+                    } else {
+                        initialScrollDoneRef.current = true;
+                        hasScrolled.current = true;
+                    }
+                }
             } catch (error) {
-                console.error('[read-mode] Failed to load:', error);
+                if (isMounted) console.error('[read-mode] Failed to load:', error);
             }
         };
         load();
-    }, [snapshot.surahId, snapshot.juzNumber, isJuzMode]);
+        return () => { isMounted = false; };
+    }, [snapshot.surahId, snapshot.juzNumber, snapshot.verseNumber, isJuzMode]);
 
     const toggleWbwMode = useCallback(() => {
         setIsWbwActive(prev => {
@@ -253,25 +292,50 @@ export default function ReadModeScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     }, []);
 
-    const handleFlashListLoad = useCallback(() => {
-        if (hasScrolled.current || verses.length === 0) return;
+    const initialScrollIndex = React.useMemo(() => {
+        if (verses.length === 0) return undefined;
         const targetIndex = verses.findIndex((v) => v.verseNumber === snapshot.verseNumber);
-        if (targetIndex >= 0) {
+        return targetIndex > 0 ? targetIndex : undefined;
+    }, [verses, snapshot.verseNumber]);
+
+    const handleFlashListLoad = useCallback(() => {
+        if (initialScrollDoneRef.current || verses.length === 0) return;
+        const targetIndex = verses.findIndex((v) => v.verseNumber === snapshot.verseNumber);
+        if (targetIndex > 0) {
             scrollTimeoutRef.current = setTimeout(() => {
-                flashListRef.current?.scrollToIndex({ index: targetIndex, animated: false, viewPosition: 0.5 });
-                hasScrolled.current = true;
-            }, 100);
+                try {
+                    flashListRef.current?.scrollToIndex({ index: targetIndex, animated: false, viewPosition: 0 });
+                    initialScrollDoneRef.current = true;
+                    hasScrolled.current = true;
+                } catch (e) {}
+            }, 60);
         } else {
+            initialScrollDoneRef.current = true;
             hasScrolled.current = true;
         }
     }, [verses, snapshot.verseNumber]);
 
     const onViewableItemsChanged = useCallback(({ viewableItems }: any) => {
-        const first = viewableItems[0]?.item as Verse | undefined;
-        if (!first) return;
+        const first = viewableItems?.[0]?.item;
+        if (!first || !first.verseNumber || !first.surahId) {
+            return;
+        }
+
+        // Prevent initial mount from overwriting last visible verse before target jump finishes
+        if (!initialScrollDoneRef.current && snapshot.verseNumber > 1 && first.verseNumber !== snapshot.verseNumber) {
+            return;
+        }
+
+        setVisibleSurahId(first.surahId);
         setVisibleVerseNumber(first.verseNumber);
+        setVisibleVerseIndex(viewableItems[0]?.index ?? 0);
+        hasScrolled.current = true;
+
         lastVisibleVerseNumberRef.current = first.verseNumber;
         lastVisibleSurahIdRef.current = first.surahId;
+
+        // Record reading activity
+        useActivityStore.getState().recordVerseRead(first.surahId, first.verseNumber);
 
         // BUG FIX: When the topmost visible card changes, clear any stale WBW selection
         // so the pill doesn't get stuck showing a previous word's translation.
@@ -280,7 +344,7 @@ export default function ReadModeScreen() {
             activeWbwCardKeyRef.current = null;
             setSelectedWbwTranslation(null);
         }
-    }, []);
+    }, [snapshot.verseNumber]);
 
     const handleToggleBookmark = useCallback(async (surahId: number, verseNumber: number, verseId: number) => {
         if (bookmarkBusyRef.current) return;
@@ -367,20 +431,44 @@ export default function ReadModeScreen() {
         }
     }, []); // Stable: refs and setters never change
 
+    const currentSurahName = getSurahById(visibleSurahId)?.name || snapshot.surahName;
     const headerTitle = isJuzMode
-        ? `Juz ${snapshot.juzNumber} · ${snapshot.surahName}:${visibleVerseNumber}`
-        : `${snapshot.surahName} · ${snapshot.surahId}:${visibleVerseNumber}`;
+        ? `Juz ${snapshot.juzNumber} · ${currentSurahName}:${visibleVerseNumber}`
+        : `${currentSurahName} · ${visibleSurahId}:${visibleVerseNumber}`;
 
     const themeBG = isParchmentLight ? '#F5F2E9' : '#05080F';
     const themeIconColor = isParchmentLight ? '#8B7355' : "#D4AF37";
 
     const handleScroll = useCallback((e: any) => {
-        const offsetY      = e.nativeEvent.contentOffset.y;
-        const contentH     = e.nativeEvent.contentSize.height;
-        const layoutH      = e.nativeEvent.layoutMeasurement.height;
-        const scrollable   = contentH - layoutH;
-        const progress     = scrollable > 0 ? Math.min(Math.max(offsetY / scrollable, 0), 1) : 0;
-        setScrollProgress(progress);
+        if (isTransitioningRef.current || !e?.nativeEvent?.contentSize || !e?.nativeEvent?.layoutMeasurement) return;
+        
+        const offsetY = e.nativeEvent.contentOffset?.y ?? 0;
+        const contentH = e.nativeEvent.contentSize.height;
+        const layoutH = e.nativeEvent.layoutMeasurement.height;
+        const scrollable = contentH - layoutH;
+        
+        if (scrollable > 0) {
+            let rawProgress = Math.min(1, Math.max(0, offsetY / scrollable));
+            
+            // Ensure we hit exactly 1.0 when we are at the bottom
+            if (offsetY >= scrollable - 2) {
+                rawProgress = 1;
+            }
+            
+            let finalProgress = rawProgress;
+            
+            if (offsetY > lastOffsetYRef.current) {
+                // Scrolling down: progress should not decrease
+                finalProgress = Math.max(lastProgressRef.current, rawProgress);
+            } else if (offsetY < lastOffsetYRef.current) {
+                // Scrolling up: progress should not increase
+                finalProgress = Math.min(lastProgressRef.current, rawProgress);
+            }
+            
+            lastProgressRef.current = finalProgress;
+            lastOffsetYRef.current = offsetY;
+            scrollProgressAnim.setValue(finalProgress);
+        }
     }, []);
 
     return (
@@ -388,6 +476,7 @@ export default function ReadModeScreen() {
             <StatusBar hidden />
 
             <View style={styles.header}>
+                <View style={styles.headerSpacer} />
 
                 <Text style={[styles.headerTitle, isParchmentLight && { color: '#2B2519' }]}>
                     {headerTitle}
@@ -423,37 +512,42 @@ export default function ReadModeScreen() {
                 </View>
             </View>
 
-            <ReadingProgressBar progress={scrollProgress} isParchmentLight={isParchmentLight} />
+            <ReadingProgressBar progress={scrollProgressAnim} isParchmentLight={isParchmentLight} currentVerseIndex={visibleVerseIndex} totalVerses={verses.length} />
 
             <FlashList
                 ref={flashListRef}
                 data={verses}
-                keyExtractor={(item) => `${item.surahId}-${item.verseNumber}`}
-                renderItem={({ item }) => (
-                    <ReadModeVerseCard
-                        id={item.id}
-                        surahId={item.surahId}
-                        surahName={snapshot.surahName}
-                        verseNumber={item.verseNumber}
-                        pageNumber={item.pageNumber}
-                        arabicText={item.arabicText}
-                        translation={item.translation || null}
-                        transliteration={item.transliteration || null}
-                        showTransliteration={showTransliteration}
-                        isWbwActive={isWbwActive}
-                        translationLanguage={translationLanguage}
-                        isParchmentLight={isParchmentLight}
-                        onBookmark={(sid, vn) => handleToggleBookmark(sid, vn, item.id)}
-                        onTafsir={(sid, vn) => handleOpenTafsir(sid, vn)}
-                        onFavorite={(sid, vn) => handleToggleFavourite(sid, vn, item.id)}
-                        isBookmarked={bookmarksSet.has(item.id)}
-                        isFavorited={isFavourited(item.id)}
-                        onSelectWord={(t) => handleSelectWord(item.surahId, item.verseNumber, t)}
-                        fontSizeArabic={fontSizeArabic}
-                        fontSizeTranslation={fontSizeTranslation}
-                        showTranslation={showTranslation}
-                    />
-                )}
+                initialScrollIndex={initialScrollIndex}
+                keyExtractor={(item: any) => `${item?.surahId}-${item?.verseNumber}`}
+                {...({ estimatedItemSize: 300 } as any)}
+                renderItem={({ item }: { item: any }) => {
+                    if (!item || !item.surahId || !item.verseNumber) return null;
+                    return (
+                        <ReadModeVerseCard
+                            id={item.id}
+                            surahId={item.surahId}
+                            surahName={snapshot.surahName}
+                            verseNumber={item.verseNumber}
+                            pageNumber={item.pageNumber}
+                            arabicText={item.arabicText}
+                            translation={item.translation || null}
+                            transliteration={item.transliteration || null}
+                            showTransliteration={showTransliteration}
+                            isWbwActive={isWbwActive}
+                            translationLanguage={translationLanguage}
+                            isParchmentLight={isParchmentLight}
+                            onBookmark={(sid, vn) => handleToggleBookmark(sid, vn, item.id)}
+                            onTafsir={(sid, vn) => handleOpenTafsir(sid, vn)}
+                            onFavorite={(sid, vn) => handleToggleFavourite(sid, vn, item.id)}
+                            isBookmarked={bookmarksSet.has(item.id)}
+                            isFavorited={isFavourited(item.id)}
+                            onSelectWord={(t) => handleSelectWord(item.surahId, item.verseNumber, t)}
+                            fontSizeArabic={fontSizeArabic}
+                            fontSizeTranslation={fontSizeTranslation}
+                            showTranslation={showTranslation}
+                        />
+                    );
+                }}
                 showsVerticalScrollIndicator={false}
                 onScroll={handleScroll}
                 scrollEventThrottle={16}
@@ -509,6 +603,11 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         zIndex: 10,
     },
+    headerSpacer: {
+        minWidth: 112,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
     headerTitle: {
         flex: 1,
         fontSize: 15,
@@ -518,8 +617,10 @@ const styles = StyleSheet.create({
         marginHorizontal: 8,
     },
     headerActions: {
+        minWidth: 112,
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'flex-end',
         gap: 8,
     },
     iconButton: {

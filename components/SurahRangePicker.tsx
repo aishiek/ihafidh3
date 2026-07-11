@@ -1,3 +1,4 @@
+import { logScreenView } from '@/utils/analyticsHelper';
 import { surahsData } from '@/data/surahs';
 import { useThemeColor } from '@/utils/useThemeColor';
 import { Check, Search, X } from 'lucide-react-native';
@@ -10,7 +11,13 @@ type Props = {
   onConfirm: (params: { surahId: number; startVerse: number; endVerse: number; note?: string }) => void;
 };
 
-export default function SurahRangePicker({ visible, onClose, onConfirm }: Props) {
+export default function SurahRangePicker({
+  visible, onClose, onConfirm }: Props) {
+  React.useEffect(() => {
+    if (visible) {
+      logScreenView('modal_surahrangepicker').catch(() => {});
+    }
+  }, [visible]);
   const { primary } = useThemeColor();
   const [search, setSearch] = useState('');
   const [selectedSurah, setSelectedSurah] = useState<number | null>(null);

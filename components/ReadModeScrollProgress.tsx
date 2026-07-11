@@ -30,23 +30,47 @@ const PARCH_BG     = 'rgba(245,242,233,0.97)';
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface ReadingProgressBarProps {
-  progress: number;          // 0–1
+  progress: Animated.Value;          // 0–1
   isParchmentLight: boolean;
+  currentVerseIndex?: number;
+  totalVerses?: number;
 }
 
-export function ReadingProgressBar({ progress, isParchmentLight }: ReadingProgressBarProps) {
-  const pct = `${Math.round(progress * 100)}%` as any;
+export function ReadingProgressBar({ progress, isParchmentLight, currentVerseIndex, totalVerses }: ReadingProgressBarProps) {
   const trackColor  = isParchmentLight ? PARCH_TRACK : GOLD_FAINT;
   const fillColor   = isParchmentLight ? PARCH_GOLD  : GOLD;
+  const labelColor  = isParchmentLight ? PARCH_GOLD  : GOLD;
+
+  const hasStats = currentVerseIndex !== undefined && totalVerses !== undefined && totalVerses > 0;
+  const count = hasStats ? `${currentVerseIndex! + 1}/${totalVerses}` : '';
+  const pct   = hasStats ? `${Math.round(((currentVerseIndex! + 1) / totalVerses!) * 100)}%` : '';
 
   return (
-    <View style={[styles.progressBarTrack, { backgroundColor: trackColor }]}>
-      <View
-        style={[
-          styles.progressBarFill,
-          { width: pct, backgroundColor: fillColor },
-        ]}
-      />
+    <View style={styles.progressBarWrapper}>
+      {/* Labels row: count on left, % on right */}
+      {hasStats && (
+        <View style={styles.progressLabelRow}>
+          <Text style={[styles.progressLabelLeft, { color: labelColor }]}>{count}</Text>
+          <Text style={[styles.progressLabelRight, { color: labelColor }]}>{pct}</Text>
+        </View>
+      )}
+
+      {/* The 2px progress bar itself */}
+      <View style={[styles.progressBarTrack, { backgroundColor: trackColor }]}>
+        <Animated.View
+          style={[
+            styles.progressBarFill,
+            {
+              width: progress.interpolate({
+                inputRange: [0, 1],
+                outputRange: ['0%', '100%'],
+                extrapolate: 'clamp',
+              }),
+              backgroundColor: fillColor,
+            },
+          ]}
+        />
+      </View>
     </View>
   );
 }
@@ -326,13 +350,32 @@ const JUMP_ITEM_SIZE = 52;
 
 const styles = StyleSheet.create({
   // ── Progress Bar ───────────────────────────────────────────────────────────
-  progressBarTrack: {
-    position: 'absolute',
-    top: 52,        // height of header
-    left: 0,
-    right: 0,
-    height: 2,
+  progressBarWrapper: {
+    width: '100%',
     zIndex: 20,
+  },
+  progressLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 3,
+  },
+  progressLabelLeft: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  },
+  progressLabelRight: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  },
+  progressBarTrack: {
+    width: '100%',
+    height: 2,
   },
   progressBarFill: {
     height: 2,

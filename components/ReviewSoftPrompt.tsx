@@ -1,8 +1,16 @@
+import { logScreenView } from '@/utils/analyticsHelper';
 import { openFeedbackEmail, remindMeIn, requestNativeReview } from '@/utils/reviewPrompt';
 import React from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-export default function ReviewSoftPrompt({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+export default function ReviewSoftPrompt({
+  visible, onClose }: { visible: boolean; onClose: () => void }) {
+React.useEffect(() => {
+    if (visible) {
+      logScreenView('modal_reviewsoftprompt').catch(() => {});
+    }
+  }, [visible]);
+ 
   const handlePrimary = async () => {
     try {
       await requestNativeReview();

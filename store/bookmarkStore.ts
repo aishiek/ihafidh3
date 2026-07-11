@@ -1,6 +1,8 @@
 import * as SQLite from 'expo-sqlite';
 import { Platform } from 'react-native';
 import { create } from 'zustand';
+import { getSurahName } from '@/constants/quranMeta';
+import { incrementBookmark } from '@/services/communityStatsService';
 
 export interface BookmarkItem {
   id?: number; // row id (autoincrement)
@@ -308,16 +310,15 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
       });
       if (__DEV__) console.log('[bookmarkStore] addBookmark queued');
 
-      // ANALYTICS: bookmark_added — aggregate stats only, no surah name to reduce noise
-      const { logAnalyticsEvent} = require('@/utils/analyticsHelper');
+      // ANALYTICS: bookmark_added
+      const { logAnalyticsEvent } = require('@/utils/analyticsHelper');
       try {
         logAnalyticsEvent('bookmark_added', {
           surah_number: surahId ?? 0,
+          surah_name: getSurahName(surahId ?? 0),
           verse_number: verseNumber ?? 0,
-          source: source || 'unknown',
-          juz_number: juzNumber || 0,
-          total_count: get().bookmarksSet.size,
         });
+        incrementBookmark(surahId ?? 0, true, verseNumber ?? 0);
       } catch { /* analytics must never crash */ }
     } catch (e) {
       console.warn('[bookmarkStore] add failed', e);
@@ -335,15 +336,17 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
         const item = state.bookmarks.find(b => b.verseId === verseId);
         updatedSet.delete(verseId);
 
-        // ANALYTICS: bookmark_removed — aggregate stats only, no surah name
-        const { logAnalyticsEvent} = require('@/utils/analyticsHelper');
+        // ANALYTICS: bookmark_removed
+        const { logAnalyticsEvent } = require('@/utils/analyticsHelper');
         try {
           logAnalyticsEvent('bookmark_removed', {
             surah_number: item?.surahId || 0,
+            surah_name: getSurahName(item?.surahId || 0),
             verse_number: item?.verseNumber || 0,
-            source: item?.source || 'unknown',
-            total_count: updatedSet.size,
           });
+          if (item?.surahId) {
+            incrementBookmark(item.surahId, false, item.verseNumber ?? 0);
+          }
         } catch { /* analytics must never crash */ }
 
         return { bookmarks: state.bookmarks.filter(b => b.verseId !== verseId), bookmarksSet: updatedSet };

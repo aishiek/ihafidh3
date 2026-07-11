@@ -1,4 +1,6 @@
 import {logAnalyticsEvent, logAudioPlayback } from '@/utils/analyticsHelper';
+import { getSurahName } from '@/constants/quranMeta';
+import { getJuzForSurah } from '@/utils/juzCalculator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import type { FlashListRef } from '@shopify/flash-list';
@@ -24,6 +26,8 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+
+const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
 import { useAppWalkthrough } from '@/hooks/useAppWalkthrough';
 
 const WALKTHROUGH_STEPS = [
@@ -53,6 +57,7 @@ import VerseItem from '@/components/VerseItem';
 import { surahsData } from '@/data/surahs';
 import { useOrientationReadMode } from '@/hooks/useOrientationReadMode';
 import { fetchVersesForJuz, fetchVersesForSurah, getDatabase, JuzVerse, logDatabaseTables } from '@/services/juzDbService';
+import { useActivityStore } from '@/store/activityStore';
 import { useNavigationStore } from '@/store/navigationStore';
 import { useProgressStore } from '@/store/progressStore';
 import { useQuranStore } from '@/store/quranStore';
@@ -66,6 +71,7 @@ import {
     playAudio,
     playSurahAudioWithFallback,
     resumeSurahAudio,
+    resumeAudio,
     stopSurahAudio,
 } from '@/utils/audioUtils';
 import { getArabicFontFamily, getArabicTypographySizing } from '@/utils/fontUtils';
@@ -79,6 +85,10 @@ import { calculatePages } from '@/utils/pageUtils';
 
 import { fetchUthmaniTajweedRnMarkupByChapter } from '@/services/quranComTajweedService';
 import { shouldHaveBismillah, BISMILLAH_ARABIC, getBismillahTranslation, BISMILLAH_AUDIO_URL } from '@/constants/basmalah';
+import { cacheGet, cacheSet } from '@/services/verseCache';
+import { getTranslationRemote } from '@/services/remoteTranslation';
+import { useCommunityStatsFlag } from '@/utils/communityStatsFlag';
+import { getCachedSurahStats } from '@/services/communityStatsService';
 
 export default function ReadScreen() {
   const router = useRouter();
@@ -127,6 +137,7 @@ export default function ReadScreen() {
     lastVisibleVerse,
     lastVisibleJuz,
     clearHandoff,
+    readTabResetTrigger,
   } = useReadModeStore();
 
   // Track if this is initial mount (to restore position silently)
@@ -135,6 +146,10 @@ export default function ReadScreen() {
 
   // UI State
   const [tab, setTab] = useState<'surah' | 'juz'>('surah');
+
+  // Community stats: inline memorized count on surah cards
+  const { enabled: communityStatsEnabled, minThreshold: communityStatsThreshold } = useCommunityStatsFlag();
+  const communityStatsCache = communityStatsEnabled ? getCachedSurahStats() : null;
   const [selectedSurah, setSelectedSurah] = useState<Surah | null>(null);
   const [selectedJuz, setSelectedJuz] = useState<number | null>(null);
   const [navigationSource, setNavigationSource] = useState<'surahList' | 'juzList' | 'mustahabbah' | 'continueReading' | 'stats' | null>(null);
@@ -145,6 +160,11 @@ export default function ReadScreen() {
   const [isPlayingSurah, setIsPlayingSurah] = useState(false);
   const [isSurahPaused, setIsSurahPaused] = useState(false);
   const [currentlyPlayingVerse, setCurrentlyPlayingVerse] = useState<{ surahId: number, verseNumber: number } | null>(null);
+  const [currentVisibleIndex, setCurrentVisibleIndex] = useState(0);
+  const currentlyPlayingVerseRef = useRef(currentlyPlayingVerse);
+  useEffect(() => { 
+    currentlyPlayingVerseRef.current = currentlyPlayingVerse; 
+  }, [currentlyPlayingVerse]);
   // Page Mode wiring (modal + basic state so 'Pg' button is visible)
   const [pageModeVisible, setPageModeVisible] = useState(false);
   const [pageModeScope, setPageModeScope] = useState<'surah' | 'juz'>('surah');
@@ -161,6 +181,32 @@ export default function ReadScreen() {
   const [currentRepeat, setCurrentRepeat] = useState<number>(1);
   const [totalRepeats, setTotalRepeats] = useState<number>(1);
   const pagePlayAbortRef = useRef({ aborted: false });
+
+  // Prefetch translations for the first few verses to eliminate cold-cache flicker
+  // when scrolling down on Android under touch pressure.
+  useEffect(() => {
+    const listToPrefetch = tab === 'surah' ? verses : juzVerses;
+    if (!listToPrefetch || !listToPrefetch.length) return;
+    
+    // Pick the first 10 verses to prefetch
+    const versesToPrefetch = listToPrefetch.slice(0, 10);
+    versesToPrefetch.forEach((v: any) => {
+      // Don't prefetch virtual Bismillah verses
+      if ((v.id ?? v.verse_id) < 0) return;
+      const sId = v.surahId || v.chapter_id;
+      const vNum = v.verseNumber || v.verse_number;
+      if (!sId || !vNum) return;
+
+      const cached = cacheGet<string>(sId, vNum, translationLanguage);
+      if (!cached) {
+        getTranslationRemote(sId, vNum, translationLanguage)
+          .then(text => {
+            if (text) cacheSet(sId, vNum, translationLanguage, text);
+          })
+          .catch(() => {});
+      }
+    });
+  }, [verses, juzVerses, tab, translationLanguage]);
 
   // Keep screen awake during audio playback to prevent auto-lock issues on Android
   useEffect(() => {
@@ -204,6 +250,24 @@ export default function ReadScreen() {
   const [verseListKey, setVerseListKey] = useState(0);
   const [juzListKey, setJuzListKey] = useState(0);
 
+  // Reading progress bar: updated by handleVerseScroll for all verse FlashLists
+  const scrollProgressAnim = useRef(new Animated.Value(0)).current;
+  const lastProgressRef = useRef(0);
+  const lastOffsetYRef = useRef(0);
+  const isTransitioningRef = useRef(false);
+
+  // Reset progress whenever the user opens a new surah/juz
+  useEffect(() => {
+    isTransitioningRef.current = true;
+    lastProgressRef.current = 0;
+    lastOffsetYRef.current = 0;
+    scrollProgressAnim.setValue(0);
+    const t = setTimeout(() => {
+      isTransitioningRef.current = false;
+    }, 400);
+    return () => clearTimeout(t);
+  }, [selectedSurah?.id, selectedJuz]);
+
   // Loading
   // Loading
   const [isLoading, setIsLoading] = useState(false);
@@ -234,29 +298,36 @@ export default function ReadScreen() {
   const loadingLocks = useRef<Map<string, Promise<any>>>(new Map());
 
   // === Orientation Handling for Read Mode ===
-  const [currentVisibleVerse, setCurrentVisibleVerse] = useState<{ surahId: number; verseNumber: number } | null>(null);
+  const currentVisibleVerseRef = useRef<{ surahId: number; verseNumber: number } | null>(null);
 
   // Stable Viewability Config for FlashList
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50, minimumViewTime: 300 }).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80, minimumViewTime: 500 }).current;
 
   const handleSurahViewableItemsChanged = useCallback(({ viewableItems }: any) => {
     const firstVisible = viewableItems[0]?.item as Verse;
     if (firstVisible) {
-      setCurrentVisibleVerse({
+      currentVisibleVerseRef.current = {
         surahId: firstVisible.surahId,
         verseNumber: firstVisible.verseNumber,
-      });
+      };
+      const index = viewableItems[0]?.index ?? 0;
+      setCurrentVisibleIndex(index);
       setLastReadVerse({ ...firstVisible, readContext: 'surah' } as any);
+      
+      // Record reading activity
+      useActivityStore.getState().recordVerseRead(firstVisible.surahId, firstVisible.verseNumber);
     }
   }, [setLastReadVerse]);
 
   const handleJuzViewableItemsChanged = useCallback(({ viewableItems }: any) => {
     const firstVisible = viewableItems[0]?.item as any;
     if (firstVisible) {
-      setCurrentVisibleVerse({
+      currentVisibleVerseRef.current = {
         surahId: firstVisible.chapter_id,
         verseNumber: firstVisible.verse_number,
-      });
+      };
+      const index = viewableItems[0]?.index ?? 0;
+      setCurrentVisibleIndex(index);
       setLastReadVerse({
         id: firstVisible.verse_id,
         surahId: firstVisible.chapter_id,
@@ -267,6 +338,9 @@ export default function ReadScreen() {
         readContext: 'juz',
         juzNumber: firstVisible.part_id ? Number(firstVisible.part_id) : selectedJuz,
       } as any);
+
+      // Record reading activity
+      useActivityStore.getState().recordVerseRead(firstVisible.chapter_id, firstVisible.verse_number);
     }
   }, [setLastReadVerse, selectedJuz]);
 
@@ -278,7 +352,7 @@ export default function ReadScreen() {
     if (goToModalVisible || progressModalVisible) return;
 
     // Determine current context
-    const currentVerse = currentVisibleVerse || (verses.length > 0 ? { surahId: verses[0].surahId, verseNumber: verses[0].verseNumber } : null);
+    const currentVerse = currentVisibleVerseRef.current || (verses.length > 0 ? { surahId: verses[0].surahId, verseNumber: verses[0].verseNumber } : null);
     if (!currentVerse) return;
 
     // Get current surah/juz context
@@ -287,9 +361,12 @@ export default function ReadScreen() {
     const source = selectedJuz ? 'juzList' : 'surahList';
     const surahName = selectedSurah?.englishName || selectedSurah?.name || `Surah ${contextSurahId}`;
 
+    // Fix: Ensure we don't pass verse 0 (Bismillah) to read-mode
+    const targetVerseNumber = Math.max(1, currentVerse.verseNumber);
+
     // Find the current verse data for navigation
-    const currentVerseData = verses.find(v => v.surahId === currentVerse.surahId && v.verseNumber === currentVerse.verseNumber) ||
-                          juzVerses.find(jv => jv.chapter_id === currentVerse.surahId && jv.verse_number === currentVerse.verseNumber);
+    const currentVerseData = verses.find(v => v.surahId === currentVerse.surahId && v.verseNumber === targetVerseNumber) ||
+                          juzVerses.find(jv => jv.chapter_id === currentVerse.surahId && jv.verse_number === targetVerseNumber);
 
     if (!currentVerseData) return;
 
@@ -298,7 +375,7 @@ export default function ReadScreen() {
       pathname: '/read-mode',
       params: {
         surahId: contextSurahId.toString(),
-        verseNumber: currentVerse.verseNumber.toString(),
+        verseNumber: targetVerseNumber.toString(),
         juzNumber: contextJuzNumber?.toString(),
         arabicText: (currentVerseData as any).ayah || (currentVerseData as any).arabicText || '',
         translation: (currentVerseData as any).translation || '',
@@ -307,7 +384,7 @@ export default function ReadScreen() {
         source: source,
       }
     } as any);
-  }, [verses, juzVerses, isPageModeActive, goToModalVisible, progressModalVisible, currentVisibleVerse, selectedSurah, selectedJuz, router]);
+  }, [verses, juzVerses, isPageModeActive, goToModalVisible, progressModalVisible, selectedSurah, selectedJuz, router]);
 
   // Handle portrait return from read-mode
   const handlePortraitReturn = useCallback(() => {
@@ -355,6 +432,18 @@ export default function ReadScreen() {
       surah.id.toString() === query
     );
   }, [searchQuery]);
+
+  // ANALYTICS: Track search queries (debounced by 1s)
+  useEffect(() => {
+    if (!searchQuery || searchQuery.trim().length < 2) return;
+    const timer = setTimeout(() => {
+      logAnalyticsEvent('search_performed', {
+        query: searchQuery.trim(),
+        search_context: tab,
+      });
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [searchQuery, tab]);
 
   const averageVerseHeight = useMemo(() => {
     if (!verses.length) return 200;
@@ -717,34 +806,45 @@ export default function ReadScreen() {
       return;
     }
 
-    const direction = currentScrollY > lastScrollY.current ? 'down' : 'up';
-    const distanceSinceLastChange = Math.abs(currentScrollY - lastHeaderStateChangeY.current);
+    // The progressive header hide logic ('minimal' / 'collapsed') has been disabled
+    // because changing the header height during FlashList scrolling causes 
+    // viewport recalculation, which leads to aggressive layout flickering.
+    // The header now remains 'full' (static) at all times.
 
-    if (direction === 'down') {
-      // Scrolling down - progressively collapse
-      if (currentScrollY > SCROLL_THRESHOLD_COLLAPSED && headerState !== 'collapsed') {
-        setHeaderState('collapsed');
-        lastHeaderStateChangeY.current = currentScrollY;
-      } else if (currentScrollY > SCROLL_THRESHOLD_MINIMAL && headerState === 'full') {
-        setHeaderState('minimal');
-        lastHeaderStateChangeY.current = currentScrollY;
-      }
-    } else {
-      // Scrolling up - progressively expand (with hysteresis)
-      // Only expand if we've scrolled far enough in the opposite direction
-      if (distanceSinceLastChange > HYSTERESIS_BUFFER) {
-        if (currentScrollY < SCROLL_THRESHOLD_MINIMAL && headerState !== 'full') {
-          setHeaderState('full');
-          lastHeaderStateChangeY.current = currentScrollY;
-        } else if (currentScrollY < SCROLL_THRESHOLD_COLLAPSED && headerState === 'collapsed') {
-          setHeaderState('minimal');
-          lastHeaderStateChangeY.current = currentScrollY;
+    // ── Reading progress bar ───────────────────────────────────────────────
+    if (!isTransitioningRef.current) {
+      const { contentSize, layoutMeasurement } = event.nativeEvent;
+      const contentH = contentSize?.height ?? 0;
+      const layoutH  = layoutMeasurement?.height ?? 0;
+      const scrollable = contentH - layoutH;
+      
+      if (scrollable > 0) {
+        let rawProgress = Math.min(1, Math.max(0, currentScrollY / scrollable));
+        
+        // Ensure we hit exactly 1.0 when we are at the bottom
+        // (Android sometimes has a fraction of a pixel diff)
+        if (currentScrollY >= scrollable - 2) {
+            rawProgress = 1;
         }
+        
+        let finalProgress = rawProgress;
+        
+        if (currentScrollY > lastOffsetYRef.current) {
+            // Scrolling down: progress should not decrease
+            finalProgress = Math.max(lastProgressRef.current, rawProgress);
+        } else if (currentScrollY < lastOffsetYRef.current) {
+            // Scrolling up: progress should not increase
+            finalProgress = Math.min(lastProgressRef.current, rawProgress);
+        }
+        
+        lastProgressRef.current = finalProgress;
+        lastOffsetYRef.current = currentScrollY;
+        scrollProgressAnim.setValue(finalProgress);
       }
     }
 
     lastScrollY.current = currentScrollY;
-  }, [headerState, SCROLL_THRESHOLD_MINIMAL, SCROLL_THRESHOLD_COLLAPSED, HYSTERESIS_BUFFER, MAX_SCROLL_JUMP]);
+  }, [MAX_SCROLL_JUMP]);
 
   const getVerseType = useCallback((item: any) => {
     const sId = item.surahId || item.chapter_id;
@@ -1052,7 +1152,11 @@ export default function ReadScreen() {
         if (isPlayingAudio && currentlyPlayingVerse?.surahId === surahNum && currentlyPlayingVerse?.verseNumber === verseNum) {
           await pauseAudio();
           setIsPlayingAudio(false);
-          setCurrentlyPlayingVerse(null);
+          // Do NOT clear currentlyPlayingVerse so we can resume it
+        } else if (!isPlayingAudio && currentlyPlayingVerse?.surahId === surahNum && currentlyPlayingVerse?.verseNumber === verseNum) {
+          // Resume paused audio
+          await resumeAudio();
+          setIsPlayingAudio(true);
         } else {
           // Stop any currently playing audio first
           if (isPlayingAudio) {
@@ -1109,7 +1213,7 @@ export default function ReadScreen() {
           const sampleVerses = await fetchVersesForSurah(selectedSurah.id);
           if (__DEV__) console.log(`[read] ▶️ fetchVersesForSurah(${selectedSurah.id}) returned ${sampleVerses?.length ?? 0} verses; sample chapter_ids:`, sampleVerses.slice(0, 5).map(v => v.chapter_id));
         } catch (e) {
-          console.warn('[read] ▶️ fetchVersesForSurah diagnostic failed:', e);
+          if (__DEV__) console.warn('[read] ▶️ fetchVersesForSurah diagnostic failed:', e);
         }
 
         await playSurahAudioWithFallback(selectedSurah.id, 1, (status: any) => {
@@ -1241,7 +1345,7 @@ export default function ReadScreen() {
         setIsPagePaused(true);
         setIsPlayingPage(false);
       } catch (e) {
-        console.warn('[read] page audio pause failed', e);
+        if (__DEV__) console.warn('[read] page audio pause failed', e);
       }
       return;
     }
@@ -1253,7 +1357,7 @@ export default function ReadScreen() {
         setIsPagePaused(false);
         setIsPlayingPage(true);
       } catch (e) {
-        console.warn('[read] page audio resume failed', e);
+        if (__DEV__) console.warn('[read] page audio resume failed', e);
       }
       return;
     }
@@ -1539,6 +1643,7 @@ export default function ReadScreen() {
   }, [setJuzListScrollY]);
 
   const handleSurahPress = (surah: Surah) => {
+    currentVisibleVerseRef.current = null;
     setNavigationSource('surahList');
     setSelectedSurah(surah);
     setLastViewedSurahId(surah.id);
@@ -1546,18 +1651,18 @@ export default function ReadScreen() {
 
     // ANALYTICS: Surah selected (Event 8 — P2)
     try {
+      const juzNum = typeof getJuzForSurah === 'function' ? getJuzForSurah(surah.id) : 0;
       logAnalyticsEvent('surah_selected', {
         surah_number: surah.id ?? 0,
-        surah_name: (surah.englishName || surah.name || `surah_${surah.id}`).toLowerCase().replace(/\s+/g, '_'),
-        juz_number: (surah as any).juzNumber ?? 0,
-        source: 'browse',
-        verse_count: surah.versesCount ?? 0,
-        revelation_type: surah.revelationType ?? 'unknown',
+        surah_name: getSurahName(surah.id),
+        juz_number: juzNum ?? 0,
+        source: searchQuery?.trim() ? 'search' : 'browse',
       });
     } catch { /* analytics must never crash */ }
   };
 
   const handleSelectJuz = async (juz: number, retryCount = 0) => {
+    currentVisibleVerseRef.current = null;
     setNavigationSource('juzList');
     setSelectedJuz(juz);
     setIsJuzLoading(true);
@@ -1683,9 +1788,11 @@ export default function ReadScreen() {
       return;
     }
 
-    // ANALYTICS: bulk_mark_verses — juz_number only; surah detail omitted to reduce noise
+    // ANALYTICS: bulk_mark_verses — full parameters per brief
     try {
       logAnalyticsEvent('bulk_mark_verses', {
+        surah_number: selectedSurah?.id ?? 0,
+        surah_name: getSurahName(selectedSurah?.id ?? 0),
         juz_number: verses[0]?.juzNumber ?? 0,
         verse_count: toUpdate.length ?? 0,
         state: isMarking ? 'memorized' : 'unmemorized',
@@ -1755,9 +1862,13 @@ export default function ReadScreen() {
   // Render helpers
   const renderVerseOptimized = useCallback(
     ({ item: verse, index }: { item: Verse; index: number }) => {
-      const isPlaying = currentlyPlayingVerse !== null &&
-        currentlyPlayingVerse.surahId === verse.surahId &&
-        currentlyPlayingVerse.verseNumber === verse.verseNumber;
+      // isPlayingAudio must be in the dependency array below so the button
+      // correctly flips back to Play when audio is paused (the ref alone
+      // doesn't trigger a re-render).
+      const isPlaying = isPlayingAudio &&
+        currentlyPlayingVerseRef.current !== null &&
+        currentlyPlayingVerseRef.current.surahId === verse.surahId &&
+        currentlyPlayingVerseRef.current.verseNumber === verse.verseNumber;
       const pageIsPlaying = isPageModeActive && playingVerseIndex === index;
       const pageIsCompleted = isPageModeActive && completedVerses.has(index);
       const pageRepeatInfo = pageIsPlaying && totalRepeats > 1 ? `${currentRepeat}/${totalRepeats}` : undefined;
@@ -1779,16 +1890,17 @@ export default function ReadScreen() {
         />
       );
     },
-    [handleVersePlayAudio, isSurahMemorizedGlobally, isSurahRevisedGlobally, handleSurahMemorizeToggle, handleSurahRevisionToggle, handleMoveToVerse, tab, currentlyPlayingVerse]
+    [isPlayingAudio, handleVersePlayAudio, isSurahMemorizedGlobally, isSurahRevisedGlobally, handleSurahMemorizeToggle, handleSurahRevisionToggle, handleMoveToVerse, tab]
   );
 
   // Page-mode renderer for Juz pages: wraps renderVerseOptimized and injects
   // juzSequenceNumber and totalJuzVerses props so the VerseItem header shows
   // the expected "Surah X • Y/Z" labels in Juz mode.
   const renderJuzPageVerse = useCallback(({ item, index }: { item: any; index: number }) => {
-    const isPlaying = currentlyPlayingVerse !== null &&
-      currentlyPlayingVerse.surahId === (item.surahId || item.chapter_id) &&
-      currentlyPlayingVerse.verseNumber === (item.verseNumber || item.verse_number);
+    const isPlaying = isPlayingAudio &&
+      currentlyPlayingVerseRef.current !== null &&
+      currentlyPlayingVerseRef.current.surahId === (item.surahId || item.chapter_id) &&
+      currentlyPlayingVerseRef.current.verseNumber === (item.verseNumber || item.verse_number);
     // compute global sequence number within the Juz
     const sequenceNumber = currentPageIndex * (pageModeSessionVpp || defaultVersesPerPage) + index + 1;
     // Normalize item into Verse shape expected by VerseItem
@@ -1805,7 +1917,7 @@ export default function ReadScreen() {
     } as any;
     // DEV: warn if critical fields missing
     if (!verseObj.surahId || !verseObj.verseNumber) {
-      console.warn('[read] renderJuzPageVerse: missing surahId/verseNumber for item', {
+      if (__DEV__) console.warn('[read] renderJuzPageVerse: missing surahId/verseNumber for item', {
         item, verseObj, pageIndex: currentPageIndex, index
       });
     }
@@ -1831,7 +1943,7 @@ export default function ReadScreen() {
         totalJuzVerses={juzVerses.length}
       />
     );
-  }, [currentlyPlayingVerse, currentPageIndex, pageModeSessionVpp, defaultVersesPerPage, handleVersePlayAudio, juzVerses.length]);
+  }, [isPlayingAudio, currentPageIndex, pageModeSessionVpp, defaultVersesPerPage, handleVersePlayAudio, juzVerses.length]);
 
   const renderSurahItem = ({ item }: { item: Surah }) => {
     const prog = calculateSurahProgress(item.id);
@@ -1859,6 +1971,20 @@ export default function ReadScreen() {
               <Text style={styles.khatamDate}>{formatDate(completionDate)} : ختم</Text>
             )}
           </View>
+          {/* §3.2: Inline community count — gated by flag + min threshold */}
+          {communityStatsEnabled && communityStatsCache && (() => {
+            const surahStat = communityStatsCache.get(item.id);
+            const count = surahStat?.memorized_count ?? 0;
+            if (count < communityStatsThreshold) return null;
+            const display = count >= 1_000_000 ? `${(count / 1_000_000).toFixed(1)}M` :
+                            count >= 1_000     ? `${(count / 1_000).toFixed(1)}K` :
+                            String(count);
+            return (
+              <Text style={styles.surahCommunityCount}>
+                🧠 {display} memorised
+              </Text>
+            );
+          })()}
         </View>
         <View style={[styles.progressPill, { backgroundColor: color }]}>
           <Text style={styles.progressText}>{Math.round(prog.progress)}%</Text>
@@ -2159,11 +2285,15 @@ export default function ReadScreen() {
   // Reset to Surah list whenever Recite tab gains focus (UNLESS direct navigation with params)
   useFocusEffect(
     React.useCallback(() => {
+      // Start session tracking
+      useActivityStore.getState().startSession();
+
       // Consume synchronously: async orientation + clearHandoff() can null lastVisibleVerse
       // before getOrientationAsync runs, which incorrectly triggered surah-list reset.
       if (useReadModeStore.getState().pendingPortraitHandoff) {
         useReadModeStore.getState().setPendingPortraitHandoff(false);
         return () => {
+          useActivityStore.getState().endSession();
           if (__DEV__) console.log('[read] Tab lost focus');
         };
       }
@@ -2176,30 +2306,14 @@ export default function ReadScreen() {
           orientation === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
           orientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT;
 
-        // Only reset on explicit tab focus without deep-link params, read-mode handoff, or landscape session.
-        if (!hasNavigationParams && !isReturningFromReadMode && !isLandscape) {
-          (async () => {
-            try {
-              await pauseSurahAudio().catch(() => {});
-              await pauseAudio().catch(() => {});
-            } catch {}
-          })();
-
-          try { exitPageMode(); } catch {}
-          setSelectedSurah(null);
-          setSelectedJuz(null);
-          setVerses([]);
-          setJuzVerses([]);
-          setNavigationSource(null);
-          setTab('surah');
-          setIsPlayingAudio(false);
-          setIsPlayingSurah(false);
-          setIsSurahPaused(false);
-        }
+        // Note: The aggressive reset logic has been removed.
+        // The tab will now properly retain its state when switching between tabs.
+        // To reset the tab back to the Surah/Juz list, users can tap the "Recite" tab again.
       }).catch(() => {});
 
       // Cleanup function
       return () => {
+        useActivityStore.getState().endSession();
         if (__DEV__) console.log('[read] Tab lost focus');
       };
     }, [paramSurahId, paramJuzNumber, exitPageMode, lastVisibleVerse])
@@ -2208,6 +2322,31 @@ export default function ReadScreen() {
   useEffect(() => {
     logDatabaseTables();
   }, []);
+
+  // Handle double-tap reset behavior
+  useEffect(() => {
+    if (readTabResetTrigger > 0) {
+      (async () => {
+        try {
+          await pauseSurahAudio().catch(() => {});
+          await pauseAudio().catch(() => {});
+        } catch {}
+      })();
+
+      try { exitPageMode(); } catch {}
+      setSelectedSurah(null);
+      setSelectedJuz(null);
+      setVerses([]);
+      setJuzVerses([]);
+      setNavigationSource(null);
+      setTab('surah');
+      setIsPlayingAudio(false);
+      setIsPlayingSurah(false);
+      setIsSurahPaused(false);
+      
+      if (__DEV__) console.log('[read] Resetting tab to root due to double-tap');
+    }
+  }, [readTabResetTrigger]);
 
   // ==========================================
   // ANALYTICS: Session Duration Tracking (Event 10 — P2)
@@ -2538,7 +2677,7 @@ export default function ReadScreen() {
                   if (!pageAudioManagerRef.current) pageAudioManagerRef.current = getPageAudioManager();
                   const mgr = pageAudioManagerRef.current;
                   if (isPageModeActive) {
-                    try { await mgr.stop(); } catch (e) { console.warn('[read] page audio stop failed', e); }
+                    try { await mgr.stop(); } catch (e) { if (__DEV__) console.warn('[read] page audio stop failed', e); }
                     pagePlayAbortRef.current.aborted = true;
                     setIsPlayingPage(false);
                     setIsPagePaused(false);
@@ -2549,7 +2688,7 @@ export default function ReadScreen() {
                       await stopSurahAudio();
                       setIsPlayingSurah(false);
                       setIsSurahPaused(false);
-                    } catch (e) { console.warn('[read] stop surah audio failed', e); }
+                    } catch (e) { if (__DEV__) console.warn('[read] stop surah audio failed', e); }
                   }
                 }}
                 style={[
@@ -2591,8 +2730,8 @@ export default function ReadScreen() {
               style={{ width: 36, height: 36, marginLeft: 8 }}
             />
 
-            {/* Expand menu (⋮) - ONLY if Surah selected OR in Page Mode OR Juz selected */}
-            {headerState !== 'full' && (selectedSurah || selectedJuz != null || isPageModeActive) && (
+            {/* Expand menu (⋮) - ONLY in Page Mode */}
+            {headerState !== 'full' && isPageModeActive && (
               <TouchableOpacity
                 onPress={() => setHeaderState('full')}
                 style={styles.expandButton}
@@ -2612,8 +2751,8 @@ export default function ReadScreen() {
           {/* ROW 2 (Secondary Info) REMOVED in refined layout */}
 
 
-          {/* ROW 3: ONLY in FULL state (bulk actions) */}
-          {headerState === 'full' && (
+          {/* ROW 3: Bulk actions (Always visible in Surah mode, ONLY in FULL state for Page Mode) */}
+          {((headerState === 'full' && isPageModeActive) || (!isPageModeActive && !!selectedSurah)) && (
             <View style={styles.bulkActionsRow}>
               {/* Page Mode: Show page-level buttons */}
               {isPageModeActive && (pageModeScope === 'surah' || pageModeScope === 'juz') ? (
@@ -2683,8 +2822,28 @@ export default function ReadScreen() {
             </View>
           )}
 
-          {/* Separator line */}
-          <View style={styles.headerSeparator} />
+          {/* Reading Progress Bar — replaces the static separator when reading verses */}
+          {!isPageModeActive && (
+            <View style={{ position: 'relative' }}>
+              <View style={styles.readProgressTrack}>
+                <AnimatedLinearGradient
+                  colors={['#B8860B', '#D4AF37', '#F5D76E', '#D4AF37']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[
+                    styles.readProgressFill,
+                    {
+                      width: scrollProgressAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['0%', '100%'],
+                        extrapolate: 'clamp',
+                      })
+                    }
+                  ]}
+                />
+              </View>
+            </View>
+          )}
         </View>
       ) : (
         /* ============================================ */
@@ -2865,9 +3024,9 @@ export default function ReadScreen() {
                     viewabilityConfig={viewabilityConfig}
                     onViewableItemsChanged={handleJuzViewableItemsChanged}
                     renderItem={({ item, index }: { item: any; index: number }) => {
-                      const isPlaying = currentlyPlayingVerse !== null &&
-                        currentlyPlayingVerse.surahId === item.chapter_id &&
-                        currentlyPlayingVerse.verseNumber === item.verse_number;
+                      const isPlaying = currentlyPlayingVerseRef.current !== null &&
+                        currentlyPlayingVerseRef.current.surahId === item.chapter_id &&
+                        currentlyPlayingVerseRef.current.verseNumber === item.verse_number;
                       return (
                         <VerseItem
                           verse={{
@@ -3028,6 +3187,7 @@ const styles = StyleSheet.create({
   tabText: { color: '#888888', fontWeight: '600' },
   tabTextActive: { color: '#ffffff' },
   khatamDate: { color: '#4CAF50', fontFamily: 'ScheherazadeNew-Regular', fontSize: 12, textAlign: 'right', marginLeft: 8 },
+  surahCommunityCount: { fontSize: 11, color: '#a78bfa', marginTop: 4, fontWeight: '500' },
   verseList: { padding: 16, paddingBottom: 100 },
   pageOverlay: {
     position: 'absolute',
@@ -3185,5 +3345,23 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#333',
     marginTop: 8,
+  },
+
+  // ── Reading Progress Bar ────────────────────────────────────────────────────
+  readProgressTrack: {
+    height: 3,
+    backgroundColor: 'rgba(212, 175, 55, 0.10)',
+    marginTop: 6,
+    overflow: 'visible',
+    position: 'relative',
+  },
+  readProgressFill: {
+    height: 3,
+    borderRadius: 1.5,
+    shadowColor: '#D4AF37',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 5,
+    elevation: 4,
   },
 });

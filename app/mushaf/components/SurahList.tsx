@@ -1,6 +1,8 @@
 import { surahsData } from '@/data/surahs';
+import { logAnalyticsEvent } from '@/utils/analyticsHelper';
+import { getJuzForSurah } from '@/utils/juzCalculator';
 import { useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Dimensions, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { getSurahStartPage } from '../services/mushafSurahService';
 
@@ -24,7 +26,7 @@ const getRevelationType = (surah: SimpleSurah): string => {
 
 // Helper function to get the English name with fallback
 const getEnglishName = (surah: SimpleSurah): string => {
-  return surah.englishName || `Surah ${surah.id}`;
+  return surah.englishName || surah.name;
 };
 
 export default function SurahList({ onClose, onSelect, extraBottomPadding = 0 }: { onClose?: () => void; onSelect?: (page: number) => void; extraBottomPadding?: number }) {
@@ -43,12 +45,40 @@ export default function SurahList({ onClose, onSelect, extraBottomPadding = 0 }:
     );
   }, [searchQuery]);
 
+  // ANALYTICS: Track search queries in Mushaf view
+  useEffect(() => {
+    if (!searchQuery || searchQuery.trim().length < 2) return;
+    const timer = setTimeout(() => {
+      logAnalyticsEvent('search_performed', {
+        query: searchQuery.trim(),
+        search_context: 'mushaf_surah_list',
+      });
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   const handleOpen = async (surahId: number) => {
     console.log(`[SurahList] selected surah=${surahId} - querying DB for start page`);
     try {
       const page = await getSurahStartPage(surahId);
       const pageNum = Number(page) || 1;
       console.log(`[SurahList] surah=${surahId} -> page=${pageNum}`);
+
+      try {
+        const surahInfo = surahsData.find(s => s.id === surahId);
+        const juzNum = typeof getJuzForSurah === 'function' ? getJuzForSurah(surahId) : 0;
+        logAnalyticsEvent('surah_selected', {
+          surah_number: surahId,
+          surah_name: surahInfo?.name ?? 'unknown',
+          juz_number: juzNum ?? 0,
+          source: searchQuery?.trim() ? 'search' : 'browse',
+        });
+        logAnalyticsEvent('mushaf_viewer_opened', {
+          surah_number: surahId,
+          page_number: pageNum,
+          source: 'mushaf_surah_list',
+        });
+      } catch { /* analytics must never crash */ }
 
       if (onSelect) {
         try {

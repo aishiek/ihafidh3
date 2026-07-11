@@ -4,6 +4,7 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect } from 'react';
 import { AccessibilityInfo, I18nManager, Modal, Pressable, Text, TouchableOpacity, View } from 'react-native';
+import { logScreenView } from '@/utils/analyticsHelper';
 import Animated, { Easing, interpolate, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import styles, { ACCENTS, GRADIENTS, TIMINGS } from './QuranThemedModal.styles';
@@ -101,6 +102,7 @@ export default function QuranThemedModal(props: QuranThemedModalProps) {
 
   useEffect(() => {
     if (visible) {
+      logScreenView(`modal_quranthemed_${title || 'unknown'}`).catch(() => {});
       progress.value = withTiming(1, { duration: reduceMotion ? 1 : animationDuration, easing: Easing.out(Easing.exp) });
       // haptic on open
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});

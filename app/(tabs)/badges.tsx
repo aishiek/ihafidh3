@@ -94,6 +94,7 @@ export default function BadgesScreen() {
         ? (unlockedBadges[unlockedBadges.length - 1]?.name ?? 'none').toLowerCase().replace(/\s+/g, '_')
         : 'none';
       logAnalyticsEvent('badges_screen_viewed', {
+        badge_count: unlockedBadges.length ?? 0,
         total_badges_earned: unlockedBadges.length ?? 0,
         newest_badge: newestBadge,
       });

@@ -7,56 +7,10 @@ import {
 } from '@/assets/database/QuranDatabase';
 import { TOTAL_VERSES } from '@/constants/quran';
 import { Verse } from '@/types/verse';
-import {logAnalyticsEvent } from '@/utils/analyticsHelper';
+import { logAnalyticsEvent, buildMemorizationAnalyticsPayload } from '@/utils/analyticsHelper';
 
-// ─── Analytics helper: resolve surah metadata from a cumulative verse ID ───────
-// verseId is 1-based cumulative (1=Al-Fatihah:1, 7=Al-Fatihah:7, 8=Al-Baqarah:1…)
-// Returns { surahId, surahName, verseNumber, juzNumber } or fallback zeros.
-
-
-
-
-// Definitive per-juz cumulative last-verse-id table (Uthmani standard, 6236 total verses)
-const JUZ_BOUNDARIES: readonly number[] = [
-  148,  // Juz 1  (Al-Fatiha:1 – Al-Baqarah:141)
-  259,  // Juz 2  (Al-Baqarah:142 – Al-Baqarah:252)
-  384,  // Juz 3  (Al-Baqarah:253 – Al-Imran:91)
-  519,  // Juz 4  (Al-Imran:92 – An-Nisa:23)
-  640,  // Juz 5  (An-Nisa:24 – An-Nisa:147)
-  755,  // Juz 6  (An-Nisa:148 – Al-Maidah:81)
-  868,  // Juz 7  (Al-Maidah:82 – Al-Anam:110)
-  996,  // Juz 8  (Al-Anam:111 – Al-Araf:87)
-  1125, // Juz 9  (Al-Araf:88 – Al-Anfal:40)
-  1240, // Juz 10 (Al-Anfal:41 – At-Tawbah:92)
-  1361, // Juz 11 (At-Tawbah:93 – Hud:5)
-  1482, // Juz 12 (Hud:6 – Yusuf:52)
-  1609, // Juz 13 (Yusuf:53 – Ibrahim:52)
-  1741, // Juz 14 (Al-Hijr:1 – An-Nahl:128)
-  1802, // Juz 15 (Al-Isra:1 – Al-Kahf:74)  [Al-Isra starts at cumulative 1742]
-  1901, // Juz 16 (Al-Kahf:75 – Ta-Ha:135)
-  2029, // Juz 17 (Al-Anbiya:1 – Al-Hajj:78)
-  2140, // Juz 18 (Al-Muminun:1 – Al-Furqan:20)
-  2254, // Juz 19 (Al-Furqan:21 – An-Naml:55)
-  2396, // Juz 20 (An-Naml:56 – Al-Ankabut:44)
-  2519, // Juz 21 (Al-Ankabut:45 – Al-Ahzab:30)
-  2637, // Juz 22 (Al-Ahzab:31 – Ya-Sin:27)
-  2760, // Juz 23 (Ya-Sin:28 – Az-Zumar:31)
-  2882, // Juz 24 (Az-Zumar:32 – Fussilat:46)
-  3002, // Juz 25 (Fussilat:47 – Al-Jathiyah:37)
-  3114, // Juz 26 (Al-Ahqaf:1 – Adh-Dhariyat:30)
-  3185, // Juz 27 (Adh-Dhariyat:31 – Al-Hadid:29)
-  3314, // Juz 28 (Al-Mujadila:1 – At-Tahrim:12)
-  3416, // Juz 29 (Al-Mulk:1 – Al-Mursalat:50)
-  6236, // Juz 30 (An-Naba:1 – An-Nas:6)
-] as const;
-
-/** Returns the 1-based juz number (1–30) for a given cumulative verse ID. O(30) lookup. */
-function getJuzFromVerseId(verseId: number): number {
-  for (let i = 0; i < JUZ_BOUNDARIES.length; i++) {
-    if (verseId <= JUZ_BOUNDARIES[i]) return i + 1;
-  }
-  return 30; // fallback: anything beyond 6236 is treated as Juz 30
-}
+import { JUZ_BOUNDARIES, getJuzFromVerseId, getSurahName, getJuzVerseCount, getJuzSurahCount } from '@/constants/quranMeta';
+import { incrementVerseMemorization, incrementVerseRevision, incrementSurahCompletion, incrementJuzCompletion } from '@/services/communityStatsService';
 
 function resolveVerseInfo(verseId: number): {
   surahId: number;
@@ -70,11 +24,10 @@ function resolveVerseInfo(verseId: number): {
     for (const s of surahsData) {
       if (verseId > startId && verseId <= startId + s.versesCount) {
         const verseNumber = verseId - startId;
-        // Use verse-boundary table — NOT surah-level, handles cross-surah juz splits correctly
         const juzNumber = getJuzFromVerseId(verseId);
         return {
           surahId: s.id,
-          surahName: (s.englishName || s.name || `surah_${s.id}`).toLowerCase().replace(/\s+/g, '_'),
+          surahName: getSurahName(s.id),
           verseNumber,
           juzNumber,
         };
@@ -91,11 +44,24 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { Badge, useBadgeStore } from './badgeStore';
 
+// ── Bulk-operation guard ────────────────────────────────────────────────────
+// Set to true before any bulk write (juz/surah mark-all) and back to false after.
+// verse_memorization_toggled checks this and skips firing during bulk operations
+// so only juz_memorization_toggled / surah_memorization_toggled fire instead.
+let isBulkOperation = false;
+export const setBulkOperationGuard = (val: boolean) => { isBulkOperation = val; };
+
+// Separate flag that survives the setTimeout boundary in bulkMarkVersesMemorized.
+// isBulkOperation is reset synchronously in finally{} before the setTimeout fires,
+// so checkAndCelebrateBadges would see it as false and flood surah_completed events
+// (one per newly-completed surah in the juz). This flag is cleared AFTER the callback.
+let isBulkCelebration = false;
+
 type BadgeCelebrationCallback = (badge: Badge, isHafidh: boolean) => void;
 
 type RevisedVerse = { verseId: number; revisionDate: string };
 type RevisionTracker = { verseId: number; date: string };
-type QuizResult = { id: string; date: string; verseIds: number[]; score: number; totalQuestions: number; correct: number; surahId?: number; juzNumber?: number };
+type QuizResult = { id: string; date: string; verseIds: number[]; score: number; totalQuestions: number; correct: number; surahId?: number; juzNumber?: number; isAiMode?: boolean };
 
 type TimeSpent = { total: number; daily: Record<string, number> };
 
@@ -148,6 +114,8 @@ export interface ProgressState {
   dailyStreak: number;
   lastOpenDate: string | null;
   timeSpent: TimeSpent;
+  _lastJuzCount?: number;
+  _lastCompletedSurahIds?: number[];
 
   // Badge celebration callback (not persisted)
   badgeCelebrationCallback: BadgeCelebrationCallback | null;
@@ -164,7 +132,7 @@ export interface ProgressState {
   bulkMarkVersesRevised: (ids: number[], isMarking?: boolean) => void;
   updateBadges: () => void;
   setLastReadVerse: (v: Verse | null) => void;
-  updateDailyStreak: () => void;
+  updateDailyStreak: (hasReadEnough?: boolean) => void;
   startTimeTracking: () => void;
   stopTimeTracking: () => void;
   addQuizResult: (result: Omit<QuizResult, 'id' | 'date'>) => void;
@@ -246,9 +214,11 @@ export const useProgressStore = create<ProgressState>()(
       // aggregates
       memorizedCount: 0,
       revisedCount: 0,
-      dailyStreak: 0,
+      dailyStreak: 1,
       lastOpenDate: null,
       timeSpent: DEFAULT_TIME,
+      _lastJuzCount: 0,
+      _lastCompletedSurahIds: [],
 
       // Badge celebration (not persisted)
       badgeCelebrationCallback: null,
@@ -294,20 +264,22 @@ export const useProgressStore = create<ProgressState>()(
         const { QuranProgressTracker } = require('@/data/quranProgress');
         const { surahsData } = require('@/data/surahs');
 
+        // O(1) Precomputed map for overallVerseId -> surah information
+        const verseSurahMap: Record<number, { surahId: number; verseNum: number }> = {};
+        const surahMap: Record<number, any> = {};
+        let startId = 0;
+        for (const s of surahsData) {
+          surahMap[s.id] = s;
+          for (let v = 1; v <= s.versesCount; v++) {
+            verseSurahMap[startId + v] = { surahId: s.id, verseNum: v };
+          }
+          startId += s.versesCount;
+        }
+
         // Convert verseIds to surah:verse format for QuranProgressTracker
         const memorizedVersesFormatted = memorizedVerses.map(verseId => {
-          let startVerseId = 0;
-          for (let i = 1; i <= 114; i++) {
-            const surah = surahsData.find((s: any) => s.id === i);
-            if (!surah) continue;
-
-            if (verseId <= startVerseId + surah.versesCount) {
-              const verseNumber = verseId - startVerseId;
-              return `${i}:${verseNumber}`;
-            }
-            startVerseId += surah.versesCount;
-          }
-          return '';
+          const info = verseSurahMap[verseId];
+          return info ? `${info.surahId}:${info.verseNum}` : '';
         }).filter(Boolean);
 
         const progressTracker = new QuranProgressTracker({
@@ -350,6 +322,7 @@ export const useProgressStore = create<ProgressState>()(
               badge_name: (badge.name ?? 'unknown').toLowerCase().replace(/\s+/g, '_'),
               badge_category: isHafidh ? 'completion' : 'memorization',
               total_badges_earned: totalBadgesEarned ?? 0,
+              days_since_install: daysSinceInstall,
             });
           } catch { /* analytics must never crash */ }
 
@@ -358,9 +331,10 @@ export const useProgressStore = create<ProgressState>()(
             try {
               logAnalyticsEvent('memorization_milestone', {
                 milestone_type: `${badge.requirement}_juz`,
+                badge_unlocked: badge.name ?? 'unknown',
                 badge_name: (badge.name ?? 'unknown').toLowerCase().replace(/\s+/g, '_'),
                 total_verses_memorized: memorizedVerses.length ?? 0,
-                total_surahs_completed: 0,
+                total_surahs_completed: progress.surahs.completed.length ?? 0,
                 juz_count: actualCompletedJuz ?? 0,
               });
             } catch { /* analytics must never crash */ }
@@ -388,16 +362,17 @@ export const useProgressStore = create<ProgressState>()(
             }
           } catch { }
 
-          const { logAnalyticsEvent} = require('@/utils/analyticsHelper');
+          const { logAnalyticsEvent } = require('@/utils/analyticsHelper');
           // Fire one event per newly completed juz
           for (let i = 1; i <= newJuzCompleted; i++) {
             const completedJuzNumber = previousJuzCount + i;
             logAnalyticsEvent('juz_completed', {
-              juz_number: completedJuzNumber,   // the specific juz (1-30)
-              juz_name: `Juz ${completedJuzNumber}`,
-              total_juz_completed: previousJuzCount + i,
-              verses_count: memorizedVerses.length,
-              days_to_complete: daysToComplete,});
+              juz_number: completedJuzNumber,
+              verse_count: getJuzVerseCount(completedJuzNumber),
+              surah_count: getJuzSurahCount(completedJuzNumber),
+              source_screen: 'recite',
+            });
+            incrementJuzCompletion(completedJuzNumber);
           }
           set({ _lastJuzCount: actualCompletedJuz } as any);
 
@@ -408,44 +383,54 @@ export const useProgressStore = create<ProgressState>()(
             const settingsState = useSettingsStore.getState();
             if (shouldShowReviewPrompt(settingsState.reviewPromptState, settingsState.reviewPromptSessionShown)) {
               if (previousJuzCount === 0 && newJuzCompleted > 0) {
-                settingsState.triggerSadaqahPrompt('juz_completed');
+                settingsState.queueSadaqahPrompt('juz_completed');
               }
             }
           }, 1500);
         }
 
         // ANALYTICS: surah_completed — fires when all verses of a surah are memorized
-        const previousCompletedSurahs = (get() as any)._lastCompletedSurahIds || [];
-        
-        // Find which surah contains the latest memorized verse
-        const verse = memorizedVerses[memorizedVerses.length - 1];
-        if (verse) {
-           let startId = 0;
-           const currentSurah = surahsData.find((s: any) => {
-              const inside = verse > startId && verse <= startId + s.versesCount;
-              if (!inside) startId += s.versesCount;
-              return inside;
-           });
+        const memorizedCountsBySurah: Record<number, number> = {};
+        for (const vId of memorizedVerses) {
+          const info = verseSurahMap[vId];
+          if (info) {
+            memorizedCountsBySurah[info.surahId] = (memorizedCountsBySurah[info.surahId] || 0) + 1;
+          }
+        }
 
-           if (currentSurah && !previousCompletedSurahs.includes(currentSurah.id)) {
-              // Check if all verses in this surah are memorized
-              const memorizedInSurah = memorizedVerses.filter(id => id > startId && id <= startId + currentSurah.versesCount).length;
-              if (memorizedInSurah === currentSurah.versesCount) {
-                 const { logAnalyticsEvent} = require('@/utils/analyticsHelper');
-                  const { getJuzForSurah } = require("@/utils/juzCalculator");
-                  const juzNum = typeof getJuzForSurah === "function" ? getJuzForSurah(currentSurah.id) : 0;
-                  try {
-                     logAnalyticsEvent('surah_completed', {
-                       surah_number: currentSurah.id ?? 0,
-                       surah_name: (currentSurah.englishName || currentSurah.name || `surah_${currentSurah.id}`).toLowerCase().replace(/\s+/g, '_'),
-                       total_verses: currentSurah.versesCount ?? 0,
-                       juz_number: juzNum ?? 0,
-                       completion_type: 'memorization',
-                     });
-                   } catch { /* analytics must never crash */ }
-                 set({ _lastCompletedSurahIds: [...previousCompletedSurahs, currentSurah.id] } as any);
-              }
-           }
+        const previousCompletedSurahs = (get() as any)._lastCompletedSurahIds || [];
+        const newlyCompletedSurahIds: number[] = [];
+
+        for (const [surahIdStr, count] of Object.entries(memorizedCountsBySurah)) {
+          const sId = parseInt(surahIdStr, 10);
+          const surah = surahMap[sId];
+          if (surah && count === surah.versesCount && !previousCompletedSurahs.includes(sId)) {
+            newlyCompletedSurahIds.push(sId);
+            // Skip per-surah events during bulk operations (e.g. Mark Juz 30 completes 18 surahs
+            // simultaneously, causing 18 rapid-fire Firebase events that hang the UI and hit
+            // the real-time event daily limit). juz_memorization_toggled already captures this.
+            if (!isBulkCelebration) {
+              const { logAnalyticsEvent } = require('@/utils/analyticsHelper');
+              const { getJuzForSurah } = require("@/utils/juzCalculator");
+              const juzNum = typeof getJuzForSurah === "function" ? getJuzForSurah(sId) : 0;
+              try {
+                logAnalyticsEvent('surah_completed', {
+                  surah_number: sId ?? 0,
+                  surah_name: getSurahName(sId),
+                  verse_count: surah.versesCount ?? 0,
+                  total_verses: surah.versesCount ?? 0,
+                  juz_number: juzNum ?? 0,
+                  completion_type: 'memorization',
+                  source_screen: 'recite',
+                });
+                incrementSurahCompletion(sId);
+              } catch { /* analytics must never crash */ }
+            }
+          }
+        }
+
+        if (newlyCompletedSurahIds.length > 0) {
+          set({ _lastCompletedSurahIds: [...previousCompletedSurahs, ...newlyCompletedSurahIds] } as any);
         }
       },
 
@@ -465,18 +450,24 @@ export const useProgressStore = create<ProgressState>()(
         });
 
         // ANALYTICS: Individual verse memorization - centralized here
+        // Skip during bulk operations — only juz_memorization_toggled / surah_memorization_toggled
+        // should fire during mark-all to prevent event flooding.
         const newTotal = (get().memorizedVerses.length || 0) + 1;
-        try {
-          const { surahId, surahName, verseNumber, juzNumber } = resolveVerseInfo(verseId);
-          logAnalyticsEvent('verse_memorization_toggled', {
-            surah_number: surahId ?? 0,
-            surah_name: surahName ?? 'unknown',
-            verse_number: verseNumber ?? 0,
-            state: 'memorized',
-            juz_number: juzNumber ?? 0,
-            total_verses_memorized: newTotal,
-          });
-        } catch { /* analytics must never crash */ }
+        if (!isBulkOperation) {
+          try {
+            const { surahId, surahName, verseNumber, juzNumber } = resolveVerseInfo(verseId);
+            logAnalyticsEvent('verse_memorization_toggled', {
+              surah_number: surahId ?? 0,
+              surah_name: surahName ?? 'unknown',
+              juz_number: juzNumber ?? 0,
+              verse_number: verseNumber ?? 0,
+              is_memorized: true,
+              state: 'memorized',
+              source_screen: 'recite',
+            });
+            incrementVerseMemorization(surahId, true);
+          } catch { /* analytics must never crash */ }
+        }
 
         // Check for milestones
         const milestones = [1, 10, 50, 100, 250, 500, 1000, 2000, 6236];
@@ -486,7 +477,7 @@ export const useProgressStore = create<ProgressState>()(
             250: '250_verses', 500: '500_verses', 1000: '1000_verses', 2000: '2000_verses', 6236: 'full_quran',
           };
           try {
-            const completedJuzNow = (() => {
+            const completedStatsNow = (() => {
               try {
                 const { QuranProgressTracker } = require('@/data/quranProgress');
                 const { surahsData } = require('@/data/surahs');
@@ -501,15 +492,16 @@ export const useProgressStore = create<ProgressState>()(
                   return '';
                 }).filter(Boolean);
                 const p = new QuranProgressTracker({ memorizedSurahs: [], memorizedJuz: [], memorizedVerses: formatted, memorizedVerseIds: allMem }).calculateProgress();
-                return p.juz.completed;
-              } catch { return 0; }
+                return { completedJuz: p.juz.completed, completedSurahs: p.surahs.completed.length };
+              } catch { return { completedJuz: 0, completedSurahs: 0 }; }
             })();
             logAnalyticsEvent('memorization_milestone', {
               milestone_type: milestoneTypeMap[newTotal] ?? `${newTotal}_verses`,
+              badge_unlocked: milestoneTypeMap[newTotal] ?? `${newTotal} Verses`,
               badge_name: 'unknown',
               total_verses_memorized: newTotal,
-              total_surahs_completed: 0,
-              juz_count: completedJuzNow,
+              total_surahs_completed: completedStatsNow.completedSurahs ?? 0,
+              juz_count: completedStatsNow.completedJuz ?? 0,
             });
           } catch { /* analytics must never crash */ }
         }
@@ -530,21 +522,27 @@ export const useProgressStore = create<ProgressState>()(
           return { memorizedVerses, memorizedVerseDates, verseStatus, ...agg };
         });
 
-        // ANALYTICS: Individual verse unmark - centralized here
-        try {
-          const { surahId, surahName, verseNumber, juzNumber } = resolveVerseInfo(verseId);
-          logAnalyticsEvent('verse_memorization_toggled', {
-            surah_number: surahId ?? 0,
-            surah_name: surahName ?? 'unknown',
-            verse_number: verseNumber ?? 0,
-            state: 'unmemorized',
-            juz_number: juzNumber ?? 0,
-            total_verses_memorized: get().memorizedVerses.length,
-          });
-        } catch { /* analytics must never crash */ }
+        // ANALYTICS: Individual verse unmark - skip during bulk operations
+        if (!isBulkOperation) {
+          try {
+            const { surahId, surahName, verseNumber, juzNumber } = resolveVerseInfo(verseId);
+            logAnalyticsEvent('verse_memorization_toggled', {
+              surah_number: surahId ?? 0,
+              surah_name: surahName ?? 'unknown',
+              juz_number: juzNumber ?? 0,
+              verse_number: verseNumber ?? 0,
+              is_memorized: false,
+              state: 'unmemorized',
+              source_screen: 'recite',
+            });
+            incrementVerseMemorization(surahId, false);
+          } catch { /* analytics must never crash */ }
+        }
       },
 
       bulkMarkVersesMemorized: (ids: number[], isMarking = true) => {
+        // Set guard BEFORE writing so individual verse events are suppressed
+        isBulkOperation = true;
         // Log bulk memorization activities to the database
         bulkMarkVersesMemorized(ids, isMarking).catch(() => { });
 
@@ -571,23 +569,36 @@ export const useProgressStore = create<ProgressState>()(
           return { memorizedVerses, memorizedVerseDates, verseStatus, ...agg };
         });
 
-        // ANALYTICS: bulk_mark_verses — juz_number only; surah detail omitted to reduce noise
+        // ANALYTICS: bulk_mark_verses — fire SINGLE aggregate event, then clear guard
         try {
           const firstId = ids[0];
           const { juzNumber } = firstId ? resolveVerseInfo(firstId) : { juzNumber: 0 };
-          logAnalyticsEvent('bulk_mark_verses', {
-            juz_number: juzNumber ?? 0,
-            verse_count: ids.length ?? 0,
+          logAnalyticsEvent('juz_memorization_toggled', buildMemorizationAnalyticsPayload({
+            event_scope: 'juz',
+            action: isMarking ? 'mark_memorized' : 'unmark_memorized',
             state: isMarking ? 'memorized' : 'unmemorized',
-            action: isMarking ? 'mark_all' : 'unmark_all',
-          });
-        } catch { /* analytics must never crash */ }
+            trigger_source: 'juz_bulk_action',
+            juz_number: juzNumber ?? 0,
+            juz_name: `Juz ${juzNumber ?? 0}`,
+            verses_count: ids.length ?? 0,
+          }));
+        } catch { /* analytics must never crash */ } finally {
+          // Clear guard regardless of analytics outcome
+          isBulkOperation = false;
+        }
 
         // Check for badge unlocks and completions after marking
         if (isMarking) {
-          // Use setTimeout to ensure state has been updated
+          // isBulkCelebration suppresses per-surah surah_completed events inside
+          // checkAndCelebrateBadges — the flag must stay true until after the callback
+          // returns, since isBulkOperation is already reset above in finally{}.
+          isBulkCelebration = true;
           setTimeout(() => {
-            get().checkAndCelebrateBadges();
+            try {
+              get().checkAndCelebrateBadges();
+            } finally {
+              isBulkCelebration = false;
+            }
           }, 100);
         }
       },
@@ -625,16 +636,21 @@ export const useProgressStore = create<ProgressState>()(
         });
 
         // ANALYTICS: Individual verse revision - centralized here
-        try {
-          const { surahId, surahName, verseNumber, juzNumber } = resolveVerseInfo(verseId);
-          logAnalyticsEvent('verse_revision_toggled', {
-            surah_number: surahId ?? 0,
-            surah_name: surahName ?? 'unknown',
-            verse_number: verseNumber ?? 0,
-            state: 'revised',
-            juz_number: juzNumber ?? 0,
-          });
-        } catch { /* analytics must never crash */ }
+        if (!isBulkOperation) {
+          try {
+            const { surahId, surahName, verseNumber, juzNumber } = resolveVerseInfo(verseId);
+            logAnalyticsEvent('verse_revision_toggled', {
+              surah_number: surahId ?? 0,
+              surah_name: surahName ?? 'unknown',
+              juz_number: juzNumber ?? 0,
+              verse_number: verseNumber ?? 0,
+              is_revised: true,
+              state: 'revised',
+              source_screen: 'revise',
+            });
+            incrementVerseRevision(surahId, true);
+          } catch { /* analytics must never crash */ }
+        }
       },
 
       unmarkVerseAsRevised: (verseId: number) => {
@@ -662,19 +678,26 @@ export const useProgressStore = create<ProgressState>()(
         });
 
         // ANALYTICS: Individual verse revision unmark - centralized here
-        try {
-          const { surahId, surahName, verseNumber, juzNumber } = resolveVerseInfo(verseId);
-          logAnalyticsEvent('verse_revision_toggled', {
-            surah_number: surahId ?? 0,
-            surah_name: surahName ?? 'unknown',
-            verse_number: verseNumber ?? 0,
-            state: 'unrevised',
-            juz_number: juzNumber ?? 0,
-          });
-        } catch { /* analytics must never crash */ }
+        if (!isBulkOperation) {
+          try {
+            const { surahId, surahName, verseNumber, juzNumber } = resolveVerseInfo(verseId);
+            logAnalyticsEvent('verse_revision_toggled', {
+              surah_number: surahId ?? 0,
+              surah_name: surahName ?? 'unknown',
+              juz_number: juzNumber ?? 0,
+              verse_number: verseNumber ?? 0,
+              is_revised: false,
+              state: 'unrevised',
+              source_screen: 'revise',
+            });
+            incrementVerseRevision(surahId, false);
+          } catch { /* analytics must never crash */ }
+        }
       },
 
       bulkMarkVersesRevised: (ids: number[], isMarking = true) => {
+        // Set guard BEFORE writing so individual verse events are suppressed
+        isBulkOperation = true;
         // Log bulk revision activity to the database
         if (isMarking) {
           bulkLogRevisions(ids).catch(() => { });
@@ -728,6 +751,20 @@ export const useProgressStore = create<ProgressState>()(
             ...agg
           };
         });
+
+        // ANALYTICS: bulk_mark_verses_revised — fire SINGLE aggregate event
+        try {
+          const firstId = ids[0];
+          const { juzNumber } = firstId ? resolveVerseInfo(firstId) : { juzNumber: 0 };
+          logAnalyticsEvent('juz_revision_toggled', {
+            juz_number: juzNumber ?? 0,
+            verse_count: ids.length ?? 0,
+            state: isMarking ? 'revised' : 'unrevised',
+            action: isMarking ? 'mark_all' : 'unmark_all',
+          });
+        } catch { /* analytics must never crash */ } finally {
+          isBulkOperation = false;
+        }
       },
 
       updateBadges: () => {
@@ -745,41 +782,48 @@ export const useProgressStore = create<ProgressState>()(
 
       setLastReadVerse: (v: Verse | null) => set({ lastReadVerse: v }),
 
-      updateDailyStreak: () => {
+      updateDailyStreak: (hasReadEnough: boolean = false) => {
         set((s) => {
           const today = formatDate(new Date());
 
-          // If this is the first time opening the app, start a streak
           if (!s.lastOpenDate) {
-            return { dailyStreak: 1, lastOpenDate: today };
+            if (hasReadEnough) {
+              return { dailyStreak: 1, lastOpenDate: today };
+            }
+            return s;
           }
 
-          // If already updated today, don't recalculate
           if (s.lastOpenDate === today) {
-            return s; // No changes needed
+            return s; // Already updated today
           }
 
-          const last = new Date(s.lastOpenDate + 'T00:00:00');
-          const cur = new Date(today + 'T00:00:00');
-          const diff = Math.floor((cur.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
-
-          let newStreak = s.dailyStreak;
-
-          // If last opened yesterday, increment streak
-          if (diff === 1) {
-            newStreak = s.dailyStreak + 1;
-          }
-          // If more than one day has passed, reset streak
-          else if (diff > 1) {
-            newStreak = 1;
-          }
-          // If diff === 0, this shouldn't happen due to early return above
-          // but keeping streak the same just in case
-
-          return {
-            dailyStreak: newStreak,
-            lastOpenDate: today
+          // Use UTC dates to avoid Daylight Savings Time (DST) calculation bugs
+          const parseDate = (dStr: string) => {
+            const [y, m, d] = dStr.split('-').map(Number);
+            return Date.UTC(y, m - 1, d);
           };
+
+          const lastTime = parseDate(s.lastOpenDate);
+          const curTime = parseDate(today);
+          const diff = Math.floor((curTime - lastTime) / (1000 * 60 * 60 * 24));
+
+          if (diff > 1) {
+            // Streak broken.
+            // If they read enough today, start a new streak of 1
+            if (hasReadEnough) {
+              return { dailyStreak: 1, lastOpenDate: today };
+            } else {
+              // Streak broken — reset to 1 (minimum streak is always 1)
+              return { dailyStreak: 1 };
+            }
+          } else if (diff === 1) {
+            // Consecutive day. Only increment if they read enough.
+            if (hasReadEnough) {
+              return { dailyStreak: s.dailyStreak + 1, lastOpenDate: today };
+            }
+          }
+          
+          return s;
         });
       },
 
@@ -836,6 +880,11 @@ export const useProgressStore = create<ProgressState>()(
         });
 
         // ANALYTICS: Quiz completed
+        if (result.isAiMode !== undefined) {
+          const { incrementQuizCompletion } = require('@/services/communityStatsService');
+          incrementQuizCompletion(result.isAiMode);
+        }
+
         const percentage = Math.round((result.score / result.totalQuestions) * 100);
         const { surahsData } = require('@/data/surahs');
         const surah = surahsData.find((s: any) => s.id === result.surahId);
@@ -964,6 +1013,17 @@ export const useProgressStore = create<ProgressState>()(
 
           return { pageMarks: [...s.pageMarks, newMark] };
         });
+
+        // ANALYTICS: Page memorized
+        try {
+          logAnalyticsEvent('page_memorization_toggled', {
+            scope,
+            entity_id: entityId,
+            page_index: pageIndex,
+            verse_count: verseIds.length,
+            state: 'memorized',
+          });
+        } catch { /* analytics must never crash */ }
       },
 
       markPageAsRevised: (scope, entityId, pageIndex, versesPerPage, verseIds) => {
@@ -1010,6 +1070,17 @@ export const useProgressStore = create<ProgressState>()(
             }
           };
         });
+
+        // ANALYTICS: Page revised
+        try {
+          logAnalyticsEvent('page_revision_toggled', {
+            scope,
+            entity_id: entityId,
+            page_index: pageIndex,
+            verse_count: verseIds.length,
+            state: 'revised',
+          });
+        } catch { /* analytics must never crash */ }
       },
 
       unmarkPageAsMemorized: (scope, entityId, pageIndex) => {

@@ -1,3 +1,4 @@
+import { logScreenView } from '@/utils/analyticsHelper';
 import { useSettingsStore } from '@/store/settingsStore';
 import { Infinity as InfinityIcon, RefreshCw } from 'lucide-react-native';
 import React from 'react';
@@ -8,7 +9,14 @@ interface MushafRepeatModalProps {
   onClose: () => void;
 }
 
-export default function MushafRepeatModal({ visible, onClose }: MushafRepeatModalProps) {
+export default function MushafRepeatModal({
+  visible, onClose }: MushafRepeatModalProps) {
+React.useEffect(() => {
+    if (visible) {
+      logScreenView('modal_mushafrepeatmodal').catch(() => {});
+    }
+  }, [visible]);
+ 
   const { mushafRepeatMode, mushafInfiniteLoop, mushafRepeatScope, setMushafRepeatMode, setMushafInfiniteLoop, setMushafRepeatScope } = useSettingsStore();
 
   const repeatOptions = [1, 2, 3, 4, 5];

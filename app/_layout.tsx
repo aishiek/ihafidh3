@@ -33,6 +33,24 @@ import { ActivityIndicator, AppState, AppStateStatus, Platform, Text, View } fro
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { initPersistenceGuard } from '../utils/persistenceGuard';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE-LEVEL: notifee background event handler.
+// Per notifee docs, this MUST be registered outside of any React component.
+// If registered inside a useEffect it can silently fail on Android (app hangs).
+// ─────────────────────────────────────────────────────────────────────────────
+let _bgNavPending: any = null; // store data until router is ready
+
+notifee.onBackgroundEvent(async ({ type, detail }) => {
+  console.log('[Notifee] Background event (module-level):', EventType[type]);
+  if (type === EventType.PRESS) {
+    // Store the notification data; the component will pick it up via getInitialNotification
+    // The router isn't ready at module-level, so we just log here.
+    // getInitialNotification() in the component handles the actual navigation.
+    _bgNavPending = detail.notification?.data ?? null;
+    console.log('[Notifee] Background press queued for cold-start handler');
+  }
+});
+
 // Initialize global handlers ASAP
 initGlobalErrorHandlers();
 
@@ -140,15 +158,6 @@ async function loadAppFontsOnce() {
   return __fontLoadPromise;
 }
 
-// Helper function to determine user memorization level
-function getMemorizationLevel(verseCount: number): string {
-  if (verseCount === 0) return 'beginner';
-  if (verseCount < 100) return 'novice';
-  if (verseCount < 500) return 'intermediate';
-  if (verseCount < 2000) return 'advanced';
-  if (verseCount < 6236) return 'expert';
-  return 'hafidh'; // Completed full Quran
-}
 
 // Separate component to use celebration hook (must be inside provider)
 function RootLayoutContent() {
@@ -160,7 +169,7 @@ function RootLayoutContent() {
   const [showAnnouncement, setShowAnnouncement] = React.useState(false);
   const [announcement, setAnnouncement] = React.useState<AnnouncementConfig | null>(null);
   const [showReviewSoftPrompt, setShowReviewSoftPrompt] = React.useState(false);
-  const [currentVersion, setCurrentVersion] = React.useState('2.1.2');
+  const [currentVersion, setCurrentVersion] = React.useState('2.2.0');
   const [latestVersion, setLatestVersion] = React.useState<string | null>(null);
   const [releaseNotes, setReleaseNotes] = React.useState<string[] | undefined>(undefined);
   const [iosAppIdOverride, setIosAppIdOverride] = React.useState<string | null>(null);
@@ -182,8 +191,17 @@ function RootLayoutContent() {
   const setReviewPromptSessionShown = useSettingsStore(s => s.setReviewPromptSessionShown);
   const sadaqahPromptVisible = useSettingsStore(s => s.sadaqahPromptVisible);
   const sadaqahPromptTrigger = useSettingsStore(s => s.sadaqahPromptTrigger);
+  const pendingSadaqahPromptTrigger = useSettingsStore(s => s.pendingSadaqahPromptTrigger);
   const triggerSadaqahPrompt = useSettingsStore(s => s.triggerSadaqahPrompt);
+  const queueSadaqahPrompt = useSettingsStore(s => s.queueSadaqahPrompt);
   const closeSadaqahPrompt = useSettingsStore(s => s.closeSadaqahPrompt);
+
+  // Show pending review prompt on app open
+  React.useEffect(() => {
+    if (pendingSadaqahPromptTrigger) {
+      triggerSadaqahPrompt(pendingSadaqahPromptTrigger);
+    }
+  }, [pendingSadaqahPromptTrigger, triggerSadaqahPrompt]);
 
   // "What's New" button in Settings sets forceShowUpdateModal → show modal immediately
   React.useEffect(() => {
@@ -370,44 +388,15 @@ function RootLayoutContent() {
       );
   }, [notificationsEnabled, ayahEnabled]);
 
-  // Sync daily Ayah notification schedule with settings
-  React.useEffect(() => {
-    let mounted = true;
-
-    const doSchedule = async () => {
-      try {
-        if (!mounted) return;
-        if (ayahEnabled) {
-          // Schedule fresh content for the next occurrence
-          await AyahNotificationService.scheduleDailyReminder(reminderTime || '09:00');
-        } else {
-          await AyahNotificationService.cancelDailyReminder();
-        }
-      } catch (e) {
-        console.log('[AyahNotif] sync error', e);
-      }
-    };
-
-    // Initial scheduling
-    void doSchedule();
-
-    // Reschedule fresh content whenever app becomes active
-    const stateSub = AppState.addEventListener('change', (s) => {
-      if (s === 'active') void doSchedule();
-    });
-
-    return () => { mounted = false; try { stateSub.remove(); } catch { } };
-  }, [ayahEnabled, reminderTime]);
-
   // Sync enhanced notification settings
   React.useEffect(() => {
     let active = true;
     (async () => {
       try {
-        // Daily Ayah (using the new notification settings)
-        if (notificationSettings?.dailyAyah) {
-          await AyahNotificationService.scheduleDailyReminder(reminderTime || '09:00');
-        }
+        // Daily Ayah is handled via Push Notifications (FCM). 
+        // Local scheduling was removed to prevent duplicates. We cancel any existing local ones here.
+        await AyahNotificationService.cancelDailyReminder();
+
 
         // Daily Verse Reminder
         if (notificationSettings?.dailyVerseReminder) {
@@ -515,8 +504,7 @@ function RootLayoutContent() {
 
       // Remote override
       (async () => {
-        // Force refresh to bypass stale cache (temporary fix for testing)
-        const remote = await fetchRemoteVersionConfig(true) || await getEffectiveVersionConfig();
+        const remote = await fetchRemoteVersionConfig(false) || await getEffectiveVersionConfig();
         console.log('[version] Remote config:', remote);
         applyRemoteVersion(remote, version);
       })();
@@ -601,103 +589,124 @@ function RootLayoutContent() {
     }
   }, [lastDismissedVersion, lastSeenVersion]);
 
+  // Guard to prevent double navigation (e.g. foreground tap + getInitialNotification both firing).
+  const navHandledRef = React.useRef(false);
+
   // Handle notification interactions (Deep Linking)
-  const handleNotificationInteraction = React.useCallback((data: any) => {
+  const handleNotificationInteraction = React.useCallback((data: any, source?: string) => {
     if (!data) return;
-    console.log('[NotificationInteraction] Handling:', data);
+
+    // Deduplicate: if we already navigated for this launch, skip.
+    if (navHandledRef.current) {
+      console.log('[NotificationInteraction] Already handled, skipping duplicate from:', source);
+      return;
+    }
+    navHandledRef.current = true;
+    // Reset after 2s so live foreground taps still work.
+    setTimeout(() => { navHandledRef.current = false; }, 2000);
+
+    console.log('[NotificationInteraction] Handling from:', source, 'data:', data);
 
     // ANALYTICS: notification_open (P3)
-    // Required: notification_type, surah_number (if applicable)
     try {
-      const { logAnalyticsEvent } = require('@/utils/analyticsHelper');
       logAnalyticsEvent('notification_open', {
         notification_type: data.type || 'unknown',
+        target_screen: data.target || (data.type?.includes('ayah') ? 'home' : 'read'),
         surah_number: data.surahId || 0,
       });
     } catch { /* analytics must never crash */ }
 
-    switch (data.type) {
-      case 'daily_ayah':
-      case 'daily-ayah': {
-        if (data.target === 'index' || data.highlightAyah) {
-          const surahId = data.surahId || getTodayCardVerse(new Date()).surahId;
-          const verseId = data.verseNumber || getTodayCardVerse(new Date()).verseNumber;
-          const qs = `?highlightAyah=1&surahId=${surahId}&verseId=${verseId}`;
-          try { router.replace(`/(tabs)/index${qs}`); } catch { router.push(`/(tabs)/index${qs}`); }
-        } else {
-          const today = getTodayCardVerse(new Date());
-          try { router.replace(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); } catch { router.push(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}`); }
+    // Navigate — use replace only; do NOT fall through to push on error
+    // (try/catch fallback was causing double navigation which hung the app).
+    try {
+      switch (data.type) {
+        case 'daily_ayah':
+        case 'daily-ayah': {
+          if (data.target === 'index' || data.highlightAyah) {
+            const surahId = data.surahId || getTodayCardVerse(new Date()).surahId;
+            const verseId = data.verseNumber || getTodayCardVerse(new Date()).verseNumber;
+            router.replace(`/(tabs)?highlightAyah=1&surahId=${surahId}&verseId=${verseId}` as any);
+          } else {
+            const today = getTodayCardVerse(new Date());
+            router.replace(`/(tabs)/read?surahId=${today.surahId}&verseId=${today.verseNumber}` as any);
+          }
+          break;
         }
-        break;
+        case 'fasting_reminder':
+          router.replace('/moon-phases' as any);
+          break;
+        case 'announcement':
+        case 'greeting':
+        case 'promotion':
+        case 'update':
+          router.replace('/(tabs)' as any);
+          break;
+        case 'daily-verse-reminder':
+          router.replace('/(tabs)/read' as any);
+          break;
+        case 'weekly-surah-reminder':
+          router.replace('/(tabs)/stats' as any);
+          break;
+        case 'hifdh-overdue':
+          router.replace('/(tabs)' as any);
+          break;
+        case 'revision-needed':
+          router.replace('/(tabs)/stats' as any);
+          break;
+        default:
+          console.log('[NotificationInteraction] Unknown type:', data.type);
+          // Navigate to home on unknown type rather than hang
+          router.replace('/(tabs)' as any);
       }
-      case 'fasting_reminder':
-        // Open fasting calendar when user taps fasting notification
-        try { router.replace('/moon-phases'); } catch { router.push('/moon-phases'); }
-        break;
-      case 'announcement':
-      case 'greeting':
-      case 'promotion':
-      case 'update':
-        // Broadcast messages - open home screen
-        try { router.replace('/(tabs)/index'); } catch { router.push('/(tabs)/index'); }
-        break;
-      case 'daily-verse-reminder':
-        try { router.replace('/(tabs)/read'); } catch { router.push('/(tabs)/read'); }
-        break;
-      case 'weekly-surah-reminder':
-        try { router.replace('/(tabs)/stats'); } catch { router.push('/(tabs)/stats'); }
-        break;
-      case 'hifdh-overdue':
-        try { router.replace('/(tabs)/index'); } catch { router.push('/(tabs)/index'); }
-        break;
-      case 'revision-needed':
-        try { router.replace('/(tabs)/stats'); } catch { router.push('/(tabs)/stats'); }
-        break;
-      default:
-        console.log('[NotificationInteraction] Unknown type:', data.type);
+    } catch (navError) {
+      console.warn('[NotificationInteraction] Navigation failed:', navError);
+      // Reset guard so a manual retry still works
+      navHandledRef.current = false;
     }
   }, []);
 
-  // Notifee Foreground Event Listener (Handles taps on Notifee-displayed notifications)
+  // Notifee Foreground Event Listener (handles taps while app is in foreground).
+  // Only ONE listener is registered here. The module-level onBackgroundEvent handles
+  // backgrounded/killed state. Do NOT register onForegroundEvent inside NotificationService.ts.
   React.useEffect(() => {
     const unsubscribe = notifee.onForegroundEvent(({ type, detail }) => {
-      console.log('[Notifee] Foreground event:', EventType[type], detail);
-
+      console.log('[Notifee] Foreground event:', EventType[type]);
       if (type === EventType.PRESS) {
-        handleNotificationInteraction(detail.notification?.data);
+        handleNotificationInteraction(detail.notification?.data, 'foreground');
       }
     });
-    return unsubscribe;
-  }, [handleNotificationInteraction]);
+    return () => {
+      // Always unsubscribe on unmount to prevent stale listeners stacking up.
+      try { unsubscribe(); } catch (e) { /* ignore */ }
+    };
+  // handleNotificationInteraction is stable (empty deps useCallback), so this is safe.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Notifee Background Event Listener (Handles taps when app is backgrounded)
-  // This is critical for handling taps on notifications displayed via Notifee in onMessage
-  React.useEffect(() => {
-    const unsubscribe = notifee.onBackgroundEvent(async ({ type, detail }) => {
-      console.log('[Notifee] Background event:', EventType[type], detail);
-
-      if (type === EventType.PRESS) {
-        // Handle navigation - this will open the app
-        handleNotificationInteraction(detail.notification?.data);
-      }
-    });
-    return unsubscribe;
-  }, [handleNotificationInteraction]);
-
-  // Cold Start Handling (App opened from quit state via notification)
+  // Cold Start / Background-kill Handling (app opened by tapping a notification).
+  // Run ONCE on mount only. getInitialNotification() returns the tapped notification
+  // when the app was killed or in the background (the module-level onBackgroundEvent
+  // cannot navigate directly, so we pick up the intent here).
   React.useEffect(() => {
     (async () => {
       try {
         const initialNotification = await notifee.getInitialNotification();
         if (initialNotification) {
-          console.log('[NotificationColdStart] App opened from notification:', initialNotification);
-          handleNotificationInteraction(initialNotification.notification.data);
+          console.log('[NotificationColdStart] App opened from notification:', initialNotification.notification?.id);
+          // Small delay to ensure the router is mounted and ready before navigating.
+          setTimeout(() => {
+            handleNotificationInteraction(
+              initialNotification.notification?.data,
+              'cold-start'
+            );
+          }, 300);
         }
       } catch (e) {
         console.log('[NotificationColdStart] Failed:', e);
       }
     })();
-  }, [handleNotificationInteraction]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally empty - run once on mount only
 
   // Persistence guard and DB lifecycle management
   React.useEffect(() => {
@@ -746,6 +755,12 @@ function RootLayoutContent() {
       logScreenView(screenName).catch(() => {});
     }
   }, [pathname]);
+
+  React.useEffect(() => {
+    // Manually track the initial screen to ensure the SDK is aware of the 
+    // correct context immediately on startup.
+    logScreenView('home').catch(() => {});
+  }, []);
 
   try {
     if (!fontsLoaded && !forceContinue) {
@@ -824,7 +839,7 @@ function RootLayoutContent() {
                   // After celebration, check if we should show the review prompt
                   setTimeout(() => {
                     if (shouldShowReviewPrompt(reviewPromptState, reviewPromptSessionShown)) {
-                      triggerSadaqahPrompt('badge_unlocked');
+                      queueSadaqahPrompt('badge_unlocked');
                     }
                   }, 1500);
                 }

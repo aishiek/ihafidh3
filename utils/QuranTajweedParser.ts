@@ -370,6 +370,41 @@ export function applyStopRules(segments: TajweedSegment[]): TajweedSegment[] {
   });
 }
 
+const ORPHAN_COMBINING_MARK = /[\u0300-\u036F\u0610-\u061A\u064B-\u065F\u0670\u0653\u06D6-\u06ED\u08D3-\u08FF]/;
+
+/**
+ * Reattach any combining mark that landed at the start of a segment (an artifact
+ * of the API's <tajweed> tag boundaries not including trailing diacritics) onto
+ * the END of the previous segment, preserving the previous segment's color/class.
+ * This must run before algorithmic detection and before TajweedText's merge logic
+ * ever sees the segments — it's the single point where these orphans are created.
+ */
+function reattachOrphanCombiningMarks(segments: TajweedSegment[]): TajweedSegment[] {
+  const result: TajweedSegment[] = [];
+
+  for (const seg of segments) {
+    if (!seg.text) { result.push(seg); continue; }
+
+    const chars = Array.from(seg.text);
+    let i = 0;
+    while (i < chars.length && ORPHAN_COMBINING_MARK.test(chars[i]) && result.length > 0) {
+      const prev = result[result.length - 1];
+      result[result.length - 1] = { ...prev, text: prev.text + chars[i] };
+      i++;
+    }
+
+    const remainder = chars.slice(i).join('');
+    if (i === 0) {
+      result.push(seg);
+    } else if (remainder) {
+      result.push({ ...seg, text: remainder });
+    }
+    // if remainder is empty, the whole segment was marks and got fully absorbed — drop it
+  }
+
+  return result;
+}
+
 /**
  * MAIN PARSER: Combines API tags + Algorithmic detection + Optional stop rules
  * Input: `قَالُوٓاْ <tajweed class="madda_obligatory">ءَامَنَّا</tajweed> بِهِۦٓ`
@@ -397,6 +432,15 @@ export function parseTajweedHTML(
 
   // Step 1: Parse API tags (Ham Wasl, Lam Shamsiyyah, Madd, Silent)
   let segments = parseAPITags(html);
+  segments = reattachOrphanCombiningMarks(segments);   // Fix orphans at the source
+
+  if (typeof __DEV__ !== 'undefined' && __DEV__) {
+    segments.forEach(s => {
+      if (s.text && ORPHAN_COMBINING_MARK.test(Array.from(s.text)[0])) {
+        console.warn('[TajweedParser] orphan mark survived reattachment:', JSON.stringify(s));
+      }
+    });
+  }
 
   // Step 2: Apply algorithmic detection for wasl-safe rules (Ghunnah, Ikhfa, etc.)
   if (enableAlgorithmic) {

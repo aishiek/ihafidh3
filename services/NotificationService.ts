@@ -14,6 +14,7 @@ import { logAnalyticsEvent } from '@/utils/analyticsHelper';
 // ============================================================================
 
 let isInitialized = false;
+let _foregroundEventUnsubscribe: (() => void) | null = null;
 
 export async function initializeNotifications(): Promise<void> {
   if (isInitialized) {
@@ -75,8 +76,14 @@ export async function initializeNotifications(): Promise<void> {
     // Request permissions on init (optional, usually better to request on demand)
     // But for migration parity, we can leave it to the explicit request function.
 
-    // Setup foreground listener for immediate actions (like weekly check trigger)
-    notifee.onForegroundEvent(async ({ type, detail }) => {
+    // Setup foreground listener for DELIVERED trigger actions (weekly check, revision check).
+    // NOTE: PRESS events are intentionally NOT handled here — _layout.tsx owns all PRESS
+    // handling to avoid duplicate navigation and listener stacking.
+    // We store the unsubscribe function to prevent multiple registrations.
+    if (_foregroundEventUnsubscribe) {
+      try { _foregroundEventUnsubscribe(); } catch { }
+    }
+    _foregroundEventUnsubscribe = notifee.onForegroundEvent(async ({ type, detail }) => {
       if (type === EventType.DELIVERED) {
         const data = detail.notification?.data;
 
@@ -98,6 +105,7 @@ export async function initializeNotifications(): Promise<void> {
           await RevisionReminderService.checkAndNotifyRevisionNeeded(3);
         }
       }
+      // PRESS is intentionally not handled here — _layout.tsx handles it.
     });
 
     isInitialized = true;
@@ -655,26 +663,41 @@ export class EnhancedNotificationService {
 
   static async scheduleWeeklySurahReminder(): Promise<void> {
     try {
-      // With Notifee, we can schedule a true weekly notification!
-      // But for now, to keep logic similar to before (Friday check), 
-      // we can use a weekly trigger if we know the date.
-      // Or we can stick to the "Daily Silent Check" pattern which is robust.
-      // Let's stick to Daily Silent Check for simplicity of migration.
+      // Calculate next Friday at 18:00
+      const now = new Date();
+      const nextFriday = new Date(now);
+      nextFriday.setHours(18, 0, 0, 0);
+      const daysUntilFriday = (5 - now.getDay() + 7) % 7;
+      
+      if (daysUntilFriday === 0 && nextFriday <= now) {
+        nextFriday.setDate(nextFriday.getDate() + 7);
+      } else {
+        nextFriday.setDate(nextFriday.getDate() + daysUntilFriday);
+      }
 
-      await scheduleDailyNotification({
-        id: 'weekly-surah-check',
-        title: 'Weekly Check', // Title needed for Notifee even if silent?
-        body: 'Checking...',
-        hour: 18,
-        minute: 0,
-        channelId: 'revision',
-        data: {
-          type: 'weekly-surah-check', // Trigger for the listener
+      const trigger: TimestampTrigger = {
+        type: TriggerType.TIMESTAMP,
+        timestamp: nextFriday.getTime(),
+        repeatFrequency: RepeatFrequency.WEEKLY,
+      };
+
+      await notifee.createTriggerNotification(
+        {
+          id: 'weekly-surah-check',
+          title: '📅 Weekly Surah Check-in',
+          body: 'Time to review your weekly Surah progress. Stay consistent! 🌟',
+          data: {
+            type: 'weekly-surah-reminder',
+          },
+          android: {
+            channelId: 'revision',
+            pressAction: { id: 'default' },
+          },
         },
-        silent: true,
-      });
+        trigger
+      );
 
-      console.log('[EnhancedNotificationService] Weekly Friday check scheduled');
+      console.log('[EnhancedNotificationService] Weekly Friday reminder scheduled natively');
     } catch (error) {
       console.error('[EnhancedNotificationService] Weekly surah failed:', error);
     }

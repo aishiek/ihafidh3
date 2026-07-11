@@ -1,3 +1,4 @@
+import { logScreenView } from '@/utils/analyticsHelper';
 import { useSettingsStore } from '@/store/settingsStore';
 import { getArabicTypographySizing } from '@/utils/fontUtils';
 import React, { useEffect, useRef } from 'react';
@@ -326,7 +327,7 @@ const CONFETTI_CONFIG: Record<CelebrationType, {
 }> = {
   quiz: { 
     count: 250, 
-    duration: 5000, 
+    duration: 3000, 
     useLibrary: true, // Now using library for more punchy celebration
     colors: ['#FFD700', '#FFA500', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#FF1493', '#00CED1']
   },
@@ -376,13 +377,18 @@ interface CelebrationModalProps {
   onComplete?: () => void;
 }
 
-export default function CelebrationModal({ 
+export default function CelebrationModal({
   visible, 
   type, 
   customMessage,
   badgeName,
   onComplete 
 }: CelebrationModalProps) {
+  React.useEffect(() => {
+    if (visible) {
+      logScreenView('modal_celebrationmodal').catch(() => {});
+    }
+  }, [visible]);
   const { arabicFont, fontSizeArabic } = useSettingsStore();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.3)).current;

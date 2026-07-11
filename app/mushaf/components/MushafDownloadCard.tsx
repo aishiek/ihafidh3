@@ -120,8 +120,8 @@ export const MushafDownloadCard: React.FC = () => {
       // ANALYTICS: Track Mushaf viewer opened (Event 11 — P2)
       try {
         logAnalyticsEvent('mushaf_viewer_opened', {
-          surah_number: 0,
-          page_number: 0,
+          surah_number: 1,
+          page_number: 1,
           source: 'home',
           mushaf_type: 'indopak_15_lines',
         });

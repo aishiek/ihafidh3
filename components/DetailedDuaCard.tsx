@@ -1,3 +1,4 @@
+import { logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { useThemeColor } from '@/utils/useThemeColor';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -215,6 +216,17 @@ export function DetailedDuaCard({
                 title: 'Share Dua',
                 message: `${dua.theme}\n\nSurah ${dua.surahNumber}:${dua.verseNumber}\n\nDownload iHafidh: ${storeUrl}`,
                 subject: 'Quranic Dua from iHafidh',
+            });
+
+            logAnalyticsEvent('social_share', {
+                content_type: 'detailed_dua',
+                surah_id: dua.surahNumber,
+                verse_number: dua.verseNumber,
+            });
+            logAnalyticsEvent('share_triggered', {
+                content_type: 'detailed_dua',
+                surah_id: dua.surahNumber,
+                verse_number: dua.verseNumber,
             });
         } catch (error: any) {
             const msg = error?.message || '';

@@ -115,8 +115,10 @@ export interface SettingsState extends AppSettings {
   setReviewPromptSessionShown: (shown: boolean) => void;
   // Global SadaqahPrompt trigger
   sadaqahPromptVisible: boolean;
-  sadaqahPromptTrigger: 'first_quiz' | 'tenth_quiz' | 'juz_completed' | 'badge_unlocked' | null;
-  triggerSadaqahPrompt: (trigger: 'first_quiz' | 'tenth_quiz' | 'juz_completed' | 'badge_unlocked') => void;
+  sadaqahPromptTrigger: 'first_quiz' | 'fifth_quiz' | 'tenth_quiz' | 'twentieth_quiz' | 'juz_completed' | 'badge_unlocked' | null;
+  pendingSadaqahPromptTrigger: 'first_quiz' | 'fifth_quiz' | 'tenth_quiz' | 'twentieth_quiz' | 'juz_completed' | 'badge_unlocked' | null;
+  queueSadaqahPrompt: (trigger: 'first_quiz' | 'fifth_quiz' | 'tenth_quiz' | 'twentieth_quiz' | 'juz_completed' | 'badge_unlocked') => void;
+  triggerSadaqahPrompt: (trigger: 'first_quiz' | 'fifth_quiz' | 'tenth_quiz' | 'twentieth_quiz' | 'juz_completed' | 'badge_unlocked') => void;
   closeSadaqahPrompt: () => void;
 }
 
@@ -176,6 +178,7 @@ export const useSettingsStore = create<SettingsState>()(
         reviewPromptSessionShown: false,
         sadaqahPromptVisible: false,
         sadaqahPromptTrigger: null,
+        pendingSadaqahPromptTrigger: null,
 
         setTheme: (theme) => {
           const previous = get().theme;
@@ -300,7 +303,13 @@ export const useSettingsStore = create<SettingsState>()(
         },
         setUserName: (userName) => {
           if (__DEV__) console.log('Setting userName in store:', userName);
+          const prevName = get().userName;
           set({ userName });
+          if ((!prevName || prevName === 'Hafidh') && userName && userName !== 'Hafidh') {
+            logAnalyticsEvent('onboarding_completed', {
+              onboarding_type: 'username_setup',
+            });
+          }
         },
         setUserEmail: (userEmail) => {
           // Basic email validation
@@ -313,8 +322,6 @@ export const useSettingsStore = create<SettingsState>()(
         },
         setQuizVerseCount: (quizVerseCount) => set({ quizVerseCount }),
         setTranslationLanguage: (translationLanguage) => {
-          set({ translationLanguage });
-
           const previous = get().translationLanguage;
           set({ translationLanguage });
           
@@ -327,8 +334,6 @@ export const useSettingsStore = create<SettingsState>()(
         setReciterIdentifier: (reciterIdentifier) => {
           // Clear audio cache when changing reciter
           clearAudioCache();
-          set({ reciterIdentifier });
-
           const previous = get().reciterIdentifier;
           set({ reciterIdentifier });
           
@@ -337,6 +342,10 @@ export const useSettingsStore = create<SettingsState>()(
             setting_key: 'reciter',
             new_value: reciterIdentifier,
             previous_value: previous,});
+          logAnalyticsEvent('reciter_changed', {
+            reciter_identifier: reciterIdentifier,
+            previous_reciter: previous,
+          });
         },
         setMushafRepeatMode: (mushafRepeatMode) => {
           const previous = get().mushafRepeatMode;
@@ -439,8 +448,15 @@ export const useSettingsStore = create<SettingsState>()(
           reviewPromptState: { ...state.reviewPromptState, ...patch }
         })),
         setReviewPromptSessionShown: (shown) => set({ reviewPromptSessionShown: shown }),
-        triggerSadaqahPrompt: (trigger) => set({ sadaqahPromptVisible: true, sadaqahPromptTrigger: trigger }),
-        closeSadaqahPrompt: () => set({ sadaqahPromptVisible: false }),
+        queueSadaqahPrompt: (trigger) => {
+          const currentPending = get().pendingSadaqahPromptTrigger;
+          // Don't overwrite an existing pending trigger to avoid queueing both
+          if (!currentPending) {
+            set({ pendingSadaqahPromptTrigger: trigger });
+          }
+        },
+        triggerSadaqahPrompt: (trigger) => set({ sadaqahPromptVisible: true, sadaqahPromptTrigger: trigger, pendingSadaqahPromptTrigger: null }),
+        closeSadaqahPrompt: () => set({ sadaqahPromptVisible: false, pendingSadaqahPromptTrigger: null }),
       };
     },
     {

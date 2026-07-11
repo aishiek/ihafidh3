@@ -1,3 +1,4 @@
+import { logScreenView } from '@/utils/analyticsHelper';
 import React, { useState } from 'react';
 import {
   View,
@@ -33,6 +34,13 @@ export default function DayDetailModal({
   fastingIntentions,
   onSetIntention,
 }: DayDetailModalProps) {
+React.useEffect(() => {
+    if (visible) {
+      logScreenView('modal_daydetailmodal').catch(() => {});
+    }
+  }, [visible]);
+
+  
   const { theme } = useUnifiedTheme();
   const [intention, setIntention] = useState<'will_fast' | 'completed' | 'none'>('none');
   const [notes, setNotes] = useState('');

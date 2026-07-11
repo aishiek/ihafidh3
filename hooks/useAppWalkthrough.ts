@@ -1,4 +1,5 @@
 import { useSettingsStore } from '@/store/settingsStore';
+import { logAnalyticsEvent } from '@/utils/analyticsHelper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
 
@@ -20,6 +21,9 @@ export function useAppWalkthrough() {
   const markSeen = async () => {
     await AsyncStorage.setItem(WALKTHROUGH_SEEN_KEY, 'true');
     setShouldShow(false);
+    logAnalyticsEvent('onboarding_completed', {
+      onboarding_type: 'walkthrough',
+    });
   };
 
   /**

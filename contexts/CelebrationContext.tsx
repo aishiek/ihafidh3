@@ -24,7 +24,7 @@ export function CelebrationProvider({ children }: { children: ReactNode }) {
     message?: CelebrationMessage,
     badge?: string
   ) => {
-    console.log(`🎉 [CelebrationContext] Showing ${type}${badge ? ` - ${badge}` : ''}`);
+    if (__DEV__) console.log(`🎉 [CelebrationContext] Showing ${type}${badge ? ` - ${badge}` : ''}`);
     setCelebrationType(type);
     setCustomMessage(message);
     setBadgeName(badge);

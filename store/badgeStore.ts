@@ -149,6 +149,14 @@ export const useBadgeStore = create<BadgeState>()(
               unlocked: true,
               unlockedDate: today,
             };
+
+            // Increment community badge stats for every newly unlocked badge
+            const { incrementBadgeUnlock, incrementHafidhCompletion } = require('@/services/communityStatsService');
+            incrementBadgeUnlock(badge.id);
+            // Also keep the global hafidh counter for the global milestones tile
+            if (badge.id === 'hafidh-quran') {
+              incrementHafidhCompletion();
+            }
             
             if (!unlockedBadges.includes(badge.id)) {
               newlyUnlocked.push(unlockedBadge);

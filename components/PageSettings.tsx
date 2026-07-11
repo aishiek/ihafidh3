@@ -1,3 +1,4 @@
+import { logScreenView } from '@/utils/analyticsHelper';
 import { useThemeColor } from '@/utils/useThemeColor';
 import React from 'react';
 import { Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -12,7 +13,13 @@ interface Props {
 // Preset options required by product: 3, 5, 10, 15 + custom
 const OPTIONS = [3, 5, 10, 15];
 
-export default function PageSettings({ visible, currentValue, onSelect, onClose }: Props) {
+export default function PageSettings({
+  visible, currentValue, onSelect, onClose }: Props) {
+  React.useEffect(() => {
+    if (visible) {
+      logScreenView('modal_pagesettings').catch(() => {});
+    }
+  }, [visible]);
   const { primary } = useThemeColor();
   const [customValue, setCustomValue] = React.useState<string>('');
   const [showCustom, setShowCustom] = React.useState(false);

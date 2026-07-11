@@ -4,7 +4,7 @@ import { useThemeStore } from '@/store/themeStore';
 import { LinearGradient } from 'expo-linear-gradient';
 import { X } from 'lucide-react-native';
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { logAnalyticsEvent } from '@/utils/analyticsHelper';
+import {  logAnalyticsEvent , logScreenView } from '@/utils/analyticsHelper';
 import { ActivityIndicator, Dimensions, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 interface TafsirModalProps {
@@ -21,7 +21,14 @@ interface TafsirData {
   text: string;
 }
 
-export default function TafsirModal({ visible, onClose, surahId, verseNumber, supportedOrientations = ['portrait'], forceLightMode }: TafsirModalProps) {
+export default function TafsirModal({
+  visible, onClose, surahId, verseNumber, supportedOrientations = ['portrait'], forceLightMode }: TafsirModalProps) {
+React.useEffect(() => {
+    if (visible) {
+      logScreenView('modal_tafsirmodal').catch(() => {});
+    }
+  }, [visible]);
+ 
   const [tafsirData, setTafsirData] = useState<TafsirData | null>(null);
     const [sourceInfo, setSourceInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

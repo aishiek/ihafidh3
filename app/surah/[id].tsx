@@ -10,7 +10,7 @@ import { ArrowRight } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import LayoutService from '../mushaf/services/layoutService';
-import { logAnalyticsEvent } from '@/utils/analyticsHelper';
+import { logAnalyticsEvent, buildMemorizationAnalyticsPayload } from '@/utils/analyticsHelper';
 
 export default function SurahScreen() {
   const { id: surahId } = useLocalSearchParams<{ id: string }>();
@@ -324,15 +324,17 @@ export default function SurahScreen() {
       const { getJuzForSurah } = require('@/utils/juzCalculator');
       const juzNum = typeof getJuzForSurah === 'function' ? getJuzForSurah(surah.id) : 0;
 
-      logAnalyticsEvent('surah_memorization_toggled', {
+      logAnalyticsEvent('surah_memorization_toggled', buildMemorizationAnalyticsPayload({
+        event_scope: 'surah',
         action: isCurrentlyMemorized ? 'unmark_memorized' : 'mark_memorized',
-        surah_number: surah.id,
+        state: isCurrentlyMemorized ? 'unmemorized' : 'memorized',
+        trigger_source: 'surah_bulk_action',
+        surah_id: surah.id,
         surah_name: surah.name || surah.englishName,
         verses_count: surah.versesCount,
         pages_count: pagesCount,
         juz_number: juzNum,
-        completion_type: 'manual_bulk',
-      });
+      }));
     } catch (error) {
       console.error('Failed to toggle surah memorization:', error);
       Alert.alert('Error', 'Failed to update memorization status. Please try again.');
