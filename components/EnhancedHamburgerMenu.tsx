@@ -386,7 +386,7 @@ export const EnhancedHamburgerMenu: React.FC<EnhancedHamburgerMenuProps> = ({
           <View style={styles.menuContainer}>
             {/* Header */}
             <View style={styles.menuHeader}>
-              <View>
+              <View style={{ flex: 1, paddingRight: 12 }}>
                 <Text style={styles.menuTitle}>Essentials</Text>
                 <Text style={styles.menuSubtitle}>
                   Tools to enhance your Spiritual Journey!

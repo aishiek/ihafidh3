@@ -36,7 +36,9 @@
  */
 
 const admin = require('firebase-admin');
-const serviceAccount = require('./serviceAccountKey.json');
+const fs = require('fs');
+const serviceAccountPath = fs.existsSync('./serviceAccountKey.json') ? './serviceAccountKey.json' : '../firebaseServiceAccountKey.json';
+const serviceAccount = require(serviceAccountPath);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -75,6 +77,7 @@ async function seedGlobal() {
   const ref = db.collection('community_stats').doc('global');
   await ref.set(
     {
+      total_verses_memorized: 0,
       total_surahs_completed: 0,
       total_juz_completed: 0,
       total_favourites: 0,
@@ -82,6 +85,7 @@ async function seedGlobal() {
       total_hafidh_completions: 0,
       total_quizzes_ai: 0,
       total_quizzes_manual: 0,
+      total_audio_played: 0,
       updated_at: admin.firestore.FieldValue.serverTimestamp(),
     },
     { merge: true }
@@ -109,6 +113,7 @@ async function seedSurahs() {
           completed_count: 0,
           favourite_count: 0,
           bookmark_count: 0,
+          audio_played_count: 0,
           updated_at: admin.firestore.FieldValue.serverTimestamp(),
         },
         { merge: true }
@@ -119,14 +124,51 @@ async function seedSurahs() {
   }
 }
 
+const JUZ_NAMES = [
+  '',
+  'Alif Lam Meem',
+  'Sayaqool',
+  'Tilkal Rusul',
+  'Lan Tanaloo',
+  'Wal Muhsanat',
+  'La Yuhibbullah',
+  "Wa Iza Sami'oo",
+  'Wa Lau Annana',
+  "Qalal Mala'u",
+  "Wa'lamoo",
+  "Ya'taziroon",
+  'Wa Ma Min Dabbatin',
+  "Wa Ma Ubabri'u",
+  'Rubama',
+  'Subhanallazi',
+  'Qala Alam',
+  'Iqtaraba',
+  'Qad Aflaha',
+  'Wa Qalallazina',
+  'Ammana Khalaqa',
+  'Utlu Ma Oohiya',
+  'Wa Man Yaqnut',
+  'Wa Mali',
+  'Faman Azlamu',
+  'Ilaihi Yuraddu',
+  'Ha Meem',
+  'Qala Fama Khatbukum',
+  "Qad Sami'allah",
+  'Tabarakallazi',
+  "‘Amma",
+];
+
 async function seedJuz() {
   const batch = db.batch();
   for (let juzNumber = 1; juzNumber <= 30; juzNumber++) {
     const ref = db.collection('juz_stats').doc(String(juzNumber));
+    const name = JUZ_NAMES[juzNumber] || '';
     batch.set(
       ref,
       {
         juz_number: juzNumber,
+        juz_name: name,
+        juz_display_name: `Juz ${juzNumber} (${name})`,
         completed_count: 0,
         revised_count: 0,
         updated_at: admin.firestore.FieldValue.serverTimestamp(),
@@ -135,7 +177,29 @@ async function seedJuz() {
     );
   }
   await batch.commit();
-  console.log('✓ Seeded juz_stats 1-30');
+  console.log('✓ Seeded juz_stats 1-30 with names');
+}
+
+async function seedBadges() {
+  const badgeIds = [
+    'awwal-noor', 'munir-al-darb', 'hamil-hikmah', 'sahib-istiqaamah',
+    'saari-sabeelillah', 'sahib-azm', 'naasir-quran', 'rahiq-yaqeen', 'hafidh-quran'
+  ];
+  const batch = db.batch();
+  badgeIds.forEach((id) => {
+    const ref = db.collection('badge_stats').doc(id);
+    batch.set(
+      ref,
+      {
+        badge_id: id,
+        unlock_count: 0,
+        updated_at: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+  });
+  await batch.commit();
+  console.log('✓ Seeded badge_stats');
 }
 
 async function main() {
@@ -143,6 +207,7 @@ async function main() {
   await seedGlobal();
   await seedSurahs();
   await seedJuz();
+  await seedBadges();
   console.log('\nDone. All documents exist. The app\'s increment*() calls should now succeed.');
   process.exit(0);
 }

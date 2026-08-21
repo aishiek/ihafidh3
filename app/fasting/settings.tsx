@@ -130,7 +130,7 @@ const FastingSettings: React.FC = () => {
             </View>
             <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 6 }}>
               {settings.notifications.defaultBeforeDays === 0
-                ? 'Notifications will arrive on the fasting day.'
+                ? 'Notifications are always sent at least 16 hours ahead, so "0 days" still arrives the morning before the fasting day.'
                 : settings.notifications.defaultBeforeDays === 1
                   ? 'Notifications will arrive the day before.'
                   : `Notifications will arrive ${settings.notifications.defaultBeforeDays} days before.`}

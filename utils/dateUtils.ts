@@ -30,19 +30,29 @@ export function formatDate(date: Date): string {
 }
 
 export function formatTime(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const remainingSeconds = seconds % 60;
-  
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
+  if (!seconds || seconds <= 0) return '0s';
+  if (seconds < 60) return `${seconds}s`;
+
+  const totalMinutes = Math.floor(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60) % 24;
+  const days = Math.floor(totalMinutes / 1440) % 30;
+  const months = Math.floor(totalMinutes / 43200) % 12;
+  const years = Math.floor(totalMinutes / 525600);
+  const min = totalMinutes % 60;
+  const s = seconds % 60;
+
+  if (totalMinutes < 60) {
+    return s > 0 ? `${min}m ${s}s` : `${min}m`;
   }
-  
-  if (minutes > 0) {
-    return `${minutes}m ${remainingSeconds}s`;
-  }
-  
-  return `${remainingSeconds}s`;
+
+  const parts: string[] = [];
+  if (years > 0) parts.push(`${years}Y`);
+  if (months > 0) parts.push(`${months}M`);
+  if (days > 0) parts.push(`${days}D`);
+  if (hours > 0) parts.push(`${hours} H`);
+  if (min > 0) parts.push(`${min}m`);
+
+  return parts.slice(0, 3).join(' ');
 }
 
 export function isToday(dateString: string): boolean {

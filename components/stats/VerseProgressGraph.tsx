@@ -267,9 +267,9 @@ export default function VerseProgressGraph({
       barWidth = 32;
       barSpacing = 0;
     } else {
-      barSpacing = stackedData.length <= 7 ? 18 : 14;
+      barSpacing = stackedData.length <= 7 ? 16 : 14;
       const totalSpacing = barSpacing * (stackedData.length - 1);
-      barWidth = Math.max(8, Math.min(24, (availableWidth - totalSpacing) / stackedData.length));
+      barWidth = Math.max(8, Math.min(26, (availableWidth - totalSpacing) / stackedData.length));
     }
   }
 

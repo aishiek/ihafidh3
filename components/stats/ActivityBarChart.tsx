@@ -107,27 +107,19 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
         revised.push(revMap[dateStr] || 0);
       }
     } else if (timeframe === 'weekly') {
-      const weeks: Array<{ start: Date; end: Date; label: string }> = [];
-      for (let i = 11; i >= 0; i--) {
-        const endDate = new Date(today);
-        endDate.setDate(endDate.getDate() - (i * 7));
-        const startDate = new Date(endDate);
-        startDate.setDate(startDate.getDate() - 6);
-        const weekLabel = `${startDate.getDate()}/${startDate.getMonth() + 1}`;
-        weeks.push({ start: startDate, end: endDate, label: weekLabel });
+      const dayNames = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+      const currentDayOfWeek = today.getDay(); // 0 is Sunday, 6 is Saturday
+      const sundayDate = new Date(today);
+      sundayDate.setDate(today.getDate() - currentDayOfWeek);
+
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(sundayDate);
+        date.setDate(sundayDate.getDate() + i);
+        const dateStr = getLocalDateString(date);
+        labels.push(dayNames[i]);
+        memorized.push(memMap[dateStr] || 0);
+        revised.push(revMap[dateStr] || 0);
       }
-      weeks.forEach(week => {
-        let memSum = 0;
-        let revSum = 0;
-        for (let d = new Date(week.start); d <= week.end; d.setDate(d.getDate() + 1)) {
-          const dateStr = getLocalDateString(d);
-          memSum += memMap[dateStr] || 0;
-          revSum += revMap[dateStr] || 0;
-        }
-        labels.push(week.label);
-        memorized.push(memSum);
-        revised.push(revSum);
-      });
     } else if (timeframe === 'monthly') {
       const currentYear = today.getFullYear();
       const currentMonth = today.getMonth();
@@ -185,7 +177,7 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
   const getBarWidth = () => {
     switch (timeframe) {
       case 'daily': return 24;
-      case 'weekly': return 40;
+      case 'weekly': return 26;
       case 'monthly': return 40;
       case 'yearly': return 80;
       default: return 40;
@@ -193,12 +185,12 @@ const ActivityBarChart: React.FC<ActivityBarChartProps> = ({ data, pageData }) =
   };
 
   const barWidth = getBarWidth();
-  const gapWidth = 12; // defined gap
+  const gapWidth = timeframe === 'weekly' ? Math.max(10, Math.floor((screenWidth - 90 - 7 * barWidth) / 6)) : 12;
   const horizontalPadding = 30; // padding left + right
   
   const chartContentWidth = Math.max(
     screenWidth - 50, // screenWidth - padding/margins
-    chartData.labels.length * (barWidth + gapWidth) + horizontalPadding + 40 // Add buffer for final label
+    chartData.labels.length * (barWidth + gapWidth) + horizontalPadding + (timeframe === 'weekly' ? 10 : 40) // Add buffer for final label
   );
 
   React.useEffect(() => {

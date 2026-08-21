@@ -126,7 +126,7 @@ export default function VerseProgressCard() {
         });
 
         const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-        const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const labels = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
         const items: VerseProgressData[] = days.map((d, i) => {
           const dateKey = formatDate(d);

@@ -26,6 +26,7 @@ import {
 import { ReadModeVerseCard } from '../components/ReadModeVerseCard';
 import { ReadingProgressBar } from '../components/ReadModeScrollProgress';
 import TafsirModal from '../components/TafsirModal';
+import { fetchAllStats } from '../services/communityStatsService';
 import { fetchVersesForJuz } from '../services/juzDbService';
 import { getVersesBySurah } from '../data/verses';
 import { getSurahById } from '../data/surahs';
@@ -101,6 +102,24 @@ export default function ReadModeScreen() {
             clearTimeout(t);
             useActivityStore.getState().endSession();
         };
+    }, []);
+
+    // Community favourite counts (the heart-icon "5K" badge on each verse) come from
+    // an in-memory cache in communityStatsService that only gets populated by whichever
+    // screen last called fetchAllStats() — Read Mode never called it itself, so opening
+    // Read Mode directly (without having just visited Stats) always showed the local-only
+    // count. Fetch it here too, and bump a version counter on success so the currently
+    // visible verse cards (which read the cache synchronously, not reactively) re-render
+    // and pick up the real numbers once they arrive.
+    const [communityStatsVersion, setCommunityStatsVersion] = useState(0);
+    useEffect(() => {
+        let cancelled = false;
+        fetchAllStats()
+            .then(() => {
+                if (!cancelled) setCommunityStatsVersion(v => v + 1);
+            })
+            .catch(() => { /* silent — cards just keep showing local-only counts */ });
+        return () => { cancelled = true; };
     }, []);
 
     const flashListRef = useRef<FlashListRef<Verse>>(null);
@@ -517,6 +536,7 @@ export default function ReadModeScreen() {
             <FlashList
                 ref={flashListRef}
                 data={verses}
+                extraData={communityStatsVersion}
                 initialScrollIndex={initialScrollIndex}
                 keyExtractor={(item: any) => `${item?.surahId}-${item?.verseNumber}`}
                 {...({ estimatedItemSize: 300 } as any)}

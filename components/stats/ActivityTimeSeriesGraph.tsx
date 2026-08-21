@@ -117,7 +117,7 @@ const ActivityTimeSeriesGraph: React.FC<Props> = ({ data, pageData }) => {
           dateStr,
           memorized: memMap[dateStr] || 0,
           revised: revMap[dateStr] || 0,
-          label: date.toLocaleDateString('en', { weekday: 'short' })
+          label: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'][date.getDay()]
         });
       }
     } else if (timeRange === 'month') {

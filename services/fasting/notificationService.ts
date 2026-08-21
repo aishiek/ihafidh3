@@ -18,6 +18,12 @@ export class FastingNotificationService {
   private static isInitialized = false;
   private static hasPermission = false;
 
+  // Minimum lead time enforced for every fasting reminder, regardless of the user's
+  // configured beforeDays/time. Prevents e.g. "0 days before" + an early default time
+  // from producing a notification that lands too close to (or after) the fasting day
+  // actually starts. Applies uniformly to all fasting types.
+  private static readonly MIN_NOTIFICATION_LEAD_HOURS = 16;
+
   /**
    * Initialize notification service
    * Returns true if initialization succeeded and permissions granted.
@@ -124,14 +130,16 @@ export class FastingNotificationService {
           notificationDate.setDate(notificationDate.getDate() - beforeDays);
           notificationDate.setHours(hours, minutes, 0, 0);
 
-          // Enforce at least 12 hours prior rule (user requested)
-          // Fasting day starts at 00:00. 12 hours prior is 12:00 PM (noon) on the previous day.
-          const twelveHoursBefore = new Date(fastingDate.getTime() - 12 * 60 * 60 * 1000);
-          
-          if (notificationDate.getTime() > twelveHoursBefore.getTime()) {
-            console.log(`⚠️ Adjusting notification for ${fastingType} on ${day.date} to meet 12-hour minimum requirement.`);
-            notificationDate.setTime(twelveHoursBefore.getTime());
-            
+          // Enforce the minimum lead time rule.
+          // Fasting day starts at 00:00 local time, so N hours prior falls on the previous day.
+          const minLeadTimeBefore = new Date(
+            fastingDate.getTime() - this.MIN_NOTIFICATION_LEAD_HOURS * 60 * 60 * 1000
+          );
+
+          if (notificationDate.getTime() > minLeadTimeBefore.getTime()) {
+            console.log(`⚠️ Adjusting notification for ${fastingType} on ${day.date} to meet the ${this.MIN_NOTIFICATION_LEAD_HOURS}-hour minimum lead time.`);
+            notificationDate.setTime(minLeadTimeBefore.getTime());
+
             // Adjust the beforeDays for the message display if it was 0
             if (beforeDays === 0) {
               beforeDays = 1;

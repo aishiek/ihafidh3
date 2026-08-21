@@ -179,8 +179,9 @@ export const useActivityStore = create<ActivityState>()(
           }
         }
         
-        // Use the greater of the two (manager is more accurate)
-        const timeToAdd = Math.max(elapsed, managerTime);
+        // Use activeTimeManager if available (it correctly pauses when app is idle or in background).
+        // Otherwise fallback to elapsed capped at 4 hours (14400s) to prevent overnight accumulation.
+        const timeToAdd = activeTimeManager ? managerTime : Math.min(elapsed, 14400);
         
         // CRITICAL: Add to total
         const newTotal = (timeSpent?.total || 0) + timeToAdd;
@@ -406,26 +407,47 @@ export const useActivityStore = create<ActivityState>()(
       },
       
       getTimeSpentToday: () => {
-        const { timeSpent, sessionStartTime } = get();
-        const currentSession = sessionStartTime 
-          ? Math.floor((Date.now() - sessionStartTime) / 1000)
-          : 0;
+        const { timeSpent, sessionStartTime, activeTimeManager } = get();
+        let currentSession = 0;
+        if (activeTimeManager) {
+          try {
+            currentSession = activeTimeManager.getStats()?.totalTimeSeconds || 0;
+          } catch {
+            currentSession = sessionStartTime ? Math.min(Math.floor((Date.now() - sessionStartTime) / 1000), 14400) : 0;
+          }
+        } else if (sessionStartTime) {
+          currentSession = Math.min(Math.floor((Date.now() - sessionStartTime) / 1000), 14400);
+        }
         return timeSpent.daily + currentSession;
       },
       
       getTimeSpentThisWeek: () => {
-        const { timeSpent, sessionStartTime } = get();
-        const currentSession = sessionStartTime 
-          ? Math.floor((Date.now() - sessionStartTime) / 1000)
-          : 0;
+        const { timeSpent, sessionStartTime, activeTimeManager } = get();
+        let currentSession = 0;
+        if (activeTimeManager) {
+          try {
+            currentSession = activeTimeManager.getStats()?.totalTimeSeconds || 0;
+          } catch {
+            currentSession = sessionStartTime ? Math.min(Math.floor((Date.now() - sessionStartTime) / 1000), 14400) : 0;
+          }
+        } else if (sessionStartTime) {
+          currentSession = Math.min(Math.floor((Date.now() - sessionStartTime) / 1000), 14400);
+        }
         return timeSpent.weekly + currentSession;
       },
       
       getTimeSpentThisMonth: () => {
-        const { timeSpent, sessionStartTime } = get();
-        const currentSession = sessionStartTime 
-          ? Math.floor((Date.now() - sessionStartTime) / 1000)
-          : 0;
+        const { timeSpent, sessionStartTime, activeTimeManager } = get();
+        let currentSession = 0;
+        if (activeTimeManager) {
+          try {
+            currentSession = activeTimeManager.getStats()?.totalTimeSeconds || 0;
+          } catch {
+            currentSession = sessionStartTime ? Math.min(Math.floor((Date.now() - sessionStartTime) / 1000), 14400) : 0;
+          }
+        } else if (sessionStartTime) {
+          currentSession = Math.min(Math.floor((Date.now() - sessionStartTime) / 1000), 14400);
+        }
         return timeSpent.monthly + currentSession;
       },
       

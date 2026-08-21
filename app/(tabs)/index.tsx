@@ -1457,11 +1457,11 @@ export default function HomeScreen() {
                     <View style={styles.communityStatDivider} />
                     <View style={styles.communityStatItem}>
                       <Text style={styles.communityStatValue}>
-                        {communityStats?.global?.total_surahs_completed != null
-                          ? String(communityStats!.global!.total_surahs_completed)
+                        {communityStats?.global?.total_surahs_memorized ?? communityStats?.global?.total_surahs_completed != null
+                          ? String(communityStats!.global!.total_surahs_memorized ?? communityStats!.global!.total_surahs_completed)
                           : '—'}
                       </Text>
-                      <Text style={styles.communityStatLabel}>Surahs Completed</Text>
+                      <Text style={styles.communityStatLabel}>Surahs Memorized</Text>
                     </View>
                     <View style={styles.communityStatDivider} />
                     <View style={styles.communityStatItem}>

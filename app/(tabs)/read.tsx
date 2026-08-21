@@ -88,7 +88,7 @@ import { shouldHaveBismillah, BISMILLAH_ARABIC, getBismillahTranslation, BISMILL
 import { cacheGet, cacheSet } from '@/services/verseCache';
 import { getTranslationRemote } from '@/services/remoteTranslation';
 import { useCommunityStatsFlag } from '@/utils/communityStatsFlag';
-import { getCachedSurahStats } from '@/services/communityStatsService';
+import { getCachedSurahStats, incrementBulkVersesMemorized } from '@/services/communityStatsService';
 
 export default function ReadScreen() {
   const router = useRouter();
@@ -1277,6 +1277,8 @@ export default function ReadScreen() {
       const juzNumber: number = (typeof getJuzForSurah === 'function' ? getJuzForSurah(selectedSurah.id) : null) ?? null;
       const defaultVpp = useSettingsStore.getState().defaultVersesPerPage || 15;
       const pagesCount = Math.ceil(selectedSurah.versesCount / defaultVpp);
+      // Track bulk verse count in community stats (isBulkOperation suppresses per-verse calls)
+      incrementBulkVersesMemorized(surahVerseIds.length, isMarking);
       logAnalyticsEvent('surah_memorization_toggled', {
         action: isMarking ? 'mark_memorized' : 'unmark_memorized',
         surah_number: selectedSurah.id,

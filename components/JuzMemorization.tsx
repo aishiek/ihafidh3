@@ -10,7 +10,7 @@ import { ArrowLeft, Check, RefreshCw } from 'lucide-react-native';
 import React, { useCallback, useMemo } from 'react';
 import { FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { logAnalyticsEvent, buildMemorizationAnalyticsPayload } from '@/utils/analyticsHelper';
-import { incrementJuzCompletion, incrementJuzRevision } from '@/services/communityStatsService';
+import { incrementJuzRevision, incrementBulkVersesMemorized } from '@/services/communityStatsService';
 
 function getSurahIdByName(name: string): number | null {
   const surah = surahsData.find(s => s.name === name || s.englishName === name || s.arabicName === name);
@@ -103,8 +103,8 @@ export default function JuzMemorization({ onOpenJuz, searchQuery }: Props) {
       await new Promise(resolve => setTimeout(resolve, 400));
       closeModal();
 
-      // Trigger global stat update (assuming 100% completion)
-      if (enable) incrementJuzCompletion(juz);
+      // Track bulk verse count — isBulkOperation suppresses per-verse calls so we do it here
+      incrementBulkVersesMemorized(idsToApply.length, enable);
 
       // ANALYTICS: Juz-level memorization toggle (not juz_completed — that fires from progressStore at 100%)
       logAnalyticsEvent('juz_memorization_toggled', buildMemorizationAnalyticsPayload({

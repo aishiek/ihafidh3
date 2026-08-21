@@ -7,6 +7,7 @@ import { useUnifiedTheme } from '@/hooks/useUnifiedTheme';
 import { FastingCalendarService } from '@/services/fasting/calendarService';
 import { FastingNotificationService } from '@/services/fasting/notificationService';
 import {
+  CalendarDay,
   FastingAppSettings,
   FastingCalendarAction,
   FastingCalendarState,
@@ -16,7 +17,8 @@ import {
   FastingType
 } from '@/types/fasting';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, useContext, useEffect, useReducer } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, useState } from 'react';
+import { AppState } from 'react-native';
 
 // Default notification settings
 const getDefaultNotificationSettings = (): FastingNotificationSettings => ({
@@ -35,6 +37,22 @@ const getDefaultNotificationSettings = (): FastingNotificationSettings => ({
     };
   }, {} as Record<FastingType, { enabled: boolean; time: string; beforeDays: number }>)
 });
+
+// Fills in any missing fastingTypes entries with defaults, so a partially-saved
+// or older settings blob never leaves a type silently unconfigured.
+const mergeNotificationSettings = (
+  notifications?: Partial<FastingNotificationSettings>
+): FastingNotificationSettings => {
+  const defaults = getDefaultNotificationSettings();
+  return {
+    ...defaults,
+    ...(notifications || {}),
+    fastingTypes: {
+      ...defaults.fastingTypes,
+      ...(notifications?.fastingTypes || {})
+    }
+  };
+};
 
 // Initial state
 const initialState: FastingCalendarState = {
@@ -91,6 +109,11 @@ const FastingCalendarContext = createContext<FastingContextType | null>(null);
 export function FastingCalendarProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(fastingCalendarReducer, initialState);
 
+  // True once persisted settings have been read from storage (or confirmed absent).
+  // Gates the first notification schedule so it never runs against default settings
+  // while the user's actual saved preferences are still loading.
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
   // Initialize unified theme integration
   const unifiedTheme = useUnifiedTheme('auto');
 
@@ -110,6 +133,11 @@ export function FastingCalendarProvider({ children }: { children: React.ReactNod
   }, [unifiedTheme.themeMode, unifiedTheme.colorScheme]);
 
   const loadCalendarData = async (month: Date) => {
+    // NOTE: this only loads the days shown in the calendar UI. Device notification
+    // scheduling is handled separately by scheduleUpcomingFastingNotifications, so
+    // that browsing the calendar (past/future months) never touches, or wipes,
+    // reminders that were already scheduled for other months. See that function
+    // for why it's decoupled from whichever month happens to be on screen.
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
 
@@ -121,22 +149,6 @@ export function FastingCalendarProvider({ children }: { children: React.ReactNod
       );
 
       dispatch({ type: 'SET_CALENDAR_DAYS', payload: days });
-
-      // Schedule notifications if enabled
-      if (state.settings.notifications?.enabled) {
-        try {
-          await FastingNotificationService.scheduleFastingReminders(days, {
-            ...state.settings.notifications,
-            // Ensure we have a valid fastingTypes object
-            fastingTypes: {
-              ...getDefaultNotificationSettings().fastingTypes,
-              ...(state.settings.notifications.fastingTypes || {})
-            }
-          });
-        } catch (error) {
-          console.error('Error scheduling fasting notifications:', error);
-        }
-      }
     } catch (error) {
       console.error('Error loading fasting calendar data:', error);
 
@@ -156,6 +168,55 @@ export function FastingCalendarProvider({ children }: { children: React.ReactNod
       }
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
+    }
+  };
+
+  // Fetches a single month's days for notification purposes, falling back to the
+  // offline generator (Monday/Thursday + Ayyamul Bidh only) if the Hijri API call fails,
+  // so a network hiccup never means "no reminders" for that month.
+  const fetchMonthDaysForNotifications = async (month: Date): Promise<CalendarDay[]> => {
+    try {
+      return await FastingCalendarService.generateCalendarDays(
+        month,
+        state.settings.location,
+        state.settings.hijriAdjustment
+      );
+    } catch (error) {
+      console.warn('[FastingNotifications] Falling back to offline calendar for', month.toDateString(), error);
+      return FastingCalendarService.generateFallbackCalendarDays(month);
+    }
+  };
+
+  // Refreshes device-scheduled fasting reminders for a rolling window (the real current
+  // month + next month), independent of whatever month is currently displayed in the
+  // calendar UI. Previously, notifications were (re)scheduled as a side effect of
+  // loadCalendarData for whichever month the user had navigated to, which meant: (a)
+  // browsing to a different month cancelled and replaced ALL scheduled fasting
+  // notifications with just that month's days, silently wiping out any other month's
+  // reminders, and (b) once the currently-displayed month passed, no further months
+  // ever got scheduled unless the user happened to reopen the calendar screen. Driving
+  // this off "today", not "state.currentMonth", fixes both.
+  const scheduleUpcomingFastingNotifications = async (notificationSettings: FastingNotificationSettings) => {
+    if (!notificationSettings?.enabled) {
+      return;
+    }
+
+    try {
+      const now = new Date();
+      const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+      const [thisMonthDays, nextMonthDays] = await Promise.all([
+        fetchMonthDaysForNotifications(thisMonthStart),
+        fetchMonthDaysForNotifications(nextMonthStart),
+      ]);
+
+      await FastingNotificationService.scheduleFastingReminders(
+        [...thisMonthDays, ...nextMonthDays],
+        mergeNotificationSettings(notificationSettings)
+      );
+    } catch (error) {
+      console.error('Error scheduling fasting notifications:', error);
     }
   };
 
@@ -183,15 +244,14 @@ export function FastingCalendarProvider({ children }: { children: React.ReactNod
       if (settings.notifications) {
         try {
           if (settings.notifications.enabled === false) {
-            // If notifications were disabled, cancel all scheduled notifications
+            // If notifications were disabled, cancel all scheduled notifications immediately.
             await FastingNotificationService.cancelFastingNotifications();
-          } else if (state.calendarDays.length > 0) {
-            // If notifications are enabled and we have calendar data, reschedule notifications
-            await FastingNotificationService.scheduleFastingReminders(
-              state.calendarDays,
-              newSettings.notifications
-            );
           }
+          // If notifications are (still) enabled, the settings-change effect below
+          // (driven by state.settings.notifications) picks up the new settings and
+          // reschedules the full rolling window automatically — no need to duplicate
+          // that call here, and doing so against state.calendarDays would only cover
+          // whichever month happens to be on screen.
         } catch (error) {
           console.error('Error updating fasting notifications:', error);
         }
@@ -223,20 +283,18 @@ export function FastingCalendarProvider({ children }: { children: React.ReactNod
           // Ensure notification settings are properly initialized
           const updatedSettings = {
             ...parsedSettings,
-            notifications: {
-              ...getDefaultNotificationSettings(),
-              ...(parsedSettings.notifications || {}),
-              fastingTypes: {
-                ...getDefaultNotificationSettings().fastingTypes,
-                ...(parsedSettings.notifications?.fastingTypes || {})
-              }
-            }
+            notifications: mergeNotificationSettings(parsedSettings.notifications)
           };
 
           dispatch({ type: 'UPDATE_SETTINGS', payload: updatedSettings });
         }
       } catch (error) {
         console.error('Error loading fasting settings:', error);
+      } finally {
+        // Mark settings as loaded whether or not saved settings existed, so the
+        // notification-scheduling effect (which waits on this) always proceeds —
+        // it just proceeds with defaults if nothing was saved.
+        setSettingsLoaded(true);
       }
     };
 
@@ -264,7 +322,7 @@ export function FastingCalendarProvider({ children }: { children: React.ReactNod
     loadFastingIntentions();
   }, []);
 
-  // Load calendar data when month, location, or hijri adjustment changes
+  // Load calendar data (display only) when month, location, or hijri adjustment changes
   useEffect(() => {
     console.log('📅 Calendar reload triggered - Hijri Adjustment:', state.settings.hijriAdjustment);
     loadCalendarData(state.currentMonth);
@@ -274,6 +332,27 @@ export function FastingCalendarProvider({ children }: { children: React.ReactNod
   useEffect(() => {
     FastingNotificationService.initialize();
   }, []);
+
+  // Refresh the rolling notification window once settings have loaded, and again
+  // whenever location, Hijri adjustment, or notification settings change. This is the
+  // single source of truth for (re)scheduling fasting reminders — deliberately not
+  // tied to state.currentMonth (see scheduleUpcomingFastingNotifications above).
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    scheduleUpcomingFastingNotifications(state.settings.notifications);
+  }, [settingsLoaded, state.settings.location, state.settings.hijriAdjustment, state.settings.notifications]);
+
+  // Re-check on app foreground so the rolling window stays current even across a long
+  // background stint, without requiring the user to reopen the Fasting Calendar screen.
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        scheduleUpcomingFastingNotifications(state.settings.notifications);
+      }
+    });
+    return () => { try { sub.remove(); } catch { } };
+  }, [settingsLoaded, state.settings.location, state.settings.hijriAdjustment, state.settings.notifications]);
 
   const contextValue: FastingContextType = {
     state,

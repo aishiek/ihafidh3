@@ -10,7 +10,7 @@ import { Verse } from '@/types/verse';
 import { logAnalyticsEvent, buildMemorizationAnalyticsPayload } from '@/utils/analyticsHelper';
 
 import { JUZ_BOUNDARIES, getJuzFromVerseId, getSurahName, getJuzVerseCount, getJuzSurahCount } from '@/constants/quranMeta';
-import { incrementVerseMemorization, incrementVerseRevision, incrementSurahCompletion, incrementJuzCompletion } from '@/services/communityStatsService';
+import { incrementVerseMemorization, incrementVerseRevision, syncMemorizationStats } from '@/services/communityStatsService';
 
 function resolveVerseInfo(verseId: number): {
   surahId: number;
@@ -344,52 +344,11 @@ export const useProgressStore = create<ProgressState>()(
         });
 
         // ANALYTICS: juz_completed — fires once per newly completed Juz, at 100%
-        // Detect newly completed Juz by comparing which specific juz IDs are now complete
+        // Exact tracking for Surah and Juz completions/uncompletions via one unified batch
         const previousJuzCount = (get() as any)._lastJuzCount || 0;
-        if (actualCompletedJuz > previousJuzCount) {
-          // Calculate how many new Juz were completed
-          const newJuzCompleted = actualCompletedJuz - previousJuzCount;
-          // Days since install for days_to_complete
-          let daysToComplete = 1;
-          try {
-            const { getOrSetInstallDate } = require('@/utils/installDate');
-            // Use synchronous AsyncStorage cached value — best effort
-            const installDateStr = (get() as any)._installDateCache;
-            if (installDateStr) {
-              const installDate = new Date(installDateStr + 'T00:00:00');
-              const today = new Date();
-              daysToComplete = Math.max(1, Math.round((today.getTime() - installDate.getTime()) / 86400000));
-            }
-          } catch { }
+        const previousCompletedJuzIds: number[] = (get() as any)._lastCompletedJuzIds || [];
+        const currentCompletedJuzIds: number[] = Array.from((progressTracker as any).userProgress?.memorizedJuz || []);
 
-          const { logAnalyticsEvent } = require('@/utils/analyticsHelper');
-          // Fire one event per newly completed juz
-          for (let i = 1; i <= newJuzCompleted; i++) {
-            const completedJuzNumber = previousJuzCount + i;
-            logAnalyticsEvent('juz_completed', {
-              juz_number: completedJuzNumber,
-              verse_count: getJuzVerseCount(completedJuzNumber),
-              surah_count: getJuzSurahCount(completedJuzNumber),
-              source_screen: 'recite',
-            });
-            incrementJuzCompletion(completedJuzNumber);
-          }
-          set({ _lastJuzCount: actualCompletedJuz } as any);
-
-          // Trigger SadaqahPrompt for first Juz completed
-          setTimeout(() => {
-            const { useSettingsStore } = require('./settingsStore');
-            const { shouldShowReviewPrompt } = require('@/utils/reviewPrompt');
-            const settingsState = useSettingsStore.getState();
-            if (shouldShowReviewPrompt(settingsState.reviewPromptState, settingsState.reviewPromptSessionShown)) {
-              if (previousJuzCount === 0 && newJuzCompleted > 0) {
-                settingsState.queueSadaqahPrompt('juz_completed');
-              }
-            }
-          }, 1500);
-        }
-
-        // ANALYTICS: surah_completed — fires when all verses of a surah are memorized
         const memorizedCountsBySurah: Record<number, number> = {};
         for (const vId of memorizedVerses) {
           const info = verseSurahMap[vId];
@@ -398,40 +357,88 @@ export const useProgressStore = create<ProgressState>()(
           }
         }
 
-        const previousCompletedSurahs = (get() as any)._lastCompletedSurahIds || [];
-        const newlyCompletedSurahIds: number[] = [];
+        const previousCompletedSurahs: number[] = (get() as any)._lastCompletedSurahIds || [];
+        const currentCompletedSurahIds: number[] = Object.entries(memorizedCountsBySurah)
+          .filter(([surahIdStr, count]) => {
+            const sId = parseInt(surahIdStr, 10);
+            return surahMap[sId] && count === surahMap[sId].versesCount;
+          })
+          .map(([surahIdStr]) => parseInt(surahIdStr, 10));
 
-        for (const [surahIdStr, count] of Object.entries(memorizedCountsBySurah)) {
-          const sId = parseInt(surahIdStr, 10);
-          const surah = surahMap[sId];
-          if (surah && count === surah.versesCount && !previousCompletedSurahs.includes(sId)) {
-            newlyCompletedSurahIds.push(sId);
-            // Skip per-surah events during bulk operations (e.g. Mark Juz 30 completes 18 surahs
-            // simultaneously, causing 18 rapid-fire Firebase events that hang the UI and hit
-            // the real-time event daily limit). juz_memorization_toggled already captures this.
-            if (!isBulkCelebration) {
-              const { logAnalyticsEvent } = require('@/utils/analyticsHelper');
-              const { getJuzForSurah } = require("@/utils/juzCalculator");
-              const juzNum = typeof getJuzForSurah === "function" ? getJuzForSurah(sId) : 0;
+        const newlyCompletedSurahIds = currentCompletedSurahIds.filter(id => !previousCompletedSurahs.includes(id));
+        const newlyUncompletedSurahIds = previousCompletedSurahs.filter(id => !currentCompletedSurahIds.includes(id));
+        const newlyCompletedJuzIds = currentCompletedJuzIds.filter(id => !previousCompletedJuzIds.includes(id));
+        const newlyUncompletedJuzIds = previousCompletedJuzIds.filter(id => !currentCompletedJuzIds.includes(id));
+
+        // Fire analytics for newly completed Juzes
+        if (newlyCompletedJuzIds.length > 0) {
+          try {
+            const { logAnalyticsEvent } = require('@/utils/analyticsHelper');
+            newlyCompletedJuzIds.forEach(juzNum => {
+              logAnalyticsEvent('juz_completed', {
+                juz_number: juzNum,
+                verse_count: getJuzVerseCount(juzNum),
+                surah_count: getJuzSurahCount(juzNum),
+                source_screen: 'recite',
+              });
+            });
+          } catch { /* analytics must never crash */ }
+
+          if (previousJuzCount === 0 && actualCompletedJuz > 0) {
+            setTimeout(() => {
               try {
-                logAnalyticsEvent('surah_completed', {
-                  surah_number: sId ?? 0,
-                  surah_name: getSurahName(sId),
-                  verse_count: surah.versesCount ?? 0,
-                  total_verses: surah.versesCount ?? 0,
-                  juz_number: juzNum ?? 0,
-                  completion_type: 'memorization',
-                  source_screen: 'recite',
-                });
-                incrementSurahCompletion(sId);
-              } catch { /* analytics must never crash */ }
-            }
+                const { useSettingsStore } = require('./settingsStore');
+                const { shouldShowReviewPrompt } = require('@/utils/reviewPrompt');
+                const settingsState = useSettingsStore.getState();
+                if (shouldShowReviewPrompt(settingsState.reviewPromptState, settingsState.reviewPromptSessionShown)) {
+                  settingsState.queueSadaqahPrompt('juz_completed');
+                }
+              } catch { }
+            }, 1500);
           }
         }
 
-        if (newlyCompletedSurahIds.length > 0) {
-          set({ _lastCompletedSurahIds: [...previousCompletedSurahs, ...newlyCompletedSurahIds] } as any);
+        // Fire analytics for newly completed Surahs (only when not in a massive bulk celebration)
+        if (newlyCompletedSurahIds.length > 0 && !isBulkCelebration) {
+          try {
+            const { logAnalyticsEvent } = require('@/utils/analyticsHelper');
+            const { getJuzForSurah } = require("@/utils/juzCalculator");
+            newlyCompletedSurahIds.forEach(sId => {
+              const surah = surahMap[sId];
+              const juzNum = typeof getJuzForSurah === "function" ? getJuzForSurah(sId) : 0;
+              logAnalyticsEvent('surah_completed', {
+                surah_number: sId ?? 0,
+                surah_name: getSurahName(sId),
+                verse_count: surah?.versesCount ?? 0,
+                total_verses: surah?.versesCount ?? 0,
+                juz_number: juzNum ?? 0,
+                completion_type: 'memorization',
+                source_screen: 'recite',
+              });
+            });
+          } catch { /* analytics must never crash */ }
         }
+
+        // Batched Firestore Sync: exactly one single batch commit with no double counting
+        if (
+          newlyCompletedSurahIds.length > 0 ||
+          newlyUncompletedSurahIds.length > 0 ||
+          newlyCompletedJuzIds.length > 0 ||
+          newlyUncompletedJuzIds.length > 0
+        ) {
+          syncMemorizationStats(
+            newlyCompletedSurahIds,
+            newlyUncompletedSurahIds,
+            newlyCompletedJuzIds,
+            newlyUncompletedJuzIds
+          );
+        }
+
+        set({
+          _lastCompletedSurahIds: currentCompletedSurahIds,
+          _lastCompletedJuzIds: currentCompletedJuzIds,
+          _lastJuzCount: actualCompletedJuz
+        } as any);
       },
 
       // actions
@@ -538,6 +545,11 @@ export const useProgressStore = create<ProgressState>()(
             incrementVerseMemorization(surahId, false);
           } catch { /* analytics must never crash */ }
         }
+
+        // Check for surah and juz uncompletions
+        setTimeout(() => {
+           get().checkAndCelebrateBadges();
+        }, 100);
       },
 
       bulkMarkVersesMemorized: (ids: number[], isMarking = true) => {
@@ -587,20 +599,15 @@ export const useProgressStore = create<ProgressState>()(
           isBulkOperation = false;
         }
 
-        // Check for badge unlocks and completions after marking
-        if (isMarking) {
-          // isBulkCelebration suppresses per-surah surah_completed events inside
-          // checkAndCelebrateBadges — the flag must stay true until after the callback
-          // returns, since isBulkOperation is already reset above in finally{}.
-          isBulkCelebration = true;
-          setTimeout(() => {
-            try {
-              get().checkAndCelebrateBadges();
-            } finally {
-              isBulkCelebration = false;
-            }
-          }, 100);
-        }
+        // Check for badge unlocks and completions/uncompletions after any bulk operation
+        isBulkCelebration = true;
+        setTimeout(() => {
+          try {
+            get().checkAndCelebrateBadges();
+          } finally {
+            isBulkCelebration = false;
+          }
+        }, 100);
       },
 
       markVerseAsRevised: (verseId: number) => {

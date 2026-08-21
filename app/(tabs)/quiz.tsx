@@ -297,8 +297,25 @@ export default function QuizScreen() {
   }, [quizState.results, verseStatus]);
 
   // ── Save quiz result ─────────────────────────────────────────────────────
-  const saveQuizResult = async (result: QuizResult) => {
+  const saveQuizResult = async (result: QuizResult, isAiMode?: boolean, verseIds?: number[]) => {
     try {
+      try {
+        const { useProgressStore } = require('@/store/progressStore');
+        const store = useProgressStore.getState();
+        if (typeof store.addQuizResult === 'function') {
+          store.addQuizResult({
+            verseIds: verseIds || [],
+            score: result.score,
+            totalQuestions: result.totalVerses,
+            correct: result.correctVerses,
+            surahId: result.surahId,
+            isAiMode: isAiMode !== undefined ? isAiMode : false,
+          });
+        }
+      } catch (storeErr) {
+        console.error('Error recording quiz to progressStore:', storeErr);
+      }
+
       const newResults = [...quizState.results, result];
       const totalQuizzes = newResults.length;
       const perfectQuizzes = newResults.filter(r => r.score === 100).length;
@@ -492,7 +509,7 @@ export default function QuizScreen() {
             totalVerses: totalToAnswer,
             correctVerses: correctAnswers,
           };
-          saveQuizResult(result);
+          saveQuizResult(result, prev.mode === 'ai', prev.verses.map(v => v.verseId));
 
           const timeTakenSeconds = Math.round((new Date().getTime() - prev.startTime.getTime()) / 1000);
           const memLevel = getMemorizationLevel(memorizedVerses.length);

@@ -21,18 +21,21 @@ import { useCustomColors } from '@/utils/themeUtils';
 import { useCommunityStatsFlag } from '@/utils/communityStatsFlag';
 import {
   fetchAllStats,
+  subscribeToGlobalStats,
   CommunityStatsData,
   SurahStat,
   JuzStat,
   BadgeStat,
 } from '@/services/communityStatsService';
+import SurahCompletionBubbleMap, { SurahCompletion } from '@/app/utils/SurahCompletionBubbleMap';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
 function formatCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
+  const safe = Math.max(0, n || 0);
+  if (safe >= 1_000_000) return `${(safe / 1_000_000).toFixed(1)}M`;
+  if (safe >= 1_000)     return `${(safe / 1_000).toFixed(1)}K`;
+  return String(safe);
 }
 
 // ─── Stat Tile (global summary) ─────────────────────────────────────────────
@@ -108,6 +111,39 @@ const surahCardStyles = StyleSheet.create({
 });
 
 // ─── Juz Card (top-10) ───────────────────────────────────────────────────────
+const JUZ_NAMES_TRANSLITERATION: { [key: number]: string } = {
+  1: "Alif Lam Meem",
+  2: "Sayaqool",
+  3: "Tilkal Rusul",
+  4: "Lan Tanaloo",
+  5: "Wal Muhsanat",
+  6: "La Yuhibbullah",
+  7: "Wa Iza Sami'oo",
+  8: "Wa Lau Annana",
+  9: "Qalal Mala'u",
+  10: "Wa'lamoo",
+  11: "Ya'taziroon",
+  12: "Wa Ma Min Dabbatin",
+  13: "Wa Ma Ubabri'u",
+  14: "Rubama",
+  15: "Subhanallazi",
+  16: "Qala Alam",
+  17: "Iqtaraba",
+  18: "Qad Aflaha",
+  19: "Wa Qalallazina",
+  20: "Ammana Khalaqa",
+  21: "Utlu Ma Oohiya",
+  22: "Wa Man Yaqnut",
+  23: "Wa Mali",
+  24: "Faman Azlamu",
+  25: "Ilaihi Yuraddu",
+  26: "Ha Meem",
+  27: "Qala Fama Khatbukum",
+  28: "Qad Sami'allah",
+  29: "Tabarakallazi",
+  30: "Amma"
+};
+
 interface JuzCardProps {
   rank: number;
   juz: JuzStat;
@@ -121,6 +157,8 @@ const JuzCard: React.FC<JuzCardProps> = ({ rank, juz, max, isTop, bg, textColor 
   const frac  = max > 0 ? count / max : 0;
   const GOLD  = '#D4AF37';
   const accent = isTop ? GOLD : '#a78bfa';
+  const transliterated = JUZ_NAMES_TRANSLITERATION[juz.juz_number];
+  const displayName = `Juz ${juz.juz_number}${transliterated ? ` (${transliterated})` : ''}`;
   return (
     <View style={[juzCardStyles.card, { backgroundColor: bg }, isTop && { borderColor: GOLD + '66', borderWidth: 1 }]}>
       <View style={juzCardStyles.row}>
@@ -129,7 +167,7 @@ const JuzCard: React.FC<JuzCardProps> = ({ rank, juz, max, isTop, bg, textColor 
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[juzCardStyles.juzLabel, { color: textColor }]}>
-            Juz {juz.juz_number} {isTop && '🏆'}
+            {displayName} {isTop && '🏆'}
           </Text>
           <View style={[juzCardStyles.barTrack, { backgroundColor: '#55555544' }]}>
             <View style={[juzCardStyles.barFill, { width: `${Math.max(frac * 100, count > 0 ? 4 : 0)}%`, backgroundColor: accent }]} />
@@ -212,12 +250,11 @@ export default function CommunityStatsScreen() {
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error,      setError]      = useState<string | null>(null);
-  const [activeTab,  setActiveTab]  = useState<'memorized' | 'completed' | 'favourites' | 'bookmarks' | 'revised'>('memorized');
+  const [activeTab,  setActiveTab]  = useState<'memorized' | 'favourites' | 'bookmarks' | 'revised'>('memorized');
 
-  type ActiveTab = 'memorized' | 'completed' | 'favourites' | 'bookmarks' | 'revised';
-  const TAB_CONFIG: { key: ActiveTab; label: string; metric: 'memorized_count' | 'favourite_count' | 'completed_count' | 'bookmark_count' | 'revised_count'; limit: number }[] = [
+  type ActiveTab = 'memorized' | 'favourites' | 'bookmarks' | 'revised';
+  const TAB_CONFIG: { key: ActiveTab; label: string; metric: 'memorized_count' | 'favourite_count' | 'bookmark_count' | 'revised_count'; limit: number }[] = [
     { key: 'memorized',  label: 'Memorized',  metric: 'memorized_count',  limit: 10 },
-    { key: 'completed',  label: 'Completed',  metric: 'completed_count',  limit: 10 },
     { key: 'revised',    label: 'Revised',    metric: 'revised_count',    limit: 10 },
     { key: 'favourites', label: 'Favourites', metric: 'favourite_count',  limit: 5  },
     { key: 'bookmarks',  label: 'Bookmarks',  metric: 'bookmark_count',   limit: 5  },
@@ -240,6 +277,16 @@ export default function CommunityStatsScreen() {
   useEffect(() => {
     if (!flagLoading && enabled) {
       loadStats();
+      const unsubscribe = subscribeToGlobalStats((liveGlobal) => {
+        setStats(prev => prev ? { ...prev, global: liveGlobal } : {
+          global: liveGlobal,
+          surahs: new Map(),
+          juz: new Map(),
+          badges: new Map(),
+          timestamp: Date.now()
+        });
+      });
+      return () => unsubscribe();
     } else if (!flagLoading) {
       setLoading(false);
     }
@@ -259,10 +306,10 @@ export default function CommunityStatsScreen() {
   const topSurahs = useMemo(() => {
     if (!stats) return [];
     return Array.from(stats.surahs.values())
-      .filter(s => (s[currentTabCfg.metric] ?? 0) > 0 && (s[currentTabCfg.metric] ?? 0) >= minThreshold)
+      .filter(s => (s[currentTabCfg.metric] ?? 0) > 0)
       .sort((a, b) => (b[currentTabCfg.metric] ?? 0) - (a[currentTabCfg.metric] ?? 0))
       .slice(0, currentTabCfg.limit);
-  }, [stats, currentTabCfg, minThreshold]);
+  }, [stats, currentTabCfg]);
 
   const maxSurahCount = useMemo(() =>
     topSurahs.reduce((m, s) => Math.max(m, s[currentTabCfg.metric] ?? 0), 0),
@@ -282,6 +329,17 @@ export default function CommunityStatsScreen() {
     top10Juz.reduce((m, j) => Math.max(m, j.completed_count ?? 0), 0),
     [top10Juz]
   );
+
+  const completionStats: SurahCompletion[] = useMemo(() => {
+    if (!stats || !stats.surahs) return [];
+    return Array.from(stats.surahs.values())
+      .map(s => ({
+        number: s.surah_number,
+        name: s.surah_name || `Surah ${s.surah_number}`,
+        value: s.memorized_count ?? 0,
+      }))
+      .sort((a, b) => a.number - b.number);
+  }, [stats]);
 
   // ── Loading ──────────────────────────────────────────────────────────────
   if (flagLoading || loading) {
@@ -372,7 +430,7 @@ export default function CommunityStatsScreen() {
         {/* ── Global Summary: 2-column tiles ─────────────────────────────── */}
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Global Milestones</Text>
         <View style={styles.tilesRow}>
-          <StatTile icon={<BookOpen size={18} color={GOLD} />}       label="Surahs Completed"    value={formatCount(g.total_surahs_completed)}      color={GOLD}      bg={cardBg} />
+          <StatTile icon={<BookOpen size={18} color={GOLD} />}       label="Surahs Memorized"    value={formatCount(g.total_surahs_memorized ?? g.total_surahs_completed ?? 0)}      color={GOLD}      bg={cardBg} />
           <StatTile icon={<Star size={18} color="#a78bfa" />}        label="Juz Completed"        value={formatCount(g.total_juz_completed)}          color="#a78bfa"   bg={cardBg} />
         </View>
         <View style={styles.tilesRow}>
@@ -380,7 +438,7 @@ export default function CommunityStatsScreen() {
           <StatTile icon={<Bookmark size={18} color="#60a5fa" />}    label="Verses Bookmarked"    value={formatCount(g.total_bookmarks)}              color="#60a5fa"   bg={cardBg} />
         </View>
         <View style={styles.tilesRow}>
-          <StatTile icon={<Volume2 size={18} color="#fbbf24" />}     label="Audio Played"        value={formatCount((g as any).total_audio_played || 0)} color="#fbbf24"   bg={cardBg} />
+          <StatTile icon={<Volume2 size={18} color="#fbbf24" />}     label="Audio Played"        value={formatCount(g.total_audio_played || 0)} color="#fbbf24"   bg={cardBg} />
           <StatTile icon={<Brain size={18} color="#10b981" />}       label="AI Quizzes Taken"     value={formatCount(g.total_quizzes_ai || 0)}        color="#10b981"   bg={cardBg} />
         </View>
         <View style={styles.tilesRow}>
@@ -435,6 +493,9 @@ export default function CommunityStatsScreen() {
             />
           ))
         )}
+
+        {/* ── Surah Bubble Map (Visual Companion) ───────────────────────── */}
+        <SurahCompletionBubbleMap data={completionStats} />
 
         {/* ── Top 10 Juz — ranked cards ─────────────────────────────────── */}
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Top Juz (Completed)</Text>

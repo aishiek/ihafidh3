@@ -5,7 +5,7 @@ import { useSettingsStore } from '@/store/settingsStore';
 import type { QuranicDua } from '@/types/duas';
 import { logAnalyticsEvent } from '@/utils/analyticsHelper';
 import { useCommunityStatsFlag } from '@/utils/communityStatsFlag';
-import { fetchAllStats, CommunityStatsData } from '@/services/communityStatsService';
+import { fetchAllStats, subscribeToGlobalStats, CommunityStatsData } from '@/services/communityStatsService';
 import { calculateDuaStats } from '@/utils/duaHelpers';
 import { calculateJuzProgress, calculateOverallJuzStats } from '@/utils/juzCalculator';
 import { useCustomColors } from '@/utils/themeUtils';
@@ -145,7 +145,7 @@ export default function StatsScreen() {
   const { primary } = useThemeColor();
   const { userName } = useSettingsStore();
 
-  const [viewMode, setViewMode] = useState('surah');
+  const [viewMode, setViewMode] = useState<'surah' | 'juz'>('juz');
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [infoDivision, setInfoDivision] = useState<any>(null);
   const [juzProgressData, setJuzProgressData] = useState<JuzProgressData>({});
@@ -167,7 +167,24 @@ export default function StatsScreen() {
     fetchAllStats().then(data => {
       if (!cancelled) { setCommunityStats(data); setCommunityStatsLoading(false); }
     }).catch(() => { if (!cancelled) setCommunityStatsLoading(false); });
-    return () => { cancelled = true; };
+
+    const unsubscribe = subscribeToGlobalStats((liveGlobal) => {
+      if (!cancelled) {
+        setCommunityStats(prev => prev ? { ...prev, global: liveGlobal } : {
+          global: liveGlobal,
+          surahs: new Map(),
+          juz: new Map(),
+          badges: new Map(),
+          timestamp: Date.now()
+        });
+        setCommunityStatsLoading(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [communityStatsEnabled]);
 
   const [pageActivityData, setPageActivityData] = useState<{
@@ -408,32 +425,41 @@ export default function StatsScreen() {
                 {[
                   {
                     label: 'Verses\nMemorized',
+                    // FIX: read from the authoritative global counter, not a broken surah-doc sum
                     value: (() => {
-                      if (!communityStats.surahs) return '—';
-                      const t = Array.from(communityStats.surahs.values()).reduce((s, r) => s + (r.memorized_count ?? 0), 0);
-                      return t >= 1000 ? `${(t / 1000).toFixed(1)}K` : String(t);
+                      const t = Math.max(0, communityStats.global?.total_verses_memorized ?? 0);
+                      if (t >= 1_000_000) return `${(t / 1_000_000 % 1 === 0 ? t / 1_000_000 : (t / 1_000_000).toFixed(1))}M`;
+                      if (t >= 1_000) return `${(t / 1_000 % 1 === 0 ? t / 1_000 : (t / 1_000).toFixed(1))}K`;
+                      return String(t);
                     })(),
                     color: '#4CAF50',
                   },
                   {
-                    label: 'Surahs\nCompleted',
-                    value: communityStats.global?.total_surahs_completed != null
-                      ? String(communityStats.global.total_surahs_completed) : '—',
+                    label: 'Surahs\nMemorized',
+                    value: (() => {
+                      const t = Math.max(0, communityStats.global?.total_surahs_memorized ?? communityStats.global?.total_surahs_completed ?? 0);
+                      if (t >= 1_000) return `${(t / 1_000 % 1 === 0 ? t / 1_000 : (t / 1_000).toFixed(1))}K`;
+                      return String(t);
+                    })(),
                     color: '#D4AF37',
                   },
                   {
                     label: 'Juz\nCompleted',
-                    value: communityStats.global?.total_juz_completed != null
-                      ? String(communityStats.global.total_juz_completed) : '—',
+                    value: (() => {
+                      const t = Math.max(0, communityStats.global?.total_juz_completed ?? 0);
+                      if (t >= 1_000) return `${(t / 1_000 % 1 === 0 ? t / 1_000 : (t / 1_000).toFixed(1))}K`;
+                      return String(t);
+                    })(),
                     color: '#2196F3',
                   },
                   {
                     label: 'Favourites\nAdded',
-                    value: communityStats.global?.total_favourites != null
-                      ? communityStats.global.total_favourites >= 1000
-                        ? `${(communityStats.global.total_favourites / 1000).toFixed(1)}K`
-                        : String(communityStats.global.total_favourites)
-                      : '—',
+                    value: (() => {
+                      const t = Math.max(0, communityStats.global?.total_favourites ?? 0);
+                      if (t >= 1_000_000) return `${(t / 1_000_000 % 1 === 0 ? t / 1_000_000 : (t / 1_000_000).toFixed(1))}M`;
+                      if (t >= 1_000) return `${(t / 1_000 % 1 === 0 ? t / 1_000 : (t / 1_000).toFixed(1))}K`;
+                      return String(t);
+                    })(),
                     color: '#E91E63',
                   },
                 ].map(tile => (

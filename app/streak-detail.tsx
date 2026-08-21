@@ -189,13 +189,31 @@ export default function StreakDetailScreen() {
     });
   };
 
-  // Formatter helpers
+  // Formatter helpers matching Quran Time card in Usage overview
   const formatTimeSpent = (secs: number) => {
-    if (secs === 0) return '0s';
-    const m = Math.floor(secs / 60);
+    if (!secs || secs <= 0) return '0s';
+    if (secs < 60) return `${secs}s`;
+
+    const totalMinutes = Math.floor(secs / 60);
+    const hours = Math.floor(totalMinutes / 60) % 24;
+    const days = Math.floor(totalMinutes / 1440) % 30;
+    const months = Math.floor(totalMinutes / 43200) % 12;
+    const years = Math.floor(totalMinutes / 525600);
+    const min = totalMinutes % 60;
     const s = secs % 60;
-    if (m > 0) return `${m}m ${s}s`;
-    return `${s}s`;
+
+    if (totalMinutes < 60) {
+      return s > 0 ? `${min}m ${s}s` : `${min}m`;
+    }
+
+    const parts: string[] = [];
+    if (years > 0) parts.push(`${years}Y`);
+    if (months > 0) parts.push(`${months}M`);
+    if (days > 0) parts.push(`${days}D`);
+    if (hours > 0) parts.push(`${hours} H`);
+    if (min > 0) parts.push(`${min}m`);
+
+    return parts.slice(0, 3).join(' ');
   };
 
   const formatHeaderDate = (date: Date) => {

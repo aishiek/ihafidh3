@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import LayoutService from '../mushaf/services/layoutService';
 import { logAnalyticsEvent, buildMemorizationAnalyticsPayload } from '@/utils/analyticsHelper';
+import { incrementBulkVersesMemorized } from '@/services/communityStatsService';
 
 export default function SurahScreen() {
   const { id: surahId } = useLocalSearchParams<{ id: string }>();
@@ -318,6 +319,9 @@ export default function SurahScreen() {
       } else {
         await bulkMarkVersesMemorized(surahVerseIds, true);
       }
+
+      // Track bulk verse count in community stats (isBulkOperation suppresses per-verse calls)
+      incrementBulkVersesMemorized(surahVerseIds.length, !isCurrentlyMemorized);
 
       // ANALYTICS: Surah-level memorization toggle
       const pagesCount = Math.ceil(surah.versesCount / 15); // standard estimate

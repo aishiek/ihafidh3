@@ -196,13 +196,6 @@ function RootLayoutContent() {
   const queueSadaqahPrompt = useSettingsStore(s => s.queueSadaqahPrompt);
   const closeSadaqahPrompt = useSettingsStore(s => s.closeSadaqahPrompt);
 
-  // Show pending review prompt on app open
-  React.useEffect(() => {
-    if (pendingSadaqahPromptTrigger) {
-      triggerSadaqahPrompt(pendingSadaqahPromptTrigger);
-    }
-  }, [pendingSadaqahPromptTrigger, triggerSadaqahPrompt]);
-
   // "What's New" button in Settings sets forceShowUpdateModal → show modal immediately
   React.useEffect(() => {
     if (forceShowUpdateModal) {
@@ -221,6 +214,29 @@ function RootLayoutContent() {
     showCelebration,
     hideCelebration
   } = useCelebration();
+
+  const pathname = usePathname();
+
+  // Smart, deadlock-proof Sadaqah / Review prompt trigger queue processor
+  // Avoids iOS native UIViewController modal collision freeze right after celebrations or quizzes
+  React.useEffect(() => {
+    if (!pendingSadaqahPromptTrigger || sadaqahPromptVisible) return;
+
+    const isHomeScreen = pathname === '/' || pathname === '/(tabs)' || pathname === '/(tabs)/index';
+    const anyModalOpen = celebrationVisible || showAnnouncement || showUpdatePrompt || showReviewSoftPrompt || forcedUpdate;
+
+    // Only present when user is safely on the Home screen and NO other modal/celebration is open
+    if (isHomeScreen && !anyModalOpen) {
+      const timer = setTimeout(() => {
+        // Double check state before triggering to avoid race conditions
+        const latestPending = useSettingsStore.getState().pendingSadaqahPromptTrigger;
+        if (latestPending && !useSettingsStore.getState().sadaqahPromptVisible) {
+          triggerSadaqahPrompt(latestPending);
+        }
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [pendingSadaqahPromptTrigger, sadaqahPromptVisible, pathname, celebrationVisible, showAnnouncement, showUpdatePrompt, showReviewSoftPrompt, forcedUpdate, triggerSadaqahPrompt]);
 
   const setBadgeCelebrationCallback = useProgressStore((s) => s.setBadgeCelebrationCallback);
 
@@ -747,8 +763,6 @@ function RootLayoutContent() {
   // ==========================================
   // Analytics: Automatic Screen Tracking
   // ==========================================
-  const pathname = usePathname();
-
   React.useEffect(() => {
     if (pathname) {
       const screenName = getScreenNameFromPath(pathname);

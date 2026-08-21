@@ -1,0 +1,9 @@
+{
+  "name": "firebase-seed",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone seed script for community stats",
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}

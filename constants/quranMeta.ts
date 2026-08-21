@@ -109,3 +109,7 @@ export function getJuzVerseCount(juzId: number): number {
 export function getJuzSurahCount(juzId: number): number {
   return JUZ_META[juzId]?.surahCount || 0;
 }
+
+export function getJuzSurahsList(juzId: number): number[] {
+  return Array.from(JUZ_META[juzId]?.surahs || []);
+}
