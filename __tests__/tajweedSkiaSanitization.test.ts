@@ -21,7 +21,11 @@ describe('Tajweed Skia Sanitization - ZWJ injection and color preservation', () 
     // Find the segment for "ءَنَ" (Noon with fatha) and "آ‌ۚ" (Alif + Maddah above + pause mark)
     const noonSeg = sanitized.find(s => s.text.includes('ءَن'));
     const alifMaddahSeg = sanitized.find(s => s.text.includes('آ'));
-    const nextWordSeg = sanitized.find(s => s.text.includes('أَوَلَوْ'));
+    // Step 3.5 (a separate intra-run ZWJ insurance pass) may insert an invisible ZWJ
+    // between joining letter pairs within this run's own text (e.g. between waw and
+    // lam); strip it before matching so this test keeps checking what it actually
+    // cares about here (run boundaries / colors), not Step 3.5's ZWJ placement.
+    const nextWordSeg = sanitized.find(s => s.text.replace(/\u200D/g, '').includes('أَوَلَوْ'));
 
     expect(noonSeg).toBeDefined();
     expect(alifMaddahSeg).toBeDefined();
@@ -55,6 +59,8 @@ describe('Tajweed Skia Sanitization - ZWJ injection and color preservation', () 
     // The first segment should retain its trailing space (and nothing else after the base is moved)
     expect(sanitized[0].text).toBe(' ');
     // The second segment should start with the base letter 'نَ' directly before '\u0651بَ', without any space inside
-    expect(sanitized[1].text).toBe('نَ\u0651بَ');
+    // Includes a ZWJ (U+200D) between the Noon+Shaddah cluster and Ba, inserted by the
+    // separate Step 3.5 intra-run join insurance pass (Noon is left-joining, Ba is next).
+    expect(sanitized[1].text).toBe('نَ\u0651\u200Dبَ');
   });
 });

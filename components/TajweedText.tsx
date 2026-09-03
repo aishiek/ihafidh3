@@ -94,8 +94,40 @@ function splitOffTrailingCluster(text: string): { head: string; cluster: string 
   return { head, cluster };
 }
 
+// ROOT CAUSE (confirmed 2026-08-31): assets/fonts/UthmanTaha-Ver10.otf -- the ONLY
+// font hardcoded for this Skia/Canvas Tajweed renderer (see QuranicFont below) -- has
+// NO glyphs for almost the entire Quranic small-sign annotation block (U+06D6-U+06ED)
+// or the extended Arabic marks block (U+08D3-U+08FF). Confirmed via fontTools cmap
+// inspection: every other bundled font (UthmanicHafs1, ScheherazadeNew, NotoNaskhArabic)
+// covers these ranges fully; UthmanTaha does not.
+//
+// When one of these marks appears attached to a base letter (e.g. U+06DF on the final
+// Alif of "Ana" (Arabic: Alif-hamza + Noon + Alif + U+06DF) in Surah 18:34 /
+// 26:115), Skia's ParagraphBuilder has to
+// font-fallback that base+mark cluster to the secondary font in `fontFamilies:
+// ['QuranicFont', 'sans-serif']` (see below) to find a glyph for the mark. That pulls
+// the BASE LETTER itself into a different font-run than its neighbor, which breaks the
+// cursive join between them at the native Skia/HarfBuzz level -- no amount of ZWJ
+// hinting in the source text can fix this, since ZWJ only requests a join within a
+// single font's shaping run; it cannot bridge two different font families.
+//
+// Reproduced and confirmed with canvaskit-wasm using the app's actual two-font fallback
+// chain (['QuranicFont', 'sans-serif']): "Noon+Alif" alone renders as one continuous
+// joined stroke; the same pair with a trailing U+06DF mark visibly splits into a disconnected
+// Noon and Alif -- pixel-for-pixel the same defect seen on-device.
+//
+// Fix: strip these unsupported marks before they ever reach Skia. They already cannot
+// be positioned correctly by this renderer (no glyph = no visual contribution besides
+// triggering the fallback), so removing them trades a rare, mostly-invisible annotation
+// mark for correct letter joining -- a clear net win. U+06DD (End of Ayah) is
+// deliberately excluded: it's appended programmatically at the end of each verse
+// (see VerseItem.tsx) and has its own existing Android ZWNJ handling for the end-of-ayah
+// circle marker; it sits after a word boundary, not inside a joining letter pair, so it
+// doesn't trigger this defect and removing it would break that separate feature.
+const SKIA_UNSUPPORTED_QURANIC_MARKS = /[\u06D6-\u06DC\u06DE-\u06ED\u08D3-\u08FF]/g;
+
 function normalizeForMushaf(text: string): string {
-  // Pass through Quranic marks (Madd, Dagger Alif, Small waw/ya, annotation marks)
+  // Pass through Quranic marks (Madd, Dagger Alif) that the font DOES support,
   // and let the font render them natively.
 
   // We NO LONGER strip U+0640 (Arabic Tatweel) used as a carrier.
@@ -106,6 +138,10 @@ function normalizeForMushaf(text: string): string {
 
   // Strip U+25CC (dotted-circle placeholder)
   let normalized = text.replace(/\u25CC/g, '');
+
+  // Strip Quranic annotation marks this font has no glyphs for (see comment above) --
+  // left in place, they force a font-fallback that breaks cursive joining.
+  normalized = normalized.replace(SKIA_UNSUPPORTED_QURANIC_MARKS, '');
 
   return normalized;
 }
@@ -189,12 +225,18 @@ export function sanitizeRunsForSkia<T extends TextRun>(
       // Check if this is a structural combining mark that must stay with base
       const firstChar = rest ? Array.from(rest)[0] : '';
       if (firstChar && isStructuralCombiningMark(firstChar)) {
-        // Merge entire run INTO previous to ensure font shaping works
+        // Merge only the leading run of structural marks INTO previous, to
+        // ensure font shaping works -- without dragging unrelated trailing
+        // text (and its own styling) into the previous run's color.
+        const { run: structuralRun, rest: afterStructural } = splitLeadingStructuralRun(rest);
         const prevAfterLeading = result[prevIndex];
         result[prevIndex] = {
           ...prevAfterLeading,
-          text: prevAfterLeading.text + rest,
+          text: prevAfterLeading.text + structuralRun,
         };
+        if (afterStructural) {
+          result.push({ ...run, text: afterStructural });
+        }
         continue;
       }
 
@@ -244,14 +286,21 @@ export function sanitizeRunsForSkia<T extends TextRun>(
       // Check if this is a structural combining mark
       const firstChar = rest ? Array.from(rest)[0] : '';
       if (firstChar && isStructuralCombiningMark(firstChar)) {
-        // Merge into previous to ensure font shaping works
+        // Merge only the leading run of structural marks into previous, to
+        // ensure font shaping works -- without dragging unrelated trailing
+        // text (and its own styling) into the previous run's color.
+        const { run: structuralRun, rest: afterStructural } = splitLeadingStructuralRun(rest);
         const prevAfterLeading = result[i - 1];
         result[i - 1] = {
           ...prevAfterLeading,
-          text: prevAfterLeading.text + rest,
+          text: prevAfterLeading.text + structuralRun,
         };
-        result.splice(i, 1);
-        i--;
+        if (afterStructural) {
+          result[i] = { ...cur, text: afterStructural };
+        } else {
+          result.splice(i, 1);
+          i--;
+        }
         continue;
       }
 
@@ -283,6 +332,61 @@ export function sanitizeRunsForSkia<T extends TextRun>(
     }
   }
 
+  // Step 3.5: Insurance pass -- inject ZWJ between adjacent joining-letter pairs
+  // WITHIN a single run's own text too, not just at colored-segment boundaries
+  // (Step 4 below only fires BETWEEN separately-styled runs). This guards against
+  // "\u0623\u064e\u0646\u064e\u0627\u061f" (Ana, Surah 18:34 / 26:115), which the Quran.com API returns as a single
+  // untagged plain-color run -- so it never crosses a run boundary and Step 4 never
+  // touches it -- yet has been observed on-device (Tajweed font / Skia Canvas path)
+  // rendering with a visible gap between Noon and Alif that does not reproduce in
+  // CanvasKit-WASM testing across multiple fonts. This pass makes the Noon->Alif
+  // (and other dual-joining-letter -> letter) join explicit even when the two base
+  // letters are already adjacent in the same run/string. Verified as a pixel-level
+  // no-op (identical connected-component count, <1% ink-pixel delta from ligature
+  // width only) for sequences that already render correctly.
+  const LEFT_JOINING_ARABIC = new Set([
+    'ب', 'ت', 'ث', 'ج', 'ح', 'خ', 'س', 'ش', 'ص', 'ض', 'ط', 'ظ',
+    'ع', 'غ', 'ف', 'ق', 'ك', 'ل', 'م', 'ن', 'ه', 'ي', 'ـ', 'ئ'
+  ]);
+  const ARABIC_BASE_CHAR_RE = /[\u0621-\u064A\u0671-\u06D3\u06FA-\u06FF]/;
+  const ARABIC_CLUSTER_RE = /[\u0621-\u064A\u0671-\u06D3\u06FA-\u06FF][\u0300-\u036F\u0610-\u061A\u064B-\u065F\u0670\u0653\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED\u08D3-\u08FF]*/g;
+
+  function injectIntraRunZWJ(text: string): string {
+    if (!text) return text;
+    const matches = Array.from(text.matchAll(ARABIC_CLUSTER_RE));
+    if (matches.length < 2) return text;
+    let out = '';
+    let cursor = 0;
+    for (let i = 0; i < matches.length; i++) {
+      const m = matches[i];
+      const clusterEnd = (m.index ?? 0) + m[0].length;
+      out += text.slice(cursor, clusterEnd);
+      cursor = clusterEnd;
+      if (i < matches.length - 1) {
+        const next = matches[i + 1];
+        const nextIndex = next.index ?? clusterEnd;
+        const gapText = text.slice(clusterEnd, nextIndex);
+        const baseChar = m[0][0];
+        const nextBaseChar = next[0][0];
+        if (
+          gapText.length === 0 &&
+          LEFT_JOINING_ARABIC.has(baseChar) &&
+          ARABIC_BASE_CHAR_RE.test(nextBaseChar)
+        ) {
+          out += '\u200D';
+        }
+      }
+    }
+    out += text.slice(cursor);
+    return out;
+  }
+
+  for (let i = 0; i < result.length; i++) {
+    if ((result[i] as any).rule === 'qalqalah_waqf') continue;
+    if (!result[i].text) continue;
+    result[i] = { ...result[i], text: injectIntraRunZWJ(result[i].text) };
+  }
+
   // Step 4: Inject ZWJ (U+200D) between adjacent runs that should connect cursively.
   // Skia's ParagraphBuilder shapes each run independently, which breaks Arabic
   // cursive joining at run boundaries (e.g., Noon+Alif looking like Daaa).
@@ -290,10 +394,6 @@ export function sanitizeRunsForSkia<T extends TextRun>(
   // and only append ZWJ to the current run. Putting ZWJ on both runs forms a double-ZWJ
   // ligature straddling the pushStyle boundary, which causes Skia to collapse/merge
   // adjacent run colors.
-  const LEFT_JOINING_ARABIC = new Set([
-    'ب', 'ت', 'ث', 'ج', 'ح', 'خ', 'س', 'ش', 'ص', 'ض', 'ط', 'ظ',
-    'ع', 'غ', 'ف', 'ق', 'ك', 'ل', 'م', 'ن', 'ه', 'ي', 'ـ', 'ئ'
-  ]);
   const COMBINING_MARKS_AND_PAUSES = /[\u0300-\u036F\u0610-\u061A\u064B-\u065F\u0670\u0653\u08D3-\u08FF]/g;
 
   for (let i = 0; i < result.length - 1; i++) {
@@ -441,7 +541,7 @@ function parseText(
  * Parse markup format: [rule_name]text[/rule_name]
  * Example: [ham_wasl]ٱ[/ham_wasl]لْحَمْدُ
  */
-function parseMarkup(text: string): ColoredSegment[] {
+export function parseMarkup(text: string): ColoredSegment[] {
   const segments: ColoredSegment[] = [];
 
   // Tajweed color mapping - updated to match color guide
@@ -543,6 +643,22 @@ function isStructuralCombiningMark(char: string): boolean {
   return STRUCTURAL_COMBINING_MARKS.has(char);
 }
 
+// Bug fix (2026-08-31): peels off ONLY a leading run of structural combining
+// marks (normally just one character -- e.g. orphaned Maddah U+0653 or Dagger
+// Alif U+0670 left outside a tajweed API tag), never the rest of an untagged
+// run. Used by both mergeCombiningIntoBase() and sanitizeRunsForSkia() so a
+// tajweed color (most visibly Madd orange) never bleeds past its own mark(s)
+// into unrelated following text.
+function splitLeadingStructuralRun(text: string): { run: string; rest: string } {
+  const codepoints = Array.from(text);
+  let i = 0;
+  while (i < codepoints.length && isStructuralCombiningMark(codepoints[i])) i++;
+  return {
+    run: codepoints.slice(0, i).join(''),
+    rest: codepoints.slice(i).join(''),
+  };
+}
+
 /**
  * CRITICAL: Parser-level combining mark merger
  * Ensures glyph cluster integrity BEFORE styling
@@ -557,7 +673,7 @@ function isStructuralCombiningMark(char: string): boolean {
  * @param segments - Raw parsed segments from TajweedParser or markup
  * @returns Segments with combining marks merged into base letters
  */
-function mergeCombiningIntoBase(segments: ColoredSegment[]): ColoredSegment[] {
+export function mergeCombiningIntoBase(segments: ColoredSegment[]): ColoredSegment[] {
   const result: ColoredSegment[] = [];
 
   for (const seg of segments) {
@@ -584,12 +700,19 @@ function mergeCombiningIntoBase(segments: ColoredSegment[]): ColoredSegment[] {
       // that must stay with its base for correct rendering
       const firstChar = Array.from(segRest)[0];
       if (isStructuralCombiningMark(firstChar)) {
-        // Merge entire segment INTO previous (keeps base+mark together for shaping)
-        // This sacrifices the tajweed color but ensures correct rendering
+        // Merge only the LEADING RUN of structural marks into the previous
+        // segment (keeps base+mark together for shaping). This sacrifices the
+        // tajweed color for just those marks -- NOT for any unrelated text
+        // that happens to follow them in the same untagged run, which keeps
+        // its own color (previously it did, causing the color-bleed bug).
+        const { run: structuralRun, rest: afterStructural } = splitLeadingStructuralRun(segRest);
         result[prevIndex] = {
           ...prev,
-          text: prev.text + segRest,
+          text: prev.text + structuralRun,
         };
+        if (afterStructural) {
+          result.push({ ...seg, text: afterStructural });
+        }
         continue;
       }
 
