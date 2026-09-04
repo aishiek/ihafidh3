@@ -126,6 +126,33 @@ function splitOffTrailingCluster(text: string): { head: string; cluster: string 
 // doesn't trigger this defect and removing it would break that separate feature.
 const SKIA_UNSUPPORTED_QURANIC_MARKS = /[\u06D6-\u06DC\u06DE-\u06ED\u08D3-\u08FF]/g;
 
+// Uthmani LETTERS this font has no glyph for. Unlike the annotation marks above, these
+// cannot be stripped -- they carry the word itself. They must be mapped onto the nearest
+// form the font CAN draw, or Skia falls back to 'sans-serif' mid-word and that font-run
+// boundary breaks cursive joining (a ZWJ cannot bridge a font boundary).
+//   U+0671 ALEF WASLA            x13,483 -> U+0627 ALEF         (بِٱلْغَيْبِ -> بِالْغَيْبِ)
+//   U+0672 ALEF WAVY HAMZA ABOVE  x1,561 -> U+0627 ALEF         (صِرَٲطَ -> صِرَاطَ)
+// These are the ONLY two codepoints in the whole Quran that survive the mark-strip above
+// without a glyph in UthmanTaha-Ver10.otf -- verified across all 6,236 verses.
+//
+// Both substitutions are 1:1 in length, so the API's <tajweed> span offsets are preserved
+// and the grey ham_wasl colouring stays on the alef. Known trade-off: the wasl head is not
+// drawn -- this font contains no wasl glyph under any name.
+//
+// U+0672 maps to a PLAIN ALEF, not to U+0670 dagger alef, even though the dagger alef is
+// the more faithful mushaf form. Measured reason: U+0672 is a base LETTER and the API
+// often wraps it in its own <tajweed class="madda_*"> span. Mapping a base letter to a
+// combining mark leaves 1,558 spans holding marks with no base; reattachOrphanCombiningMarks()
+// then absorbs them into the PREVIOUS segment and drops the madd segment entirely, silently
+// losing 1,558 madd colourings. Base-to-base keeps every span anchored and every tajweed
+// colour intact -- scratch/v3_baseline_v2.js reports a delta of 0 new orphan spans.
+//
+// See docs/Tajweed_Alef_Wasla_Investigation_2026-09-03.md
+const SKIA_UNSUPPORTED_UTHMANI_LETTERS: readonly (readonly [RegExp, string])[] = [
+  [/\u0671/g, '\u0627'],
+  [/\u0672/g, '\u0627'],
+] as const;
+
 function normalizeForMushaf(text: string): string {
   // Pass through Quranic marks (Madd, Dagger Alif) that the font DOES support,
   // and let the font render them natively.
@@ -142,6 +169,13 @@ function normalizeForMushaf(text: string): string {
   // Strip Quranic annotation marks this font has no glyphs for (see comment above) --
   // left in place, they force a font-fallback that breaks cursive joining.
   normalized = normalized.replace(SKIA_UNSUPPORTED_QURANIC_MARKS, '');
+
+  // Map Uthmani letters with no glyph in this font onto their nearest drawable form.
+  // Runs AFTER the mark strip and BEFORE parseText(), so the substitution reaches the
+  // tajweed-coloured segments -- which is where the joining gap is actually visible.
+  for (const [pattern, replacement] of SKIA_UNSUPPORTED_UTHMANI_LETTERS) {
+    normalized = normalized.replace(pattern, replacement);
+  }
 
   return normalized;
 }
