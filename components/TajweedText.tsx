@@ -153,7 +153,7 @@ const SKIA_UNSUPPORTED_UTHMANI_LETTERS: readonly (readonly [RegExp, string])[] =
   [/\u0672/g, '\u0627'],
 ] as const;
 
-function normalizeForMushaf(text: string): string {
+function normalizeForTajweedFont(text: string): string {
   // Pass through Quranic marks (Madd, Dagger Alif) that the font DOES support,
   // and let the font render them natively.
 
@@ -818,20 +818,20 @@ const TajweedText: React.FC<TajweedTextProps> = ({
   const fontFamily = useMemo(() => extractFontFamily(style), [style]);
 
   // Best-practice: preserve raw source text upstream, normalize only for rendering.
-  const mushafText = useMemo(() => {
+  const tajweedFontText = useMemo(() => {
     const key = `${surahNumber ?? 'unknown'}:${verseNumber ?? 'unknown'}`;
     __devLogCarrierPresenceOnce(key, text);
     __devLogInterestingMarksOnce(key, text);
-    return normalizeForMushaf(text);
+    return normalizeForTajweedFont(text);
   }, [text, surahNumber, verseNumber]);
 
   // LAYER 1: Parser-level merge (glyph cluster integrity)
   // Ensures combining marks are never standalone segments
   // NOTE: enableStopRules NOT used here - qalqalah applied after sanitization
   const segments = useMemo(() => {
-    const parsed = parseText(mushafText, surahNumber, verseNumber, false); // Always false
+    const parsed = parseText(tajweedFontText, surahNumber, verseNumber, false); // Always false
     return mergeCombiningIntoBase(parsed);
-  }, [mushafText, surahNumber, verseNumber]); // Removed enableStopRules
+  }, [tajweedFontText, surahNumber, verseNumber]); // Removed enableStopRules
 
   // LAYER 2: Skia-level sanitizer (paragraph run safety)
   // Multi-pass backward merge ensures no Skia style run starts with combining mark
@@ -895,7 +895,7 @@ const TajweedText: React.FC<TajweedTextProps> = ({
 
     // Calculate overlay position for decorative verse numbers (Tajweed mode)
     let overlay = null;
-    if (Platform.OS === 'ios' && verseNumber && mushafText.endsWith('\u06DD')) {
+    if (Platform.OS === 'ios' && verseNumber && tajweedFontText.endsWith('\u06DD')) {
       try {
         // Find position of the last character (the glyph ۝)
         const rects = p.getRectsForRange(totalTextLength - 1, totalTextLength);
@@ -938,7 +938,7 @@ const TajweedText: React.FC<TajweedTextProps> = ({
     }
 
     return { paragraph: p, overlay };
-  }, [fontMgr, safeSegments, fontSize, containerWidth, verseNumber, mushafText, heightMultiplier]);
+  }, [fontMgr, safeSegments, fontSize, containerWidth, verseNumber, tajweedFontText, heightMultiplier]);
 
   const paragraph = paragraphData?.paragraph;
   const overlay = paragraphData?.overlay;
