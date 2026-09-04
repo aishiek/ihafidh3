@@ -3,6 +3,7 @@ import { getJuzProgress } from '@/assets/database/QuranDatabase';
 import AyahOfTheDayCard, { BrandedFooter } from '@/components/AyahOfTheDayCard';
 import MinimalTopStrip from '@/components/MinimalTopStrip';
 import { StreakShareCard } from '@/components/StreakShareCard';
+import { getStreakColor } from '@/constants/streakThemes';
 import { QuranProgressTracker } from '@/data/quranProgress';
 import { surahsData } from '@/data/surahs';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -79,25 +80,25 @@ const surahVerseCounts = [
   5, 4, 5, 6
 ];
 
-const FireStreakIcon = ({ size = 32 }) => (
+const FireStreakIcon = ({ size = 32, color }: { size?: number; color?: string }) => (
   <Svg width={size} height={size} viewBox="0 0 100 100" fill="none">
     <Defs>
       <SvgLinearGradient id="fireGradient" x1="0" y1="100" x2="0" y2="0" gradientUnits="userSpaceOnUse">
         <Stop offset="0%" stopColor="#FF4500" />
         <Stop offset="30%" stopColor="#FF6B00" />
-        <Stop offset="60%" stopColor="#FF8C00" />
-        <Stop offset="80%" stopColor="#FFD700" />
+        <Stop offset="60%" stopColor={color || "#FF8C00"} />
+        <Stop offset="80%" stopColor={color || "#FFD700"} />
         <Stop offset="100%" stopColor="#FFF700" />
       </SvgLinearGradient>
       <SvgLinearGradient id="innerFire" x1="0" y1="100" x2="0" y2="0" gradientUnits="userSpaceOnUse">
         <Stop offset="0%" stopColor="#DC143C" />
-        <Stop offset="40%" stopColor="#FF4500" />
-        <Stop offset="70%" stopColor="#FF8C00" />
+        <Stop offset="40%" stopColor={color || "#FF4500"} />
+        <Stop offset="70%" stopColor={color || "#FF8C00"} />
         <Stop offset="100%" stopColor="#FFD700" />
       </SvgLinearGradient>
       <RadialGradient id="hotCore" cx="50%" cy="80%" r="30%">
         <Stop offset="0%" stopColor="#FFFFFF" stopOpacity={0.8} />
-        <Stop offset="50%" stopColor="#FFD700" stopOpacity={0.6} />
+        <Stop offset="50%" stopColor={color || "#FFD700"} stopOpacity={0.6} />
         <Stop offset="100%" stopColor="#FF8C00" stopOpacity={0.2} />
       </RadialGradient>
     </Defs>
@@ -215,11 +216,13 @@ export default function HomeScreen() {
   const [communityStats, setCommunityStats] = useState<CommunityStatsData | null>(null);
 
   useEffect(() => {
-    if (true || !communityStatsEnabled) return; // Hidden on home screen per user request
+    if (!communityStatsEnabled) return;
     let cancelled = false;
     fetchAllStats().then(data => {
-      if (!cancelled) setCommunityStats(data);
-    }).catch(() => { /* silent — card just stays hidden */ });
+      if (!cancelled && data) setCommunityStats(data);
+    }).catch((err) => {
+      if (__DEV__) console.warn('[Home] Failed to load community stats:', err);
+    });
     return () => { cancelled = true; };
   }, [communityStatsEnabled]);
 
@@ -959,24 +962,8 @@ export default function HomeScreen() {
     </View>
   );
 
-  // Dynamic color function for streak milestones
-  const getStreakColor = (streak: number): string => {
-    if (streak >= 500) {
-      return '#FFD700'; // Golden color for 500+
-    }
-
-    // Fluorescent colors for every 100 up to 500
-    const milestone = Math.floor(streak / 100);
-    const fluorescents = [
-      '#FF6B35', // Orange-Red (0-99)
-      '#FF1493', // Deep Pink (100-199) 
-      '#00FFFF', // Cyan (200-299)
-      '#ADFF2F', // Green Yellow (300-399)
-      '#FF4500', // Orange Red (400-499)
-    ];
-
-    return fluorescents[milestone] || '#FF6B35'; // Default to first color
-  };
+  // Dynamic color function for streak milestones in steps of 50 (imported from streakThemes)
+  // getStreakColor(streak) evaluates Math.floor(streak / 50) and returns the corresponding tier color
 
   const StreakCard = ({ title, value, subtitle, icon: Icon, color = '#2196F3' }: { title: string; value: string | number; subtitle?: string; icon: any; color?: string; }) => (
     <Pressable 
@@ -1417,8 +1404,14 @@ export default function HomeScreen() {
           <AyahOfTheDayCard highlight={ayahHighlight} />
         </View>
 
-        {/* ── Community Stats Preview Card ── (hidden per user request) */}
-        {false && communityStatsEnabled && (
+        {/* ── Community Stats Preview Card ── */}
+        {/* Item 9 (Sept release): this card was fully built and working (2.4%
+            bounce rate — far below app average) but was force-hidden with
+            `{false && ...}`. Only 45/1060 users ever discovered Community Stats
+            because it required navigating to a separate tab. Re-enabling it here
+            is the fix — this is a visibility problem, not a feature problem, so
+            the card itself is untouched. */}
+        {communityStatsEnabled && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Community Progress</Text>
@@ -1426,6 +1419,7 @@ export default function HomeScreen() {
                 <Text style={{ color: '#D4AF37', fontSize: 13, fontWeight: '600' }}>See All →</Text>
               </TouchableOpacity>
             </View>
+
             <Pressable
               onPress={() => router.push('/community-stats' as any)}
               style={({ pressed }) => [

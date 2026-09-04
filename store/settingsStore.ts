@@ -32,6 +32,11 @@ export interface PageReminderSettings {
   enabled: boolean;
 }
 
+export type SadaqahTrigger =
+  | 'first_quiz' | 'fifth_quiz' | 'tenth_quiz' | 'twentieth_quiz'
+  | 'juz_completed' | 'badge_unlocked'
+  | 'surah_completed' | 'streak_milestone';
+
 export interface ReviewPromptState {
   hasRated: boolean;             // true = never show again
   lastShownAt: number | null;    // timestamp ms
@@ -115,11 +120,40 @@ export interface SettingsState extends AppSettings {
   setReviewPromptSessionShown: (shown: boolean) => void;
   // Global SadaqahPrompt trigger
   sadaqahPromptVisible: boolean;
-  sadaqahPromptTrigger: 'first_quiz' | 'fifth_quiz' | 'tenth_quiz' | 'twentieth_quiz' | 'juz_completed' | 'badge_unlocked' | null;
-  pendingSadaqahPromptTrigger: 'first_quiz' | 'fifth_quiz' | 'tenth_quiz' | 'twentieth_quiz' | 'juz_completed' | 'badge_unlocked' | null;
-  queueSadaqahPrompt: (trigger: 'first_quiz' | 'fifth_quiz' | 'tenth_quiz' | 'twentieth_quiz' | 'juz_completed' | 'badge_unlocked') => void;
-  triggerSadaqahPrompt: (trigger: 'first_quiz' | 'fifth_quiz' | 'tenth_quiz' | 'twentieth_quiz' | 'juz_completed' | 'badge_unlocked') => void;
+  sadaqahPromptTrigger: SadaqahTrigger | null;
+  pendingSadaqahPromptTrigger: SadaqahTrigger | null;
+  queueSadaqahPrompt: (trigger: SadaqahTrigger) => void;
+  triggerSadaqahPrompt: (trigger: SadaqahTrigger) => void;
   closeSadaqahPrompt: () => void;
+
+  // ── First-session goal/streak hook (Sept release, item 3) ──────────────────
+  // Whether the user's very first recite session has ended. Used to trigger the
+  // goal/streak prompt immediately, and (item 1) to know when it's safe to ask
+  // for notification permission on iOS instead of on cold open.
+  hasCompletedFirstReciteSession: boolean;
+  setHasCompletedFirstReciteSession: (v: boolean) => void;
+  firstSessionGoalPromptShown: boolean;
+  setFirstSessionGoalPromptShown: (v: boolean) => void;
+  pendingFirstSessionGoalPrompt: boolean;
+  queueFirstSessionGoalPrompt: () => void;
+  clearFirstSessionGoalPrompt: () => void;
+  dailyGoalVerses: number | null;
+  setDailyGoalVerses: (v: number) => void;
+  // Which reminder type (if any) the user explicitly opted into from the
+  // first-session prompt — the sole exception to the item-4 7-day suppression.
+  firstSessionOptedInReminderType: 'daily_verse_reminder' | 'weekly_surah_reminder' | null;
+  setFirstSessionOptedInReminderType: (v: 'daily_verse_reminder' | 'weekly_surah_reminder' | null) => void;
+
+  // ── Delayed notification permission request (Sept release, item 1) ─────────
+  // Guards notification permission from ever being requested more than once,
+  // and from being requested on cold open (a one-shot prompt on iOS).
+  notificationPermissionRequested: boolean;
+  setNotificationPermissionRequested: (v: boolean) => void;
+
+  // ── Install-time tracking (Sept release, item 4) ────────────────────────────
+  // Used to suppress non-essential notifications for the first 7 days post-install.
+  installedAt: number | null;
+  ensureInstalledAt: () => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -179,6 +213,16 @@ export const useSettingsStore = create<SettingsState>()(
         sadaqahPromptVisible: false,
         sadaqahPromptTrigger: null,
         pendingSadaqahPromptTrigger: null,
+
+        hasCompletedFirstReciteSession: false,
+        firstSessionGoalPromptShown: false,
+        pendingFirstSessionGoalPrompt: false,
+        dailyGoalVerses: null,
+        firstSessionOptedInReminderType: null,
+
+        notificationPermissionRequested: false,
+
+        installedAt: null,
 
         setTheme: (theme) => {
           const previous = get().theme;
@@ -457,6 +501,25 @@ export const useSettingsStore = create<SettingsState>()(
         },
         triggerSadaqahPrompt: (trigger) => set({ sadaqahPromptVisible: true, sadaqahPromptTrigger: trigger, pendingSadaqahPromptTrigger: null }),
         closeSadaqahPrompt: () => set({ sadaqahPromptVisible: false, pendingSadaqahPromptTrigger: null }),
+
+        setHasCompletedFirstReciteSession: (v) => set({ hasCompletedFirstReciteSession: v }),
+        setFirstSessionGoalPromptShown: (v) => set({ firstSessionGoalPromptShown: v }),
+        queueFirstSessionGoalPrompt: () => {
+          if (!get().firstSessionGoalPromptShown) {
+            set({ pendingFirstSessionGoalPrompt: true });
+          }
+        },
+        clearFirstSessionGoalPrompt: () => set({ pendingFirstSessionGoalPrompt: false, firstSessionGoalPromptShown: true }),
+        setDailyGoalVerses: (v) => set({ dailyGoalVerses: v }),
+        setFirstSessionOptedInReminderType: (v) => set({ firstSessionOptedInReminderType: v }),
+
+        setNotificationPermissionRequested: (v) => set({ notificationPermissionRequested: v }),
+
+        ensureInstalledAt: () => {
+          if (!get().installedAt) {
+            set({ installedAt: Date.now() });
+          }
+        },
       };
     },
     {
@@ -552,6 +615,30 @@ export const useSettingsStore = create<SettingsState>()(
               lastDismissedAt: null,
             };
           }
+
+          // ── Sept release migrations (items 1, 3, 4) ──────────────────────────
+          // installedAt: back-fill for stores that predate this field.
+          // lastSeenVersion is only ever non-null after a *previous* app session
+          // has already run (it's set once per boot, after rehydration completes) —
+          // so at rehydrate time it reliably tells us "this store already existed
+          // before today" without needing a separate marker. Existing users get an
+          // installedAt far enough in the past that the 7-day suppression window
+          // (item 4) has already elapsed, instead of it restarting for them. A
+          // genuinely fresh install has lastSeenVersion === null here, so it gets
+          // a real "now" install marker.
+          if (!(state as any).installedAt) {
+            const EIGHT_DAYS_MS = 8 * 24 * 60 * 60 * 1000;
+            const isExistingUser = !!(state as any).lastSeenVersion;
+            (state as any).installedAt = isExistingUser ? Date.now() - EIGHT_DAYS_MS : Date.now();
+          }
+          // Existing users already have (or have already declined) iOS notification
+          // permission from a prior version — never re-trigger the delayed-prompt
+          // flow for them. Only genuinely fresh installs (no persisted state at all,
+          // handled by the store's own initial value) should see the delayed prompt.
+          (state as any).notificationPermissionRequested = (state as any).notificationPermissionRequested ?? true;
+          (state as any).hasCompletedFirstReciteSession = (state as any).hasCompletedFirstReciteSession ?? true;
+          (state as any).firstSessionGoalPromptShown = (state as any).firstSessionGoalPromptShown ?? true;
+          (state as any).pendingFirstSessionGoalPrompt = (state as any).pendingFirstSessionGoalPrompt ?? false;
         }
       },
     }

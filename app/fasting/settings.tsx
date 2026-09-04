@@ -130,9 +130,9 @@ const FastingSettings: React.FC = () => {
             </View>
             <Text style={{ fontSize: 10, color: theme.textSecondary, marginTop: 6 }}>
               {settings.notifications.defaultBeforeDays === 0
-                ? 'Notifications are always sent at least 16 hours ahead, so "0 days" still arrives the morning before the fasting day.'
+                ? 'Notifications are always sent the evening before (around Maghrib/Isha) at the latest, so "0 days" still gives you time to plan before Fajr.'
                 : settings.notifications.defaultBeforeDays === 1
-                  ? 'Notifications will arrive the day before.'
+                  ? 'Notifications will arrive the evening before, around Maghrib/Isha by default.'
                   : `Notifications will arrive ${settings.notifications.defaultBeforeDays} days before.`}
             </Text>
           </View>

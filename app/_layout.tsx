@@ -3,6 +3,7 @@ import AnnouncementModal, { AnnouncementConfig } from '@/components/Announcement
 import AutoRotateBanner from '@/components/AutoRotateBanner';
 import CelebrationModal from '@/components/CelebrationModal';
 import { FastingCalendarProvider } from '@/components/fasting/context/FastingCalendarContext';
+import FirstSessionGoalPrompt from '@/components/FirstSessionGoalPrompt';
 import ReviewSoftPrompt from '@/components/ReviewSoftPrompt';
 import SadaqahPrompt from '@/components/SadaqahPrompt';
 import UpdateModal from '@/components/UpdateModal';
@@ -20,6 +21,7 @@ import { getScreenNameFromPath, logAnalyticsEvent, logScreenView, setUserPropert
 import { initializeAudio } from '@/utils/audioUtils';
 import { getTodayCardVerse } from '@/utils/ayahOfTheDay';
 import { initGlobalErrorHandlers } from '@/utils/globalErrorHandlers';
+import { isNotificationTypeAllowedDuringSuppression } from '@/utils/notificationSuppression';
 import { fetchRemoteVersionConfig, getEffectiveVersionConfig, type RemoteVersionConfig } from '@/utils/remoteVersion';
 import { canPromptNative, trackAppOpenAndCheckTrigger, shouldShowReviewPrompt, openReview } from '@/utils/reviewPrompt';
 import { runTurboModuleProbe } from '@/utils/turboModuleProbe';
@@ -28,7 +30,8 @@ import notifee, { EventType } from '@notifee/react-native';
 import * as Font from 'expo-font';
 import { CopilotProvider } from 'react-native-copilot';
 import { Stack, router, usePathname } from 'expo-router';
-import React, { Component, ReactNode } from 'react';
+import { prefetchAllTajweedChapters } from '@/services/quranComTajweedService';
+import React, { Component, ReactNode, useEffect } from 'react';
 import { ActivityIndicator, AppState, AppStateStatus, Platform, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { initPersistenceGuard } from '../utils/persistenceGuard';
@@ -196,6 +199,25 @@ function RootLayoutContent() {
   const queueSadaqahPrompt = useSettingsStore(s => s.queueSadaqahPrompt);
   const closeSadaqahPrompt = useSettingsStore(s => s.closeSadaqahPrompt);
 
+  // First-session goal/streak prompt (item 3) + delayed notification permission (item 1)
+  const pendingFirstSessionGoalPrompt = useSettingsStore(s => s.pendingFirstSessionGoalPrompt);
+  const clearFirstSessionGoalPrompt = useSettingsStore(s => s.clearFirstSessionGoalPrompt);
+  const setDailyGoalVerses = useSettingsStore(s => s.setDailyGoalVerses);
+  const setFirstSessionOptedInReminderType = useSettingsStore(s => s.setFirstSessionOptedInReminderType);
+  const notificationPermissionRequested = useSettingsStore(s => s.notificationPermissionRequested);
+  const setNotificationPermissionRequested = useSettingsStore(s => s.setNotificationPermissionRequested);
+  const [showFirstSessionGoalPrompt, setShowFirstSessionGoalPrompt] = React.useState(false);
+  const hasCompletedFirstReciteSession = useSettingsStore(s => s.hasCompletedFirstReciteSession);
+  const arabicFont = useSettingsStore(s => s.arabicFont);
+
+  // Warm the tajweed disk cache for offline use. Tajweed users only, 20s after
+  // launch so it stays out of the way of startup and first render.
+  useEffect(() => {
+    if (arabicFont !== 'tajweed') return;
+    const t = setTimeout(() => { void prefetchAllTajweedChapters(); }, 20000);
+    return () => clearTimeout(t);
+  }, [arabicFont]);
+
   // "What's New" button in Settings sets forceShowUpdateModal → show modal immediately
   React.useEffect(() => {
     if (forceShowUpdateModal) {
@@ -237,6 +259,24 @@ function RootLayoutContent() {
       return () => clearTimeout(timer);
     }
   }, [pendingSadaqahPromptTrigger, sadaqahPromptVisible, pathname, celebrationVisible, showAnnouncement, showUpdatePrompt, showReviewSoftPrompt, forcedUpdate, triggerSadaqahPrompt]);
+
+  // First-session goal/streak prompt queue processor (item 3). Same
+  // deadlock-avoidance pattern as the Sadaqah queue above: only present once
+  // the user is safely on Home with no other modal/celebration open.
+  React.useEffect(() => {
+    if (!pendingFirstSessionGoalPrompt || showFirstSessionGoalPrompt) return;
+
+    const isHomeScreen = pathname === '/' || pathname === '/(tabs)' || pathname === '/(tabs)/index';
+    const anyModalOpen = celebrationVisible || showAnnouncement || showUpdatePrompt || showReviewSoftPrompt || forcedUpdate || sadaqahPromptVisible;
+
+    if (isHomeScreen && !anyModalOpen) {
+      const timer = setTimeout(() => {
+        const stillPending = useSettingsStore.getState().pendingFirstSessionGoalPrompt;
+        if (stillPending) setShowFirstSessionGoalPrompt(true);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [pendingFirstSessionGoalPrompt, showFirstSessionGoalPrompt, pathname, celebrationVisible, showAnnouncement, showUpdatePrompt, showReviewSoftPrompt, forcedUpdate, sadaqahPromptVisible]);
 
   const setBadgeCelebrationCallback = useProgressStore((s) => s.setBadgeCelebrationCallback);
 
@@ -353,24 +393,48 @@ function RootLayoutContent() {
 
   }, []);
 
-  // Initialize unified notification system ONCE at app startup
+  // Initialize the notification CHANNELS/plumbing at startup (item 1: this does
+  // NOT request the OS permission — creating Android channels and internal state
+  // is safe pre-permission and must happen regardless).
   React.useEffect(() => {
     (async () => {
       try {
         await initializeNotifications();
-        const granted = await requestNotificationPermissions();
-        if (!granted) {
-          console.log('[App] Notification permissions not granted');
-        }
-
-        // Initialize fasting notification service early
-        // This ensures it's ready even if user enables notifications without opening calendar
-        await FastingNotificationService.initialize();
       } catch (e) {
         console.error('[App] Notification initialization failed', e);
       }
     })();
   }, []);
+
+  // ==========================================
+  // Item 1: Delay the iOS notification permission prompt.
+  // ==========================================
+  // iOS enforces a ONE-SHOT permission prompt — if the user taps "Don't Allow"
+  // once, we can never ask again without them going to Settings manually. So we
+  // must not ask on cold open (a stranger asking a favor before we've done
+  // anything for them). Instead we ask only once the user has a genuine reason
+  // to say yes: either their first recite session has ended, or they've been
+  // through (or skipped) the first-session goal prompt — whichever comes first.
+  // `notificationPermissionRequested` guards this to fire exactly once ever.
+  React.useEffect(() => {
+    if (notificationPermissionRequested) return;
+    if (!hasCompletedFirstReciteSession) return;
+
+    (async () => {
+      try {
+        setNotificationPermissionRequested(true); // set first: never re-prompt even on failure
+        const granted = await requestNotificationPermissions();
+        if (!granted) {
+          console.log('[App] Notification permissions not granted');
+        }
+        // Fasting notification service needs the same OS permission; initialize
+        // it right after so it's ready as soon as the user enables a reminder.
+        await FastingNotificationService.initialize();
+      } catch (e) {
+        console.error('[App] Delayed notification permission request failed', e);
+      }
+    })();
+  }, [notificationPermissionRequested, hasCompletedFirstReciteSession]);
 
   React.useEffect(() => {
     // Kick off probe shortly after mount (non-blocking)
@@ -392,11 +456,18 @@ function RootLayoutContent() {
     PushNotificationService.initialize()
       .then(() => {
         console.log('[_layout] Push service initialized, syncing subscriptions...');
-        // Sync subscriptions based on current settings
+        // Item 4: suppress non-essential push topics for the first 7 days after
+        // install, except the specific reminder the user explicitly opted into
+        // from the first-session goal prompt.
+        const fastingAllowed = isNotificationTypeAllowedDuringSuppression('fasting');
+        const ayahAllowed = isNotificationTypeAllowedDuringSuppression('daily_ayah');
+        if (!fastingAllowed || !ayahAllowed) {
+          console.log('[_layout] Item 4: suppressing non-opted-in push topics during first-week window', { fastingAllowed, ayahAllowed });
+        }
         // Use 'notificationsEnabled' for Fasting (as general daily reminder)
-        PushNotificationService.syncFastingSubscription(notificationsEnabled);
+        PushNotificationService.syncFastingSubscription(notificationsEnabled && fastingAllowed);
         // Use 'ayahEnabled' for Daily Ayah
-        PushNotificationService.syncAyahSubscription(ayahEnabled ?? false);
+        PushNotificationService.syncAyahSubscription((ayahEnabled ?? false) && ayahAllowed);
         console.log('[_layout] ✅ Subscription sync complete');
       })
       .catch(e =>
@@ -414,15 +485,16 @@ function RootLayoutContent() {
         await AyahNotificationService.cancelDailyReminder();
 
 
-        // Daily Verse Reminder
-        if (notificationSettings?.dailyVerseReminder) {
+        // Daily Verse Reminder — item 4: suppressed for the first 7 days unless
+        // this is the exact reminder type the user opted into on first session.
+        if (notificationSettings?.dailyVerseReminder && isNotificationTypeAllowedDuringSuppression('daily_verse_reminder')) {
           await EnhancedNotificationService.scheduleDailyVerseReminder();
         } else {
           await EnhancedNotificationService.cancelDailyVerseReminder();
         }
 
-        // Weekly Surahs Reminder
-        if (notificationSettings?.weeklySurahsReminder) {
+        // Weekly Surahs Reminder — same item 4 suppression rule.
+        if (notificationSettings?.weeklySurahsReminder && isNotificationTypeAllowedDuringSuppression('weekly_surah_reminder')) {
           await EnhancedNotificationService.scheduleWeeklySurahReminder();
         } else {
           await EnhancedNotificationService.cancelWeeklySurahReminder();
@@ -446,13 +518,15 @@ function RootLayoutContent() {
     let active = true;
     (async () => {
       try {
-        if (revisionReminderSettings.enabled) {
+        // Item 4: suppressed for the first 7 days post-install, same as the other
+        // non-essential reminder types.
+        if (revisionReminderSettings.enabled && isNotificationTypeAllowedDuringSuppression('revision_reminder')) {
           console.log('[RevisionReminder] Scheduling daily surah revision check at 9 PM');
           await RevisionReminderService.scheduleDailyRevisionCheck();
           // Also check immediately on app startup if enabled
           await RevisionReminderService.checkAndNotifyRevisionNeeded(revisionReminderSettings.daysThreshold);
         } else {
-          console.log('[RevisionReminder] Disabled - cancelling reminders');
+          console.log('[RevisionReminder] Disabled or suppressed - cancelling reminders');
           await RevisionReminderService.cancelRevisionReminders();
         }
       } catch (e) {
@@ -724,6 +798,13 @@ function RootLayoutContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally empty - run once on mount only
 
+  // Item 4: make sure installedAt is set as early as possible for a fresh
+  // install (store migration also backfills this on rehydrate; this is a
+  // harmless redundant safety net — ensureInstalledAt no-ops if already set).
+  React.useEffect(() => {
+    useSettingsStore.getState().ensureInstalledAt();
+  }, []);
+
   // Persistence guard and DB lifecycle management
   React.useEffect(() => {
     // Initialize guard to snapshot and monitor critical persisted stores
@@ -860,23 +941,63 @@ function RootLayoutContent() {
               }}
             />
             <ReviewSoftPrompt visible={showReviewSoftPrompt} onClose={() => setShowReviewSoftPrompt(false)} />
+            <FirstSessionGoalPrompt
+              visible={showFirstSessionGoalPrompt}
+              onClose={(goalVerses, wantsReminder) => {
+                setShowFirstSessionGoalPrompt(false);
+                clearFirstSessionGoalPrompt();
+
+                if (goalVerses !== null) {
+                  setDailyGoalVerses(goalVerses);
+                }
+
+                if (wantsReminder) {
+                  // This is the ONE reminder type allowed through the item-4
+                  // 7-day suppression window, since the user explicitly asked for it.
+                  setFirstSessionOptedInReminderType('daily_verse_reminder');
+                  try {
+                    useSettingsStore.getState().setNotificationSetting('dailyVerseReminder', true);
+                  } catch (e) {
+                    console.log('[FirstSessionGoalPrompt] Failed to enable daily verse reminder setting', e);
+                  }
+                }
+
+                // Item 1: this is the "genuine reason to say yes" moment — the
+                // permission-request effect above fires now that
+                // hasCompletedFirstReciteSession is true.
+              }}
+            />
             <SadaqahPrompt
               visible={sadaqahPromptVisible}
               trigger={sadaqahPromptTrigger || 'first_quiz'}
-              onClose={async (didRate, neverAskAgain) => {
+              onOutcome={async (outcome, neverAskAgain) => {
                 closeSadaqahPrompt();
                 setReviewPromptSessionShown(true);
-                
-                if (didRate) {
-                  logAnalyticsEvent('review_prompt_tapped', { trigger: sadaqahPromptTrigger });
+
+                // Item 10: two-path pre-gate.
+                //   thumbs up   → native review flow (Apple/Play).
+                //   thumbs down → in-app feedback screen. The native review
+                //     dialog is NEVER invoked on this path — Apple prohibits
+                //     gating their own prompt this way, but choosing whether
+                //     to invoke it at all based on sentiment is allowed.
+                if (outcome === 'up') {
                   setReviewPromptState({ hasRated: true });
                   await openReview();
+                } else if (outcome === 'down') {
+                  // Not "hasRated" — they may still rate later once things
+                  // improve. Just avoid re-prompting again this session.
+                  setReviewPromptState({
+                    lastShownAt: Date.now(),
+                    lastDismissedAt: Date.now(),
+                    shownCount: (reviewPromptState.shownCount || 0) + 1,
+                  });
+                  router.push('/feedback' as any);
                 } else {
-                  logAnalyticsEvent('review_prompt_dismissed', { trigger: sadaqahPromptTrigger });
+                  // dismissed without picking a sentiment
                   if (neverAskAgain) {
                     setReviewPromptState({ hasRated: true }); // treat "never ask again" as hasRated so we don't ask
                   } else {
-                    setReviewPromptState({ 
+                    setReviewPromptState({
                       lastShownAt: Date.now(),
                       lastDismissedAt: Date.now(),
                       shownCount: (reviewPromptState.shownCount || 0) + 1

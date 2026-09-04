@@ -963,11 +963,20 @@ export default function ReadScreen() {
 
           const reciterIdentifier = useSettingsStore.getState().reciterIdentifier;
 
-          // If user selected tajweed font, load tajweed markup for this chapter once
-          // and attach it to each verse as `tajweedText` (consumed by VerseItem).
+          // Tajweed markup is NOT in the local DB -- it comes from quran.com over the
+          // network. Do NOT await it here: awaiting blocked the entire verse list behind
+          // a network round-trip, which is what produced the long "loading" every time a
+          // surah was opened. Kick the fetch off now, render from the local text
+          // immediately, and attach the colouring when it lands (see below setVerses).
+          // The .catch also matters: previously a failed tajweed fetch threw inside this
+          // try block, which triggered the 3-attempt retry loop and a "Failed to Load
+          // Verses" alert -- for text the app already had locally.
           const needsTajweed = useSettingsStore.getState().arabicFont === 'tajweed';
-          const tajweedByKey = needsTajweed
-            ? await fetchUthmaniTajweedRnMarkupByChapter(surah.id)
+          const tajweedPromise = needsTajweed
+            ? fetchUthmaniTajweedRnMarkupByChapter(surah.id).catch((e: any) => {
+                console.warn('[read] tajweed markup fetch failed; showing plain text:', e?.message || e);
+                return null;
+              })
             : null;
 
           let mappedVerses: Verse[] = allVersesFromDB.map((v: any) => ({
@@ -980,9 +989,6 @@ export default function ReadScreen() {
             pageNumber: v.page_id ? Number(v.page_id) : undefined,
             juzNumber: v.part_id ? Number(v.part_id) : undefined,
             audioUrl: getAudioUrl(reciterIdentifier, v.chapter_id || surah.id, v.verse_number),
-            ...(needsTajweed
-              ? { tajweedText: tajweedByKey?.[`${surah.id}:${v.verse_number}`] || undefined }
-              : {}),
           }));
 
           // INJECT BISMILLAH (Verse 0)
@@ -993,14 +999,8 @@ export default function ReadScreen() {
               if (bismillahMatch) {
                 mappedVerses[0].arabicText = mappedVerses[0].arabicText.substring(bismillahMatch[0].length).trim();
               }
-              // Also strip from tajweedText if present
-              if (mappedVerses[0].tajweedText) {
-                const tajBismillahMatch = mappedVerses[0].tajweedText.match(/^.*?[ٱا]لرَّحِيمِ<\/tajweed>[\s\u00A0]*/u) 
-                                       || mappedVerses[0].tajweedText.match(/^.*?[ٱا]لرَّحِيمِ[\s\u00A0]*/u);
-                if (tajBismillahMatch) {
-                  mappedVerses[0].tajweedText = mappedVerses[0].tajweedText.substring(tajBismillahMatch[0].length).trim();
-                }
-              }
+              // (Bismillah is stripped from tajweedText in the async attach below,
+              // since the markup is not available at this point.)
             }
             
             // Add Bismillah as verse 0
@@ -1024,6 +1024,36 @@ export default function ReadScreen() {
           setVerses(mappedVerses);
           setVerseListKey(prev => prev + 1); // Force FlashList rebuild on data change
           setLastReadVerse(mappedVerses[0]);
+
+          // Tajweed colouring arrives after the list is already on screen. Merge it in
+          // without blocking the initial render. Guarded on the displayed surah still
+          // being this one, so a fast surah switch can't cross-contaminate the list.
+          if (tajweedPromise) {
+            void tajweedPromise.then((tajweedByKey) => {
+              if (!tajweedByKey) return;
+              setVerses((prev) => {
+                if (!prev.length) return prev;
+                const stillSameSurah = prev.some((v) => v.surahId === surah.id);
+                if (!stillSameSurah) return prev;
+
+                return prev.map((v) => {
+                  if (v.verseNumber === 0) return v; // injected Bismillah has no source verse
+                  const raw = tajweedByKey[`${surah.id}:${v.verseNumber}`];
+                  if (!raw) return v;
+
+                  let text = raw;
+                  // Verse 1 of a Bismillah-bearing surah carries the Bismillah inline;
+                  // strip it so it isn't shown twice (verse 0 already renders it).
+                  if (v.verseNumber === 1 && shouldHaveBismillah(surah.id)) {
+                    const m = text.match(/^.*?[ٱا]لرَّحِيمِ<\/tajweed>[\s\u00A0]*/u)
+                           || text.match(/^.*?[ٱا]لرَّحِيمِ[\s\u00A0]*/u);
+                    if (m) text = text.substring(m[0].length).trim();
+                  }
+                  return { ...v, tajweedText: text } as Verse;
+                });
+              });
+            });
+          }
 
         } catch (err: any) {
           console.error(`[read] Failed to load verses for ${surah.name}, attempt ${retryCount + 1}:`, err);
@@ -1689,40 +1719,67 @@ export default function ReadScreen() {
 
       // If user selected tajweed font, attach `tajweedText` for each verse.
       // Juz can span multiple surahs, so we fetch tajweed markup per unique chapter.
+      // Same non-blocking treatment as the surah path: a Juz spans several chapters, so
+      // awaiting here meant waiting on the SLOWEST of several network calls before a
+      // single verse appeared. Start them now, render local text, attach when ready.
       const needsTajweed = useSettingsStore.getState().arabicFont === 'tajweed';
-      let enrichedVersesData: any[] = versesData as any[];
-      if (needsTajweed) {
-        const chapterIds = Array.from(new Set((versesData || []).map((v: any) => Number(v.chapter_id)).filter(Boolean)));
-        const tajweedMaps = await Promise.all(
-          chapterIds.map(async (chapterId) => ({
-            chapterId,
-            map: await fetchUthmaniTajweedRnMarkupByChapter(chapterId),
-          }))
-        );
+      const enrichedVersesData: any[] = versesData as any[];
 
-        const tajweedByChapter = new Map<number, Record<string, string>>();
-        for (const entry of tajweedMaps) {
-          tajweedByChapter.set(entry.chapterId, entry.map);
-        }
-
-        enrichedVersesData = (versesData || []).map((v: any) => {
-          const chapterId = Number(v.chapter_id);
-          const verseNum = Number(v.verse_number);
-          const map = tajweedByChapter.get(chapterId);
-          const key = `${chapterId}:${verseNum}`;
-          const tajweedText = map?.[key] || undefined;
-          return { ...v, tajweedText } as any;
-        });
-      }
+      const juzTajweedPromise = needsTajweed
+        ? (async () => {
+            const chapterIds = Array.from(
+              new Set((versesData || []).map((v: any) => Number(v.chapter_id)).filter(Boolean))
+            );
+            const tajweedMaps = await Promise.all(
+              chapterIds.map(async (chapterId) => ({
+                chapterId,
+                map: await fetchUthmaniTajweedRnMarkupByChapter(chapterId),
+              }))
+            );
+            const byChapter = new Map<number, Record<string, string>>();
+            for (const entry of tajweedMaps) byChapter.set(entry.chapterId, entry.map);
+            return byChapter;
+          })().catch((e: any) => {
+            console.warn('[read] Juz tajweed markup fetch failed; showing plain text:', e?.message || e);
+            return null;
+          })
+        : null;
 
       if (__DEV__) console.log(`[read] Successfully loaded ${versesData.length} verses for Juz ${juz}`);
       setJuzVerses(enrichedVersesData as any);
       setJuzListKey(prev => prev + 1); // Force FlashList rebuild on data change
       setIsJuzLoading(false);
+
+      // Merge tajweed colouring in once it arrives, without blocking the list above.
+      if (juzTajweedPromise) {
+        void juzTajweedPromise.then((byChapter) => {
+          if (!byChapter) return;
+          setJuzVerses((prev: any[]) => {
+            if (!prev?.length) return prev;
+            return prev.map((v: any) => {
+              const map = byChapter.get(Number(v.chapter_id));
+              const tajweedText = map?.[`${Number(v.chapter_id)}:${Number(v.verse_number)}`];
+              return tajweedText ? { ...v, tajweedText } : v;
+            });
+          });
+        });
+      }
+
       // If Page Mode is active and scope is 'juz', compute pages immediately and restore last page
       if (pageModeScope === 'juz' && isPageModeActive) {
         try {
-          const mapped = (enrichedVersesData as any[]).map((item) => ({
+          // Page Mode paginates over the verse objects it is given, so here (and only
+          // here) we wait for the markup rather than paginate colourless text.
+          const byChapter = juzTajweedPromise ? await juzTajweedPromise : null;
+          const pageSource = byChapter
+            ? (enrichedVersesData as any[]).map((v: any) => {
+                const map = byChapter.get(Number(v.chapter_id));
+                const tajweedText = map?.[`${Number(v.chapter_id)}:${Number(v.verse_number)}`];
+                return tajweedText ? { ...v, tajweedText } : v;
+              })
+            : (enrichedVersesData as any[]);
+
+          const mapped = pageSource.map((item) => ({
             id: item.verse_id,
             surahId: item.chapter_id,
             verseNumber: item.verse_number,
@@ -2051,19 +2108,21 @@ export default function ReadScreen() {
     }
   }, [translationLanguage, selectedSurah, loadInitialVerses]);
 
+  // Reload the surah when the user actually SWITCHES Arabic font mode.
+  //
+  // This used to test `verses.every(v => !!v.tajweedText)` instead of tracking the font
+  // itself, which was wrong twice over: the injected Bismillah (verse 0) never has
+  // tajweedText, so the test was permanently false in tajweed mode and forced a
+  // redundant reload; and now that tajweed markup is attached asynchronously, a
+  // presence test would also fire during the window before it arrives.
+  const prevArabicFontRef = useRef(arabicFont);
   useEffect(() => {
-    if (!selectedSurah) {
-      // No cache to clear - verses are loaded fresh each time
-      return;
-    }
-    const hasVerses = verses.length > 0;
-    const hasTajweed = hasVerses && verses.every((v: any) => !!v.tajweedText);
-    const needsTajweed = arabicFont === 'tajweed';
-    if ((needsTajweed && !hasTajweed) || (!needsTajweed && hasTajweed)) {
-      setVerses([]);
-      loadInitialVerses(selectedSurah);
-    }
-  }, [arabicFont, selectedSurah, translationLanguage, loadInitialVerses]);
+    if (prevArabicFontRef.current === arabicFont) return; // not a font change
+    prevArabicFontRef.current = arabicFont;
+    if (!selectedSurah) return;
+    setVerses([]);
+    loadInitialVerses(selectedSurah);
+  }, [arabicFont, selectedSurah, loadInitialVerses]);
 
   // Navigation: Handle route params for surahId/verseId (e.g., from Mustahabbah or Continue Reading)
   useEffect(() => {
@@ -2366,6 +2425,22 @@ export default function ReadScreen() {
           verses_covered: verses.length ?? 0,
           session_mode: isPageModeActive ? 'page_mode' : (selectedJuz ? 'juz_mode' : 'surah_mode'),
         });
+
+        // ── Sept release, items 1 & 3 ──────────────────────────────────────
+        // The FIRST genuine recite_session_duration event (a real session, not
+        // a sub-15s surah switch) is the hook point for: (item 3) showing the
+        // first-session goal/streak prompt immediately, and (item 1) unlocking
+        // the delayed iOS notification permission request. Both are one-shot,
+        // guarded by settingsStore flags so this never re-fires for later sessions.
+        if (sessionDuration >= 15) {
+          const settingsState = useSettingsStore.getState();
+          if (!settingsState.hasCompletedFirstReciteSession) {
+            settingsState.setHasCompletedFirstReciteSession(true);
+            if (!settingsState.firstSessionGoalPromptShown) {
+              settingsState.queueFirstSessionGoalPrompt();
+            }
+          }
+        }
       } catch { /* analytics must never crash */ }
     };
   }, [selectedSurah, selectedJuz, isPageModeActive]);

@@ -1013,7 +1013,7 @@ export default function SettingsScreen() {
           </View>
 
           <Text style={styles.feedbackText}>
-            Need help? Explore our feature guide or view what's new in this release.
+            Need help? Explore our feature guide or view what{"'"}s new in this release.
           </Text>
 
           <Pressable 
@@ -1035,7 +1035,7 @@ export default function SettingsScreen() {
           >
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Info size={18} color={theme.primary} style={{ marginRight: 10 }} />
-              <Text style={styles.feedbackButtonText}>What's New</Text>
+              <Text style={styles.feedbackButtonText}>What{"'"}s New</Text>
             </View>
           </Pressable>
 
@@ -1089,7 +1089,7 @@ export default function SettingsScreen() {
             setTimeout(() => setDebugTapCount(0), 2000);
           }}
         >
-          <Text style={styles.versionText}>Ver-2.2.3</Text>
+          <Text style={styles.versionText}>Ver-2.2.5</Text>
         </Pressable>
       </ScrollView>
 

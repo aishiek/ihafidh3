@@ -2,7 +2,7 @@
 // Adjust these values when you release a new minimum-supported version.
 
 export const MIN_SUPPORTED_VERSION = '2.0.5'; // Local fallback minimum supported version
-export const LATEST_VERSION = '2.2.0';
+export const LATEST_VERSION = '2.2.5';
 // Local fallback latest version for soft prompts
 
 // Store metadata
@@ -11,7 +11,7 @@ export const ANDROID_PACKAGE_ID = 'com.ihafidh';
 
 // iOS App Store id (numeric). Set this after your app is on the App Store.
 // Example: '1234567890'
-export const IOS_APP_STORE_ID: string | null = null;
+export const IOS_APP_STORE_ID: string | null = '6752505055';
 
 // Remote version JSON (GitHub Pages or any HTTPS endpoint). Example:
 export const REMOTE_VERSION_URL: string | null = 'https://aishiek.github.io/version.json';

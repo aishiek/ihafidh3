@@ -25,6 +25,7 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { logAnalyticsEvent, getMemorizationLevel } from '@/utils/analyticsHelper';
 import { shouldShowReviewPrompt } from '@/utils/reviewPrompt';
 import { getArabicFontFamily, getArabicTypographySizing, normalizeArabicForRendering } from '@/utils/fontUtils';
+import { generateUUID } from '@/utils/uuid';
 import { useThemeColor } from '@/utils/useThemeColor';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
@@ -72,6 +73,9 @@ interface Quiz {
   startTime: Date;
   mode: QuizMode;
   isFinished?: boolean;
+  // Item 6: correlates quiz_started with exactly one of quiz_completed/quiz_abandoned,
+  // so a resumed/retried quiz can never be double-counted in the funnel.
+  quizSessionId: string;
 }
 
 interface QuizResult {
@@ -159,6 +163,7 @@ export default function QuizScreen() {
       if (currentQuizRef.current && !currentQuizRef.current.isFinished) {
         const q = currentQuizRef.current;
         logAnalyticsEvent('quiz_abandoned', {
+          quiz_session_id: q.quizSessionId,
           quiz_type: q.mode,
           questions_answered: Object.keys(q.verseAnswers || {}).filter(k => q.verseAnswers[k] !== null).length,
           total_questions: q.verses.length,
@@ -358,6 +363,7 @@ export default function QuizScreen() {
   const resetQuiz = useCallback(async () => {
     if (currentQuiz && !currentQuiz.isFinished) {
       logAnalyticsEvent('quiz_abandoned', {
+        quiz_session_id: currentQuiz.quizSessionId,
         quiz_type: currentQuiz.mode,
         questions_answered: Object.keys(currentQuiz.verseAnswers || {}).filter(k => currentQuiz.verseAnswers[Number(k)] !== null).length,
         total_questions: currentQuiz.verses.length,
@@ -519,6 +525,7 @@ export default function QuizScreen() {
 
           // ANALYTICS: quiz_completed (P1)
           logAnalyticsEvent('quiz_completed', {
+            quiz_session_id: prev.quizSessionId,
             quiz_type: prev.mode,
             quiz_category: prev.quizCategory,
             surah_number: prev.surahId,
@@ -640,6 +647,8 @@ export default function QuizScreen() {
       const verseAnswers: Record<number, 'correct' | 'incorrect' | null> = {};
       verses.forEach(v => { verseAnswers[v.verseNumber] = null; });
 
+      const quizSessionId = generateUUID();
+
       setCurrentQuiz({
         surahName: randomSurah.surahName,
         surahArabicName: randomSurah.surahArabicName,
@@ -649,11 +658,13 @@ export default function QuizScreen() {
         verseAnswers,
         startTime: new Date(),
         mode: selectedMode,
+        quizSessionId,
       });
 
       // ANALYTICS: quiz_started (Event 12 — P2)
       try {
         logAnalyticsEvent('quiz_started', {
+          quiz_session_id: quizSessionId,
           surah_number: randomSurah.surahId ?? 0,
           surah_name: (randomSurah.surahName ?? 'unknown').toLowerCase().replace(/\s+/g, '_'),
           quiz_type: 'random',
@@ -719,6 +730,8 @@ export default function QuizScreen() {
       const verseAnswers: Record<number, 'correct' | 'incorrect' | null> = {};
       verses.forEach(v => { verseAnswers[v.verseNumber] = null; });
 
+      const quizSessionId = generateUUID();
+
       setCurrentQuiz({
         surahName: surah.name,
         surahArabicName: surah.arabicName,
@@ -728,11 +741,13 @@ export default function QuizScreen() {
         verseAnswers,
         startTime: new Date(),
         mode: selectedMode,
+        quizSessionId,
       });
 
       // ANALYTICS: quiz_started (Event 12 — P2)
       try {
         logAnalyticsEvent('quiz_started', {
+          quiz_session_id: quizSessionId,
           surah_number: surah.id ?? 0,
           surah_name: (surah.name || surah.englishName || `surah_${surah.id}`).toLowerCase().replace(/\s+/g, '_'),
           quiz_type: 'specific',

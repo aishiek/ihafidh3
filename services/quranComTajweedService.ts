@@ -1,3 +1,7 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+import * as FileSystem from 'expo-file-system/legacy';
+
 const QURAN_COM_API = 'https://api.quran.com/api/v4';
 const ALIF_TAJWID_API = 'https://api.alif.my.id/alquran';
 
@@ -15,8 +19,89 @@ export function normalizeTajweedSource(text: string): string {
 
 type TajweedByVerseKey = Record<string, string>;
 
-const chapterCache = new Map<number, { expiresAt: number; data: TajweedByVerseKey }>();
-const CACHE_TTL_MS = 1000 * 60 * 60; // 1 hour
+// ---------------------------------------------------------------------------
+// Chapter cache: memory -> disk -> network.
+//
+// Tajweed markup is NOT in the local SQLite DB (AlQurandb.sqlite3 has the plain
+// Uthmani text only), so every chapter has to come from quran.com the first time.
+// Previously the cache was an in-memory Map with a 1-hour TTL, which meant every
+// cold start re-fetched every chapter the user opened -- the main cause of the
+// long "loading" on the Read tab.
+//
+// The markup is static scripture: it never changes. So the only reason to
+// invalidate is a change to how we parse or store it, which CACHE_VERSION covers.
+// Bump CACHE_VERSION to force every device to re-fetch.
+const CACHE_VERSION = 1;
+
+const chapterCache = new Map<number, TajweedByVerseKey>();
+const inFlight = new Map<number, Promise<TajweedByVerseKey>>();
+
+const DISK_CACHE_DIR = FileSystem?.documentDirectory
+  ? `${FileSystem.documentDirectory}tajweed-cache/`
+  : null;
+
+let diskDirReady: Promise<void> | null = null;
+async function ensureDiskCacheDir(): Promise<boolean> {
+  if (!DISK_CACHE_DIR) return false;
+  if (!diskDirReady) {
+    diskDirReady = (async () => {
+      const info = await FileSystem.getInfoAsync(DISK_CACHE_DIR);
+      if (!info.exists) {
+        await FileSystem.makeDirectoryAsync(DISK_CACHE_DIR, { intermediates: true });
+      }
+    })();
+  }
+  try {
+    await diskDirReady;
+    return true;
+  } catch {
+    diskDirReady = null; // let a later call retry
+    return false;
+  }
+}
+
+function diskPathFor(chapterNumber: number): string | null {
+  return DISK_CACHE_DIR ? `${DISK_CACHE_DIR}chapter-${chapterNumber}.v${CACHE_VERSION}.json` : null;
+}
+
+async function readChapterFromDisk(chapterNumber: number): Promise<TajweedByVerseKey | null> {
+  const path = diskPathFor(chapterNumber);
+  if (!path) return null;
+  try {
+    const info = await FileSystem.getInfoAsync(path);
+    if (!info.exists) return null;
+    const parsed = JSON.parse(await FileSystem.readAsStringAsync(path));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return parsed as TajweedByVerseKey;
+  } catch {
+    return null; // corrupt or unreadable -> treat as a miss, refetch
+  }
+}
+
+async function writeChapterToDisk(chapterNumber: number, data: TajweedByVerseKey): Promise<void> {
+  const path = diskPathFor(chapterNumber);
+  if (!path) return;
+  try {
+    if (!(await ensureDiskCacheDir())) return;
+    await FileSystem.writeAsStringAsync(path, JSON.stringify(data));
+  } catch (e) {
+    // Cache writes are best-effort; a failure must never break rendering.
+    console.warn('[tajweed] disk cache write failed:', e);
+  }
+}
+
+/** Remove every cached chapter from disk. Exposed for a future "clear cache" setting. */
+export async function clearTajweedDiskCache(): Promise<void> {
+  chapterCache.clear();
+  if (!DISK_CACHE_DIR) return;
+  try {
+    const info = await FileSystem.getInfoAsync(DISK_CACHE_DIR);
+    if (info.exists) await FileSystem.deleteAsync(DISK_CACHE_DIR, { idempotent: true });
+  } catch (e) {
+    console.warn('[tajweed] disk cache clear failed:', e);
+  }
+  diskDirReady = null;
+}
 
 export function quranComTajweedHtmlToRnTajweedMarkup(input: string): string {
   if (!input) return '';
@@ -138,22 +223,46 @@ async function fetchJsonWithTimeout(url: string, timeoutMs: number = 8000): Prom
 }
 
 export async function fetchUthmaniTajweedByChapter(chapterNumber: number): Promise<TajweedByVerseKey> {
-  const cached = chapterCache.get(chapterNumber);
-  if (cached && cached.expiresAt > Date.now()) return cached.data;
+  // 1. memory
+  const mem = chapterCache.get(chapterNumber);
+  if (mem) return mem;
 
-  const url = `${QURAN_COM_API}/quran/verses/uthmani_tajweed?chapter_number=${chapterNumber}`;
-  const json = await fetchJsonWithTimeout(url);
+  // De-duplicate concurrent requests for the same chapter. The Juz view asks for
+  // several chapters at once and can otherwise fire the same fetch more than once.
+  const existing = inFlight.get(chapterNumber);
+  if (existing) return existing;
 
-  const verses: Array<{ verse_key: string; text_uthmani_tajweed: string }> = json?.verses || [];
-  const map: TajweedByVerseKey = {};
-  for (const v of verses) {
-    if (v?.verse_key && typeof v.text_uthmani_tajweed === 'string') {
-      map[v.verse_key] = v.text_uthmani_tajweed;
+  const job = (async (): Promise<TajweedByVerseKey> => {
+    // 2. disk
+    const fromDisk = await readChapterFromDisk(chapterNumber);
+    if (fromDisk) {
+      chapterCache.set(chapterNumber, fromDisk);
+      return fromDisk;
     }
-  }
 
-  chapterCache.set(chapterNumber, { expiresAt: Date.now() + CACHE_TTL_MS, data: map });
-  return map;
+    // 3. network
+    const url = `${QURAN_COM_API}/quran/verses/uthmani_tajweed?chapter_number=${chapterNumber}`;
+    const json = await fetchJsonWithTimeout(url);
+
+    const verses: Array<{ verse_key: string; text_uthmani_tajweed: string }> = json?.verses || [];
+    const map: TajweedByVerseKey = {};
+    for (const v of verses) {
+      if (v?.verse_key && typeof v.text_uthmani_tajweed === 'string') {
+        map[v.verse_key] = v.text_uthmani_tajweed;
+      }
+    }
+
+    chapterCache.set(chapterNumber, map);
+    void writeChapterToDisk(chapterNumber, map); // best-effort, not awaited
+    return map;
+  })();
+
+  inFlight.set(chapterNumber, job);
+  try {
+    return await job;
+  } finally {
+    inFlight.delete(chapterNumber);
+  }
 }
 
 export async function fetchUthmaniTajweedRnMarkupByChapter(chapterNumber: number): Promise<TajweedByVerseKey> {
@@ -239,5 +348,57 @@ export async function fetchTajwidRnMarkupByChapter(chapterNumber: number): Promi
   } catch (e) {
     console.warn('[tajweed] Alif tajwid fetch failed; falling back to Quran.com:', e);
     return await fetchUthmaniTajweedRnMarkupByChapter(chapterNumber);
+  }
+}
+
+// ---- one-time offline prefetch ------------------------------------------------
+const PREFETCH_FLAG_KEY = `tajweed_prefetch_done_v${CACHE_VERSION}`;
+let prefetchRunning = false;
+
+async function isChapterOnDisk(ch: number): Promise<boolean> {
+  const p = diskPathFor(ch);
+  if (!p) return false;
+  try {
+    return (await FileSystem.getInfoAsync(p)).exists;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Download every chapter's tajweed markup into the disk cache once, on wifi only.
+ * Makes tajweed mode fully offline without bundling the dataset into the app.
+ *
+ * Safe to call on every launch: it no-ops once complete, skips chapters already on
+ * disk, and gives up quietly on any failure so the next launch resumes where it
+ * stopped. Deliberately sequential with a small gap — this is background work and
+ * must never compete with the verses the user is actually reading.
+ */
+export async function prefetchAllTajweedChapters(): Promise<void> {
+  if (prefetchRunning) return;
+  try {
+    if (await AsyncStorage.getItem(PREFETCH_FLAG_KEY)) return; // already done
+    const net = await NetInfo.fetch();
+    if (!net.isConnected || net.type !== 'wifi') return;       // wifi only
+    prefetchRunning = true;
+
+    let cached = 0;
+    for (let ch = 1; ch <= 114; ch++) {
+      if (await isChapterOnDisk(ch)) { cached++; continue; }
+      try {
+        await fetchUthmaniTajweedByChapter(ch);
+        chapterCache.delete(ch); // keep it on disk, don't hold ~4MB in RAM
+        cached++;
+      } catch {
+        // leave this chapter for the next launch
+      }
+      await new Promise((r) => setTimeout(r, 150));
+    }
+
+    if (cached === 114) await AsyncStorage.setItem(PREFETCH_FLAG_KEY, '1');
+  } catch {
+    // best-effort: never surface prefetch problems to the user
+  } finally {
+    prefetchRunning = false;
   }
 }

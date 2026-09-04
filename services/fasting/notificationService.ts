@@ -19,10 +19,17 @@ export class FastingNotificationService {
   private static hasPermission = false;
 
   // Minimum lead time enforced for every fasting reminder, regardless of the user's
-  // configured beforeDays/time. Prevents e.g. "0 days before" + an early default time
-  // from producing a notification that lands too close to (or after) the fasting day
-  // actually starts. Applies uniformly to all fasting types.
+  // configured beforeDays/time. Prevents e.g. "0 days before" + a late/near-midnight
+  // configured time from producing a notification that lands too close to (or after)
+  // the fasting day actually starts. Applies uniformly to all fasting types.
   private static readonly MIN_NOTIFICATION_LEAD_HOURS = 16;
+
+  // Fallback send time used whenever a notification would otherwise land on the
+  // fasting day itself (or too close to it): the EVENING of the day before, around
+  // Maghrib/Isha — not the crack of dawn. This is what makes "0 days before" still
+  // land at a sensible, useful time instead of silently sliding to a 3am notification.
+  private static readonly EVENING_FALLBACK_HOUR = 19; // 7:00 PM local time
+  private static readonly EVENING_FALLBACK_MINUTE = 0;
 
   /**
    * Initialize notification service
@@ -130,20 +137,25 @@ export class FastingNotificationService {
           notificationDate.setDate(notificationDate.getDate() - beforeDays);
           notificationDate.setHours(hours, minutes, 0, 0);
 
-          // Enforce the minimum lead time rule.
-          // Fasting day starts at 00:00 local time, so N hours prior falls on the previous day.
+          // Enforce the minimum lead time rule: a fasting reminder must never land on
+          // (or too close to) the fasting day itself. Fasting day starts at 00:00 local
+          // time, so N hours prior falls on the previous day.
           const minLeadTimeBefore = new Date(
             fastingDate.getTime() - this.MIN_NOTIFICATION_LEAD_HOURS * 60 * 60 * 1000
           );
 
           if (notificationDate.getTime() > minLeadTimeBefore.getTime()) {
-            console.log(`⚠️ Adjusting notification for ${fastingType} on ${day.date} to meet the ${this.MIN_NOTIFICATION_LEAD_HOURS}-hour minimum lead time.`);
-            notificationDate.setTime(minLeadTimeBefore.getTime());
+            // Rather than snapping to an arbitrary hour-offset (which could land at
+            // 3am), snap to the EVENING of the day before the fast — the same target
+            // the product spec calls for (around Maghrib/Isha), so the user sees it
+            // before bed with time to make niyyah and prepare suhoor.
+            const eveningBefore = new Date(fastingDate);
+            eveningBefore.setDate(eveningBefore.getDate() - 1);
+            eveningBefore.setHours(this.EVENING_FALLBACK_HOUR, this.EVENING_FALLBACK_MINUTE, 0, 0);
 
-            // Adjust the beforeDays for the message display if it was 0
-            if (beforeDays === 0) {
-              beforeDays = 1;
-            }
+            console.log(`⚠️ Adjusting notification for ${fastingType} on ${day.date}: configured time was too close to the fasting day, moving to the evening before (${eveningBefore.toLocaleString()}).`);
+            notificationDate.setTime(eveningBefore.getTime());
+            beforeDays = 1;
           }
 
           // Skip past notifications

@@ -417,6 +417,20 @@ export const useProgressStore = create<ProgressState>()(
               });
             });
           } catch { /* analytics must never crash */ }
+
+          // Item 10: surah_completed is one of the three positive moments the
+          // spec calls out for the review sentiment prompt. Same deferred,
+          // gated pattern as the juz_completed trigger above.
+          setTimeout(() => {
+            try {
+              const { useSettingsStore } = require('./settingsStore');
+              const { shouldShowReviewPrompt } = require('@/utils/reviewPrompt');
+              const settingsState = useSettingsStore.getState();
+              if (shouldShowReviewPrompt(settingsState.reviewPromptState, settingsState.reviewPromptSessionShown)) {
+                settingsState.queueSadaqahPrompt('surah_completed');
+              }
+            } catch { }
+          }, 1500);
         }
 
         // Batched Firestore Sync: exactly one single batch commit with no double counting

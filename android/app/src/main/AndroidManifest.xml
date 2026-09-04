@@ -23,6 +23,14 @@
     <meta-data android:name="expo.modules.updates.ENABLED" android:value="true"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="30000"/>
+    <!-- Item 7 (Sept release): firebase.json sets analytics_auto_screen_reporting /
+         google_analytics_automatic_screen_reporting_enabled to false, but that config
+         plugin only rewrites this file during `expo prebuild`. Since android/ is a
+         committed, manually-maintained native project, the plugin never actually ran
+         against it, so the native auto screen reporter kept firing (MainActivity /
+         HomeScreen screen_view events). Setting this meta-data directly guarantees it's
+         in every build regardless of prebuild status. -->
+    <meta-data android:name="google_analytics_automatic_screen_reporting_enabled" android:value="false"/>
     <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="unspecified">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>

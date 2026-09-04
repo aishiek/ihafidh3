@@ -21,9 +21,13 @@ import React, { createContext, useContext, useEffect, useReducer, useState } fro
 import { AppState } from 'react-native';
 
 // Default notification settings
+// Default reminder time: evening of the day before the fast (around Maghrib/Isha),
+// so the user has time to make niyyah and prepare suhoor before Fajr.
+// See services/fasting/notificationService.ts EVENING_FALLBACK_TIME for the
+// matching fallback used when a user-configured time would land too late.
 const getDefaultNotificationSettings = (): FastingNotificationSettings => ({
   enabled: true,
-  defaultTime: '06:00',
+  defaultTime: '19:00',
   defaultBeforeDays: 1,
   fastingTypes: Object.values(FastingType).reduce((acc, type) => {
     // Include ALL fasting types now (Ramadan included) for notifications
@@ -31,7 +35,7 @@ const getDefaultNotificationSettings = (): FastingNotificationSettings => ({
       ...acc,
       [type]: {
         enabled: true,
-        time: '06:00',
+        time: '19:00',
         beforeDays: 1
       }
     };

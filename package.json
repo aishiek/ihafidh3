@@ -1,7 +1,7 @@
 {
   "name": "ihafidh3",
   "main": "expo-router/entry",
-  "version": "2.2.3",
+  "version": "2.2.5",
   "scripts": {
     "start": "expo start --dev-client",
     "android": "cross-env NODE_ENV=development expo run:android",
@@ -22,6 +22,7 @@
     "build": "cross-env NODE_ENV=production expo build",
     "preview": "cross-env NODE_ENV=production eas build --profile preview",
     "clean": "rm -rf android/app/build .expo .expo-shared node_modules/.cache && cd android && ./gradlew clean && cd ..",
+    "kill:emulator": "bash scripts/kill_emulators.sh",
     "lint": "expo lint"
   },
   "dependencies": {

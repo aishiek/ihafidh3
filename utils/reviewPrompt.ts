@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking, Platform } from 'react-native';
 import * as StoreReview from 'expo-store-review';
+import { ReviewPromptState } from '@/store/settingsStore';
+import { ANDROID_PACKAGE_ID, IOS_APP_STORE_ID } from '@/constants/appConfig';
 // Lazily require 'react-native-in-app-review' to avoid bundler errors when
 // the native module isn't installed in development or CI environments.
 function getInAppReview(): any | null {
@@ -68,10 +70,13 @@ export async function remindMeIn(days = 7) {
   }
 }
 
-export async function openFeedbackEmail(email = 'support@ihafidh.app', subject?: string) {
+export async function openFeedbackEmail(email = 'support@ihafidh.app', subject?: string, body?: string) {
   try {
-    const s = subject ? `?subject=${encodeURIComponent(subject)}` : '';
-    const url = `mailto:${email}${s}`;
+    const params: string[] = [];
+    if (subject) params.push(`subject=${encodeURIComponent(subject)}`);
+    if (body) params.push(`body=${encodeURIComponent(body)}`);
+    const query = params.length > 0 ? `?${params.join('&')}` : '';
+    const url = `mailto:${email}${query}`;
     await Linking.openURL(url);
   } catch (e) {
     console.log('[review] openFeedbackEmail failed', e);
@@ -127,11 +132,8 @@ export async function resetConsecutiveOpens() {
 
 // ─── NEW IN-APP REVIEW FLOW ─────────────────────────────────────────────
 
-import { ReviewPromptState } from '@/store/settingsStore';
-import { ANDROID_PACKAGE_ID, IOS_APP_STORE_ID } from '@/constants/appConfig';
-
-const IOS_APP_ID = IOS_APP_STORE_ID || '1234567890';
-const ANDROID_PKG = ANDROID_PACKAGE_ID || 'com.ihafidh.app';
+const IOS_APP_ID = IOS_APP_STORE_ID || '6752505055';
+const ANDROID_PKG = ANDROID_PACKAGE_ID || 'com.ihafidh';
 
 export function shouldShowReviewPrompt(
   state: ReviewPromptState,

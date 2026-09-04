@@ -274,11 +274,27 @@ export const useActivityStore = create<ActivityState>()(
               longestStreak: newLongest,
               lastActivityDate: today,
             });
+            const isMilestone = [3, 7, 14, 30, 60, 100, 365].includes(newStreak);
             logAnalyticsEvent('streak_achieved', {
               streak_days: newStreak,
               longest_streak: newLongest,
-              is_milestone: [3, 7, 14, 30, 60, 100, 365].includes(newStreak),
+              is_milestone: isMilestone,
             });
+
+            // Item 10: streak milestone is one of the three positive moments
+            // the spec calls out for the review sentiment prompt.
+            if (isMilestone) {
+              setTimeout(() => {
+                try {
+                  const { useSettingsStore } = require('./settingsStore');
+                  const { shouldShowReviewPrompt } = require('@/utils/reviewPrompt');
+                  const settingsState = useSettingsStore.getState();
+                  if (shouldShowReviewPrompt(settingsState.reviewPromptState, settingsState.reviewPromptSessionShown)) {
+                    settingsState.queueSadaqahPrompt('streak_milestone');
+                  }
+                } catch { }
+              }, 1500);
+            }
           }
         }
       },
