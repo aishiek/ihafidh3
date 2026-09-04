@@ -19,6 +19,15 @@ expo-env.d.ts
 android/app/build/
 ios/build/
 
+# Signing keystores — never commit a real release key.
+# debug.keystore is the shared, non-secret RN/Android debug key and is fine to track.
+*.keystore
+!debug.keystore
+
+# Local gradle properties can carry release-signing credentials (MYAPP_UPLOAD_*).
+# Keep those in ~/.gradle/gradle.properties (user-level, never committed) instead.
+android/local.properties
+
 # Metro
 .metro-health-check*
 
