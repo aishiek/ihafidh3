@@ -105,10 +105,32 @@ android {
             keyPassword 'android'
         }
         release {
-            if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
-                def keystoreFile = file(MYAPP_UPLOAD_STORE_FILE)
+            def storeProp = project.findProperty('MYAPP_UPLOAD_STORE_FILE')
+            def storePass = project.findProperty('MYAPP_UPLOAD_STORE_PASSWORD')
+            def keyAliasProp = project.findProperty('MYAPP_UPLOAD_KEY_ALIAS')
+            def keyPass = project.findProperty('MYAPP_UPLOAD_KEY_PASSWORD')
+
+            if (!storeProp) {
+                def localProps = new Properties()
+                def localPropsFile = rootProject.file('local.properties')
+                if (localPropsFile.exists()) {
+                    localPropsFile.withReader('UTF-8') { reader -> localProps.load(reader) }
+                    storeProp = localProps.getProperty('MYAPP_UPLOAD_STORE_FILE')
+                    storePass = storePass ?: localProps.getProperty('MYAPP_UPLOAD_STORE_PASSWORD')
+                    keyAliasProp = keyAliasProp ?: localProps.getProperty('MYAPP_UPLOAD_KEY_ALIAS')
+                    keyPass = keyPass ?: localProps.getProperty('MYAPP_UPLOAD_KEY_PASSWORD')
+                }
+            }
+
+            if (storeProp) {
+                def keystoreFile = file(storeProp)
                 if (keystoreFile.isDirectory()) {
-                    keystoreFile = new File(keystoreFile, "my-upload-key.keystore")
+                    def candidates = keystoreFile.listFiles({ dir, name -> name.endsWith('.keystore') } as FilenameFilter)
+                    if (candidates && candidates.length > 0) {
+                        keystoreFile = candidates.find { it.name == "my-upload-key.keystore" } ?: candidates[0]
+                    } else {
+                        keystoreFile = new File(keystoreFile, "my-upload-key.keystore")
+                    }
                 } else if (!keystoreFile.exists()) {
                     def altFile = file("/Users/aleem/Documents/Aleem/keystore/my-upload-key.keystore")
                     if (altFile.exists()) {
@@ -116,9 +138,9 @@ android {
                     }
                 }
                 storeFile keystoreFile
-                storePassword MYAPP_UPLOAD_STORE_PASSWORD
-                keyAlias MYAPP_UPLOAD_KEY_ALIAS
-                keyPassword MYAPP_UPLOAD_KEY_PASSWORD
+                storePassword storePass
+                keyAlias keyAliasProp
+                keyPassword keyPass
             }
         }
     }
