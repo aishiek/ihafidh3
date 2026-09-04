@@ -106,7 +106,16 @@ android {
         }
         release {
             if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
-                storeFile file(MYAPP_UPLOAD_STORE_FILE)
+                def keystoreFile = file(MYAPP_UPLOAD_STORE_FILE)
+                if (keystoreFile.isDirectory()) {
+                    keystoreFile = new File(keystoreFile, "my-upload-key.keystore")
+                } else if (!keystoreFile.exists()) {
+                    def altFile = file("/Users/aleem/Documents/Aleem/keystore/my-upload-key.keystore")
+                    if (altFile.exists()) {
+                        keystoreFile = altFile
+                    }
+                }
+                storeFile keystoreFile
                 storePassword MYAPP_UPLOAD_STORE_PASSWORD
                 keyAlias MYAPP_UPLOAD_KEY_ALIAS
                 keyPassword MYAPP_UPLOAD_KEY_PASSWORD
